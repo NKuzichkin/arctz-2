@@ -1,0 +1,51 @@
+<Styles xmlns="https://github.com/avaloniaui"
+         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+         xmlns:local="using:ArctZ.Components.VirtualJoystick">
+
+  <Style Selector="local|VirtualJoystick">
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Grid Name="PART_Root"
+              Width="130"
+              Height="130"
+              ClipToBounds="False"
+              Background="Transparent">
+
+          <Grid Name="PART_Visuals">
+            <Ellipse Name="PART_Base"
+                     Fill="White"
+                     Opacity="0.3"
+                     Stroke="Gray"
+                     StrokeThickness="1" />
+
+            <Ellipse Width="50" Height="50"
+                     Fill="Transparent"
+                     Stroke="DarkGray"
+                     StrokeThickness="1"
+                     HorizontalAlignment="Center"
+                     VerticalAlignment="Center"
+                     IsHitTestVisible="False" />
+
+            <Ellipse Name="PART_Knob"
+                     Width="50" Height="50"
+                     Fill="White"
+                     Opacity="0.5"
+                     Stroke="Gray"
+                     StrokeThickness="1"
+                     HorizontalAlignment="Center"
+                     VerticalAlignment="Center" />
+          </Grid>
+        </Grid>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+
+  <Style Selector="local|VirtualJoystick:active /template/ Ellipse#PART_Base">
+    <Setter Property="Opacity" Value="0.6" />
+  </Style>
+
+  <Style Selector="local|VirtualJoystick:active /template/ Ellipse#PART_Knob">
+    <Setter Property="Opacity" Value="0.8" />
+  </Style>
+
+</Styles>

@@ -1,0 +1,11 @@
+<Solution>
+  <Project Path="ArctZ.Android/ArctZ.Android.csproj">
+    <Deploy />
+  </Project>
+  <Project Path="ArctZ.Browser/ArctZ.Browser.csproj" />
+  <Project Path="ArctZ.Desktop/ArctZ.Desktop.csproj" />
+  <Project Path="ArctZ.iOS/ArctZ.iOS.csproj">
+    <Deploy />
+  </Project>
+  <Project Path="ArctZ/ArctZ.csproj" />
+</Solution>
