@@ -10,16 +10,16 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
 
       - name: Publish ArctZ.Desktop (win-x64, self-contained)
         run: dotnet publish ArctZ.Desktop/ArctZ.Desktop.csproj -c Release -r win-x64 --self-contained true -o publish/win-x64
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ArctZ-Desktop-win-x64
           path: publish/win-x64
@@ -27,9 +27,9 @@ jobs:
   build-android:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
 
@@ -39,7 +39,7 @@ jobs:
       - name: Build ArctZ.Android (Debug, debug-signed apk)
         run: dotnet build ArctZ.Android/ArctZ.Android.csproj -c Debug
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ArctZ-Android-debug-apk
           path: ArctZ.Android/bin/Debug/net10.0-android/*Signed.apk
