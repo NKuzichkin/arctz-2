@@ -1,0 +1,94 @@
+{
+  "name": "Universal Gcode Sender (UGS)",
+  "type": "sender",
+  "research_date": "2026-07-24",
+
+  "language_platform": "Java 17, built with Maven. Two editions sharing one headless core (ugs-core): UGS Classic is a single-window Java Swing application; UGS Platform is built on the NetBeans Platform (modular OSGi-like plugin/module system with docking window management). A newer JavaFX front-end (ugs-fx) and a command-line front-end (ugs-cli) also reuse the same core. The core is UI-agnostic and exposes a BackendAPI.",
+
+  "license": "GPL-3.0 (GNU General Public License v3.0). Copyleft — code/idea reuse into a proprietary or differently-licensed app is legally constrained; safe to study for design patterns, but not to copy source into ArctZ (MIT/closed).",
+
+  "repository": "https://github.com/winder/Universal-G-Code-Sender (author Will Winder, org 'winder'). Website: https://winder.github.io/ugs_website/",
+
+  "maintenance_activity": "Very active and mature. Latest release v2.1.24 published 2026-07-06; steady cadence (v2.1.21 2026-03-08, v2.1.22 2026-03-17). One of the oldest and most widely used open-source GRBL senders, continuously maintained since ~2012.",
+
+  "supported_transports": "Serial/USB (default, via JSerialComm library), raw TCP, and WebSocket. Enumerated in the ConnectionDriver enum: JSERIALCOMM ('jserialcomm://'), TCP ('tcp://'), WS ('ws://'). Network controllers such as FluidNC over WiFi are reached via TCP or WebSocket. There is no first-class WiFi-Telnet driver and no native Bluetooth stack — Bluetooth is only usable indirectly through an OS-provided virtual serial (SPP) COM port picked up by the serial driver.",
+
+  "transport_abstraction_maturity": "Very mature, cleanly layered three-tier abstraction — the strongest direct reference for ArctZ. (1) Transport layer: a Connection interface (connection/Connection.java) with concrete JSerialCommConnection, TCPConnection, WSConnection, selected via a ConnectionDriver enum and instantiated by a ConnectionFactory. (2) Communicator layer: ICommunicator / AbstractCommunicator / BufferedCommunicator (firmware-specific GrblCommunicator, TinyGCommunicator, SmoothieCommunicator) owns streaming/buffering and holds a Connection. (3) Controller layer: IController / AbstractController (GrblController, FluidNCController, TinyGController, etc.) holds a Communicator and implements firmware semantics. Transport is fully decoupled from both the streaming protocol and the command dialect — swapping serial for TCP/WebSocket changes only the Connection implementation, everything above is unchanged.",
+
+  "bt_profile_type": "No dedicated Bluetooth code path. UGS treats Bluetooth exclusively as Bluetooth Classic SPP (RFCOMM) exposed by the operating system as a virtual serial COM port, then opened through the ordinary JSerialComm serial driver. BLE (GATT / Nordic UART Service) is NOT supported. Consequence for ArctZ: UGS offers no reusable BLE design — ArctZ's BLE-to-FluidNC path must be designed independently.",
+
+  "esp32_variant_support": "[uncertain] Not a property of UGS itself — UGS only sees a virtual serial port. Whether SPP is available depends on the ESP32 variant and firmware, not the sender (Classic ESP32 WROOM/WROVER support BT Classic SPP; S3/C3/C6/H2 are BLE-only). UGS cannot use BLE-only parts over Bluetooth at all.",
+
+  "radio_coexistence": "[uncertain] Firmware/hardware concern outside UGS's scope. UGS connects over whichever single link the OS presents (serial COM, TCP, or WebSocket) and has no logic relating to simultaneous WiFi+BT operation on the controller.",
+
+  "firmware_build_variant": "[uncertain] Firmware-side concern, not handled by UGS. Enabling Bluetooth or WiFi is a FluidNC/GRBL_ESP32 firmware configuration matter; UGS simply opens the resulting COM port or network socket.",
+
+  "bt_mtu_packet_size": "[uncertain] Not applicable / not managed by UGS. Because Bluetooth is consumed as a serial (SPP) stream, there is no BLE MTU or GATT packet concept in UGS; G-code lines are streamed as a byte stream exactly as over USB serial, with framing handled by the character-counting buffer logic rather than by packet sizing.",
+
+  "bt_throughput": "[uncertain] No UGS-specific Bluetooth throughput figures. Over an SPP virtual COM port throughput is governed by the OS Bluetooth stack and controller, not by UGS; no benchmarks published by the project.",
+
+  "bt_reconnect_behavior": "No Bluetooth-specific reconnect handling — a BT link is just a serial port to UGS. If the SPP COM port drops, it surfaces as a generic serial disconnect; the controller transitions to a disconnected state and any active file stream stops (the two internal command queues are cleared on disconnect). There is a ConnectionWatchTimer that detects a lost connection, but there is no automatic mid-job resume of a partially streamed file. Machine-side feed-hold/alarm on link loss is a firmware behavior, not something UGS orchestrates. [uncertain] on exact firmware feed-hold interaction.",
+
+  "bt_pairing_model": "OS-level pairing/bonding. The user pairs the device in the operating system's Bluetooth settings, which creates a virtual SPP serial port; UGS then simply selects that COM port from its serial port list. There is no in-app pairing, scanning, or bonding UI.",
+
+  "os_bt_api": "UGS is desktop-only and relies on JSerialComm's OS serial-port enumeration to find Bluetooth virtual COM ports (works on Windows; Linux/macOS rfcomm bindings vary). It does NOT use any native Bluetooth API — no Windows WinRT BLE, no Android BluetoothLeGatt, no iOS CoreBluetooth, no Web Bluetooth. Since UGS has no mobile or web build, none of the ArctZ target platform BT APIs are exercised by it. [uncertain] on reliability of BT COM enumeration per desktop OS.",
+
+  "streaming_strategy": "Character-counting buffered streaming (send-ahead), implemented in BufferedCommunicator. It keeps two java.util.concurrent.LinkedBlockingDeque queues: commandBuffer (queued, not yet sent) and activeCommandList (sent, awaiting 'ok'/error). streamCommands() sends as many commands as fit while CommUtils.checkRoomInBuffer(sentBufferSize, nextCommandString, getBufferSize()) is true and not paused, incrementing sentBufferSize by commandString.length()+1 per line. On each response, the head of activeCommandList is matched, marked done/error and popped, freeing buffer space and triggering another streamCommands() pass. This is the classic GRBL character-counting protocol (not naive line-by-line wait-for-ok, and not blind buffered send).",
+
+  "rx_buffer_handling": "Explicitly modeled. GrblCommunicator.getBufferSize() returns GrblUtils.GRBL_RX_BUFFER_SIZE = 128 bytes; sentBufferSize accounts for each line plus the trailing newline (+1). The abstract getBufferSize() is overridden per firmware, so FluidNC/TinyG/Smoothie communicators report their own RX buffer sizes. checkRoomInBuffer guarantees the controller's serial RX buffer never overflows.",
+
+  "command_queue_model": "Two-stage in-flight model rather than the fully separate feeder/sender pair of CNCjs, but conceptually similar: BufferedCommunicator holds commandBuffer (pending) + activeCommandList (in-flight awaiting ok). Regular G-code and jog G-code both flow through this same queue as normal buffered commands. A distinct path exists for real-time single-byte commands, which bypass both queues entirely (see realtime_bypass_path). Jog motion and file streaming therefore share one command queue but are separated in practice by mutual-exclusion checks in the controller/JogService.",
+
+  "realtime_bypass_path": "ICommunicator.sendByteImmediately(byte b) writes a single byte straight to the connection (connection.sendByteImmediately(b)), completely bypassing commandBuffer and activeCommandList and the character-count accounting. Used by GrblController for all GRBL 1.1 real-time bytes: status '?' (0x3F), feed-hold '!' , cyclestart/resume '~', soft-reset 0x18, safety-door 0x84, jog-cancel 0x85, and the feed/spindle/rapid override bytes (0x90+ from CMD_FEED_OVR_* etc. in GrblUtils). These are dispatched immediately regardless of buffer state, exactly the mechanism ArctZ needs for responsive joystick/e-stop control.",
+
+  "jog_mode_types": "Both incremental/step jog and continuous (hold-to-move) jog. Step jog: JogService.adjustManualLocation / adjustManualLocationXY/Z/ABC send a discrete '$J=' jog G-code of a fixed step size. Continuous jog: utils/ContinuousJogWorker sends a stream of small '$J=' jog commands at a fixed interval while a key/button is held, sized to reach the configured jog feed rate, and stops (jog-cancel) on release. Absolute vs relative jog is handled by GRBL 1.1 '$J=' distance-mode words.",
+
+  "jog_cancel_mechanism": "GrblController.cancelJog() sends the 0x85 jog-cancel real-time byte via sendByteImmediately (GrblUtils.GRBL_JOG_CANCEL_COMMAND = 0x85), used automatically only when a GRBL version supporting 1.1 jogging is detected. ContinuousJogWorker tracks a jogCanceled boolean and stops queuing further jog moves on release. Because GRBL 1.1 '$J=' motions are cancellable and auto-purged by 0x85, the design guards against runaway, but historically UGS had 'stuck/continuous jog after key release' issues (GitHub issues #1494, #939, #1600) when too many jog commands were pre-enqueued or a key-up was missed — a direct cautionary lesson for ArctZ's VirtualJoystick keyup handling. [uncertain] on current-version residual edge cases.",
+
+  "mode_mutual_exclusion": "Jogging is gated by controller/communicator state: JogService checks the machine can jog (idle/jog state) before issuing '$J=', and file streaming vs manual jog are not allowed to interleave — attempting to jog while a program runs is blocked at the service level, and GRBL itself rejects out-of-state jog with an error. [uncertain] on the exact set of states permitting jog across all firmware controllers.",
+
+  "jog_latency_budget": "Explicitly reasoned about in ContinuousJogWorker: it assumes the round-trip latency from sending a '$J=' jog command to receiving 'ok' is under ~10ms (typically 1-7ms over USB serial) and that the machine can accelerate to full jog feed within one command, then sizes each incremental jog move to a fixed JOG_COMMAND_INTERVAL so held-jog stays smooth without over-filling the planner buffer. This budget is calibrated for low-latency USB serial; higher-latency BLE/WiFi links (ArctZ's case) would need a larger interval / bigger per-command distance to avoid stutter or buffer starvation.",
+
+  "status_report_format": "Parses GRBL status reports of the form '<...>' (STATUS_PATTERN = /<.*>/), supporting both legacy 0.8 and 1.1 formats (isGrblStatusStringV1 checks '^<state|...>$'). Extracts machine state, MPos/WPos, and additional fields (feed, spindle, overrides, buffer, etc.) via GrblUtils regexes into a ControllerStatus with position, feed and other telemetry.",
+
+  "state_machine": "Machine state parsed from the status report state token (STATUS_STATE regex) into a ControllerState enum covering Idle, Run, Hold, Jog, Alarm, Door, Home, Check and Disconnected, plus a separate CommunicatorState for the transport/comm lifecycle. UI and services react to state transitions via UGSEvent listeners.",
+
+  "status_report_polling_model": "Active host-driven polling: StatusPollTimer periodically sends the '?' real-time byte at a configurable rate (GrblController.getStatusUpdateRate(), default on the order of ~200ms / 5Hz, user-adjustable). It is not push-based auto-reporting. Relevant to ArctZ: on a bandwidth-limited BLE channel this fixed-interval '?' polling competes with jog traffic, so the poll rate would need tuning.",
+
+  "coordinate_system_handling": "Supports work coordinate systems G54-G59 and distinguishes machine position (MPos) from work position (WPos) using the work-coordinate offset reported by GRBL; provides reset-to-zero (G10 L20 for GRBL 1.1, G92 fallback for 0.8) and per-axis zeroing.",
+
+  "ui_pattern": "Not MVVM. Event-driven / observer architecture: the headless ugs-core exposes a BackendAPI, and UIs subscribe to UGSEvent notifications (observer pattern). UGS Classic is plain Swing (roughly MVC with panels observing the backend); UGS Platform composes NetBeans Platform modules/TopComponents. Contrast with ArctZ's CommunityToolkit.Mvvm — UGS achieves the same UI/logic decoupling through the BackendAPI + event bus rather than through data-binding view-models.",
+
+  "comm_ui_separation": "Excellent — the clearest strength to emulate. All communication, streaming, parsing and state logic live in ugs-core behind BackendAPI, with zero UI dependency; this is proven by the existence of multiple independent front-ends over the same core (Classic Swing, Platform/NetBeans, ugs-fx JavaFX, and a headless ugs-cli). The core can be driven programmatically or from a terminal with no GUI, exactly the cross-platform-core / thin-head split ArctZ uses with its shared ArctZ project and per-platform heads.",
+
+  "alarm_codes": "Alarm states and codes are handled: GRBL alarm/error responses are parsed and surfaced (GrblUtils error/alarm handling), and FluidNCController fetches enumerated alarm and error code tables from the controller (GetAlarmCodesCommand, GetErrorCodesCommand) to present human-readable messages.",
+
+  "reconnect_logic": "A ConnectionWatchTimer monitors for a dropped link and flips the controller to disconnected; reconnection is generally user-initiated (reopen the port/socket). There is no automatic mid-job resume of a partially streamed program after a drop — a job interrupted by disconnect must be restarted (or manually resumed by hand-editing the queue). Adequate for USB serial; ArctZ's BLE case likely needs stronger auto-reconnect than UGS provides.",
+
+  "preview_rendering": "Yes — a 3D toolpath visualizer (OpenGL via JOGL) renders the loaded G-code and live tool position; the Platform edition adds a richer visualizer and a vector/G-code designer. Not a priority for ArctZ but confirms full-featured preview.",
+
+  "arc_modal_parsing": "Yes — the GcodeParser tracks modal state (motion mode, plane, units, distance mode, active WCS) and an ArcExpander converts G2/G3 arcs (and optional arc-to-line segmentation) for both the visualizer and for controllers/firmwares that need expanded arcs. Also supports processors like line-splitting and mesh/auto-level Z adjustment.",
+
+  "platform_support": "Desktop-only: Windows (x64), macOS (x64 and ARM64), Linux (x64, ARM, ARM64), all via the JVM (Java 17). No mobile (Android/iOS) and no browser/web build. This is the key divergence from ArctZ: UGS validates the shared-headless-core + multiple-front-end pattern, but ArctZ's Avalonia stack additionally targets Android/iOS/WASM, which UGS does not, so UGS provides no reference for mobile/web transport (BLE/Web Bluetooth) or touch UI.",
+
+  "config_access_model": "Firmware-settings abstraction (IFirmwareSettings) per controller. GRBL: reads/writes '$$'/'$x=val' numbered settings. FluidNC: full YAML config workflow — list/download/upload/delete config files on the controller flash (FluidNCFileService with ListFilesCommand, DownloadFileCommand, UploadFileCommand, DeleteFileCommand, Get/SetCurrentConfigFilename), plus '$' runtime settings. grblHAL is handled through the GRBL settings path.",
+
+  "max_concurrent_connections": "One active controller connection per backend/BackendAPI instance — a single Connection is opened at a time. Multiple simultaneous connections would require multiple backend instances. [uncertain] on any WebSocket-side limits imposed by the ESP32 WebUI.",
+
+  "supported_dialects": "GRBL (0.8 and 1.1), grblHAL, FluidNC, TinyG, g2core, and Smoothieware. Dialect is auto-detected from the welcome/greeting string (GrblUtils recognizes prefixes 'Grbl ', 'GrblHAL ', 'CarbideMotion ', 'gCarvin') and confirmed via build/version info ('$I' / build-info). FluidNC and grblHAL are recognized as GRBL-family and routed to their controllers (dedicated FluidNCController; grblHAL via GrblController with capability flags). A ControllerFactory instantiates the matching IController.",
+
+  "probing_support": "Yes — G38.x straight-probe is supported, and the Platform edition includes surface-scanning / auto-leveling (height-map) via G-code processors that offset Z from a probed mesh, plus corner/edge-finding probe workflows.",
+
+  "uncertain": [
+    "esp32_variant_support",
+    "radio_coexistence",
+    "firmware_build_variant",
+    "bt_mtu_packet_size",
+    "bt_throughput",
+    "bt_reconnect_behavior",
+    "os_bt_api",
+    "jog_cancel_mechanism",
+    "mode_mutual_exclusion",
+    "max_concurrent_connections"
+  ]
+}

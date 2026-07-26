@@ -1,0 +1,110 @@
+{
+  "name": "LightBurn",
+  "type": "sender",
+  "research_date": "2026-07-24",
+
+  "language_platform": "Native desktop application built in C++ on the Qt framework (cross-platform Qt, community-observed to be Qt Widgets-based). Distributed as native builds for Windows, macOS and Linux. Closed-source commercial product by LightBurn Software; it is both a vector layout/design editor AND a machine controller (sender) for laser cutters/engravers, with a secondary G-code/CNC mode. Because the source is not public, all internal-architecture fields below describe externally observable behavior only.",
+
+  "license": "Commercial, closed-source, paid perpetual-with-updates license (per-seat activation, license key + limited number of activations). NOT open source — no code is available to study or reuse, so it is only usable as a UX/behavior reference for ArctZ, never as a source of code or algorithms. Only external, black-box behavior can inform ArctZ.",
+
+  "repository": "None public. Closed-source proprietary software; no source repository. Product site: https://lightburnsoftware.com ; documentation: https://docs.lightburnsoftware.com ; community forum: https://forum.lightburnsoftware.com",
+
+  "maintenance_activity": "Actively developed and commercially maintained as of 2026 (regular paid point releases; the 1.7.x line was current through mid-2026, e.g. 1.7.08 referenced for the last supported Ubuntu builds). Frequent releases add device profiles and fix controller compatibility. Note: the vendor announced dropping some older-Linux/32-bit targets over time, but Windows/macOS/Linux desktop support remains active.",
+
+  "supported_transports": "For GRBL-family (G-code) devices LightBurn supports: (1) Serial/USB (COM port, default 115200 baud, optional DTR) — the primary and recommended path, including for FluidNC per its wiki; (2) Network — 'Ethernet/UDP' and 'WiFi/TCP' connection types selectable when creating a GRBL device manually, entering the controller IP/hostname and a network port (default 23, i.e. raw-TCP/telnet-style). Ruida/DSP controllers use their own UDP-over-Ethernet path. There is NO native Bluetooth transport and NO documented WebSocket transport for GRBL — Bluetooth-Classic devices are reached only if the OS exposes them as a virtual serial COM port. FluidNC's own docs steer users to Serial/USB (or a virtual COM bridge for WiFi).",
+
+  "transport_abstraction_maturity": "[uncertain] Internal architecture is closed and cannot be verified. Externally, LightBurn clearly has a device-profile abstraction: a device is created by choosing a controller family (GRBL, GRBL-M3, Smoothieware, Marlin, plus many DSP/laser profiles like Ruida, Trocen, TopWisdom, EZCad/galvo) and then a transport (Serial/USB vs Ethernet/UDP vs WiFi/TCP). This implies transport is selectable independently of the controller dialect for network-capable profiles, suggesting a reasonably decoupled transport layer — but whether the command/streaming protocol is cleanly separated from the UI is not observable and is assumed fused into the desktop app. Useful as a UX reference (device-type + transport picker flow), not as an architecture blueprint.",
+
+  "bt_profile_type": "[uncertain] No native Bluetooth (neither BLE/GATT/NUS nor Bluetooth-Classic SPP) support is exposed in LightBurn's connection UI. Any Bluetooth use is indirect: a Classic-SPP device paired at the OS level appears as a virtual serial COM port that LightBurn opens like any serial connection. Provides no reusable BLE design for ArctZ.",
+
+  "esp32_variant_support": "[uncertain] Not a property of the sender. LightBurn only sees a serial COM port or a TCP/UDP network endpoint; which ESP32 variant offers SPP vs BLE-only is a FluidNC firmware/hardware matter outside LightBurn's scope (Classic WROOM/WROVER = SPP-capable; S3/C3/C6/H2 = BLE-only, which LightBurn cannot use over Bluetooth at all since it has no BLE path).",
+
+  "radio_coexistence": "[uncertain] Firmware/hardware concern outside LightBurn's scope. LightBurn connects over a single chosen link (serial or one network socket) and has no logic about simultaneous WiFi+BT on the controller.",
+
+  "firmware_build_variant": "[uncertain] Firmware-side concern. Enabling BT/WiFi is a FluidNC configuration matter; LightBurn just opens the resulting COM port or network socket.",
+
+  "bt_mtu_packet_size": "[uncertain] Not applicable — LightBurn has no BLE path, so there is no GATT MTU concept. G-code is sent as a byte stream over serial or TCP/UDP; framing/flow-control for GRBL is handled by the character-counting buffered mode, not by packet sizing.",
+
+  "bt_throughput": "[uncertain] No Bluetooth throughput figures — LightBurn publishes no BT benchmarks and has no BT transport of its own.",
+
+  "bt_reconnect_behavior": "[uncertain] No Bluetooth-specific reconnect handling exists (no BT transport). Generic link loss surfaces as a 'Disconnected' state in the Laser window; the user reconnects manually via the connection control. On disconnect a running job is halted (the machine's own behavior on loss of stream governs whether it feed-holds or alarms). There is no documented automatic mid-job resume after a link drop for network/serial. Not a reference for robust BLE reconnection.",
+
+  "bt_pairing_model": "[uncertain] No in-app Bluetooth pairing/scanning/bonding. If Bluetooth is used at all it is via an OS-level paired Classic-SPP virtual COM port that the user selects like any serial port; there is no LightBurn-managed pairing model.",
+
+  "os_bt_api": "[uncertain] LightBurn uses no native Bluetooth API on any platform (no WinRT BLE, no CoreBluetooth, no Web Bluetooth — it is a desktop C++/Qt app with no mobile/web build). Controllers are reached only through serial (COM) or TCP/UDP sockets. None of ArctZ's mobile/web BT APIs are exercised by LightBurn.",
+
+  "streaming_strategy": "Two selectable G-code transfer modes for GRBL devices: 'Buffered' (default) and 'Synchronous'. Buffered is the standard GRBL character-counting / send-ahead protocol (keeps GRBL's ~128-byte RX buffer filled by tracking outstanding characters against incoming 'ok' responses) — faster and the recommended default. Synchronous is a stricter send-one-line/wait-for-'ok' send-response mode, offered as a fallback for controllers that stutter/stall/reset under buffered streaming. This mirrors the classic GRBL character-counting-vs-simple-send-response tradeoff; the buffered path is the direct behavioral analogue to what ArctZ's file streaming needs, with a synchronous fallback for flaky links.",
+
+  "rx_buffer_handling": "[uncertain] Buffered mode implements the GRBL character-counting scheme, which inherently assumes the GRBL ~128-byte serial RX buffer; exact constant and whether it is negotiated per-firmware is not observable in the closed source. The presence of a Synchronous fallback exists precisely because some controllers do not tolerate a fully filled 128-byte buffer, implying the buffer size is a fixed GRBL assumption rather than read from $I.",
+
+  "command_queue_model": "[uncertain] Internal queue structure is closed. Externally, LightBurn separates interactive/manual actions (jog, framing, homing, position moves from the Move panel and Console) from full job streaming (the 'Start'/'Send' of a laid-out job). Real-time controls (pause/stop, status) act immediately regardless of job progress. This is functionally a jog/console vs job-stream split from the user's perspective, but whether it is implemented as CNCjs-style separate feeder/sender queues is not verifiable.",
+
+  "realtime_bypass_path": "[uncertain] Not directly observable, but behavior confirms real-time GRBL bytes are used out-of-band: the Pause button issues feed-hold/resume, Stop issues a soft-reset (Ctrl-X / 0x18), status is polled with '?', and jog-cancel is used to stop continuous jog — all take effect immediately during streaming, implying these single-byte real-time commands bypass the buffered send queue (as GRBL requires). Confirms the concept ArctZ needs (immediate-dispatch e-stop/status path) but offers no implementation detail.",
+
+  "jog_mode_types": "Both step/incremental and continuous jog are provided via the Move window. Step jog moves a fixed configured distance per click; 'continuous jog' is an explicitly enable-able mode (hold-to-move / press-and-move) that keeps the axis moving while the control is held. For GRBL devices these are emitted as GRBL 1.1 '$J=' jog commands. There is no absolute-position 'jog' beyond typed 'Go to position' moves in the Move panel.",
+
+  "jog_cancel_mechanism": "[uncertain] Continuous jog is stopped when the user releases/toggles the control; for GRBL this is expected to use the 1.1 real-time jog-cancel byte (0x85), but the exact mechanism and any runaway-protection (e.g. bounding the jog distance to soft limits, or timeout on lost key-up) are not observable in the closed source. Community reports of 'continuous jog runs on' issues on high-latency links suggest the cancel is round-trip-dependent — a cautionary point for ArctZ's VirtualJoystick over BLE/WiFi.",
+
+  "mode_mutual_exclusion": "[uncertain] Jog/manual controls are effectively disabled or ignored while a job is streaming (and vice-versa the machine must be idle to jog); GRBL itself rejects out-of-state '$J=' with an error, so the firmware provides the real interlock. Exact software gating is not verifiable.",
+
+  "jog_latency_budget": "[uncertain] No published latency budget or minimum jog send-interval. Continuous jog relies on real-time cancel round-trips; on high-latency network/virtual-COM links users report jog lag and overshoot, but no measured figures are documented.",
+
+  "status_report_format": "[uncertain] Parses standard GRBL 1.1 '<...>' status reports (state token plus MPos/WPos, feed and, for lasers, spindle/laser power 'S' value); machine and work coordinates are shown in the Move window and coordinate readout. Exact parser internals are closed. The Console panel shows the raw controller welcome/version string on connect (used to confirm FluidNC/GRBL version).",
+
+  "state_machine": "[uncertain] Reflects the standard GRBL state set (Idle/Run/Hold/Jog/Alarm/Home/Door/Check) derived from the '<...>' status token — the UI enables/disables controls and shows the current machine state — but the internal state model is not observable.",
+
+  "status_report_polling_model": "[uncertain] Host-driven active polling: LightBurn periodically sends the real-time '?' status query to update position/state (typical of GRBL senders), rather than relying on firmware auto-push. Exact interval and whether it is throttled per outstanding report is not documented; on bandwidth-limited network/BT links this polling competes with jog/stream traffic (a known tuning concern for ArctZ).",
+
+  "coordinate_system_handling": "[uncertain] Supports GRBL work-coordinate offsets and 'set origin / user origin' workflows and distinguishes machine vs work position in the Move panel; typical laser use centers on a single WCS (often G54) with a user-set job origin. Detailed G54-G59 handling is not a prominent, documented feature and internals are closed.",
+
+  "ui_pattern": "[uncertain] Qt-based desktop GUI (community-observed Qt Widgets). Internal pattern (MVVM/MVC) is not public. It is a monolithic desktop design+control application, not structured like ArctZ's CommunityToolkit.Mvvm view-model layering as far as can be observed. Value to ArctZ is as a UX/interaction reference (device setup flow, Move/jog panel, Console, framing, buffered vs synchronous option) rather than an architectural one.",
+
+  "comm_ui_separation": "[uncertain] Not observable — closed source. There is no headless/core distribution; LightBurn ships only as the full GUI application, so no evidence of a reusable comm core separated from the UI. Treat as a black box.",
+
+  "alarm_codes": "[uncertain] Surfaces GRBL alarm/error states via the Console (raw 'ALARM:n' / 'error:n' text) and a general disabled/alarm UI state; recovery is user-driven via Console commands ($X unlock, $H home, or reset). LightBurn's Console/troubleshooting docs help interpret common GRBL errors, but a rich enumerated alarm-to-description table is not a documented core feature; internals are closed.",
+
+  "reconnect_logic": "[uncertain] Minimal/observable only: a lost link shows 'Disconnected'; reconnection is user-initiated (or via re-selecting the port/device). No documented automatic reconnect timer and no mid-job resume after a drop. Adequate for stable USB, not a model for ArctZ's flaky-BLE resilience.",
+
+  "preview_rendering": "Yes — a 2D job Preview (simulated laser run over the laid-out design, with time estimate and playback scrubbing) plus the main 2D design/layout canvas. It is a full vector layout editor, so the 'toolpath' is the designed geometry itself. There is no 3D CNC-toolpath visualizer (LightBurn is laser/2D-oriented, not a 3D milling previewer).",
+
+  "arc_modal_parsing": "[uncertain] As a design-driven tool, LightBurn generates G-code (including arcs) from its own vector geometry rather than primarily parsing external G-code for preview; imported G-code handling exists but arc/modal-state parsing internals are not documented and are closed source.",
+
+  "platform_support": "Desktop only: Windows (10+), macOS (10.13+) and Linux (Ubuntu-based, through the supported versions of the 1.7.x line). NO mobile (Android/iOS) build and NO browser/web build. This is a key divergence from ArctZ's Avalonia stack (which additionally targets Android/iOS/WASM): LightBurn offers no reference for mobile/web transport or touch-first UI, only a desktop model.",
+
+  "config_access_model": "GRBL-centric. LightBurn exposes GRBL '$$' numbered settings through an 'Edit > Machine Settings' editor (read/write '$'-settings by name/number) and lets users type '$' commands in the Console. There is NO FluidNC YAML config upload/download workflow inside LightBurn (FluidNC YAML editing is done via FluidNC's own WebUI/serial), and no grblHAL-specific settings path — FluidNC/grblHAL are treated purely as GRBL-1.1-compatible '$'-settings controllers.",
+
+  "max_concurrent_connections": "One controller per configured device/connection at a time (single active machine connection). LightBurn supports multiple saved device profiles but drives one at a time.",
+
+  "supported_dialects": "Broad. G-code side: GRBL, GRBL-M3 (0.9/older laser mode), Smoothieware, Marlin — FluidNC and grblHAL are used via the GRBL profile (GRBL 1.1 compatibility), not as first-class distinct dialects; FluidNC's own docs recommend adding it as a GRBL device. Beyond G-code, LightBurn also drives proprietary DSP laser controllers (Ruida, Trocen/AWC, TopWisdom) and galvo/EZCad2 controllers via dedicated profiles. Dialect is chosen by the user at device-creation (profile selection), with the controller's welcome/version string shown in the Console for confirmation rather than fully automatic dialect detection.",
+
+  "probing_support": "[uncertain] Not a CNC-style G38.x probing / height-map autoleveling tool (LightBurn is laser-focused). It offers laser-oriented Z/focus helpers on supported hardware (e.g. material-thickness / focus offset, camera alignment) rather than a G38 probe + surface mesh workflow. No autoleveling height-map feature comparable to CNC senders like Candle/bCNC.",
+
+  "uncertain": [
+    "transport_abstraction_maturity",
+    "bt_profile_type",
+    "esp32_variant_support",
+    "radio_coexistence",
+    "firmware_build_variant",
+    "bt_mtu_packet_size",
+    "bt_throughput",
+    "bt_reconnect_behavior",
+    "bt_pairing_model",
+    "os_bt_api",
+    "rx_buffer_handling",
+    "command_queue_model",
+    "realtime_bypass_path",
+    "jog_cancel_mechanism",
+    "mode_mutual_exclusion",
+    "jog_latency_budget",
+    "status_report_format",
+    "state_machine",
+    "status_report_polling_model",
+    "coordinate_system_handling",
+    "ui_pattern",
+    "comm_ui_separation",
+    "alarm_codes",
+    "reconnect_logic",
+    "arc_modal_parsing",
+    "probing_support"
+  ]
+}

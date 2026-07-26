@@ -1,0 +1,93 @@
+{
+  "name": "Candle",
+  "type": "sender",
+  "research_date": "2026-07-24",
+
+  "language_platform": "C++ with the Qt framework (Qt Widgets, not QML/QtQuick). Uses QSerialPort, QTcpSocket and QWebSocket from Qt, QScriptEngine for in-command scripting, and OpenGL for the 3D visualizer. UI is built with Qt Designer (.ui forms). Desktop-class GUI application, no separate headless core.",
+
+  "license": "GPL-3.0 (GNU General Public License v3.0). Strong copyleft — safe to study for design patterns, but source cannot be copied into a MIT/closed ArctZ. The classic Candle codebase is a well-known lightweight reference for the GRBL character-counting streaming protocol.",
+
+  "repository": "https://github.com/Denvi/Candle (author Denis Hayrullin / 'Denvi'). Notable fork: https://github.com/Schildkroet/Candle2 (adds GRBL-Advanced support). SourceForge mirror: https://sourceforge.net/projects/candle.mirror/",
+
+  "maintenance_activity": "Active. GitHub API shows master pushed 2026-07-13, repo updated 2026-07-20, ~18 open issues. Recent tagged releases: v11.2 (2026-02-09), v10.12 (2025-12-27), v10.11.1 (2025-11-10), v10.10.4 (2025-10-04), plus a 'nightly' tag (2025-08-19). README lists current targets including Raspberry Pi OS (Trixie), confirming ongoing maintenance. The master branch has recently gained a network-transport abstraction absent from the older single-serial-port versions.",
+
+  "supported_transports": "Three transports in the current master: (1) Serial/USB via QSerialPort (SerialPortConnection); (2) Telnet / raw TCP via QTcpSocket (TelnetConnection, address+port) — the path to FluidNC/ESP32 over WiFi; (3) WebSocket via QWebSocket (WebSocketConnection, with a binary/text mode flag) — the path to the ESP32 WebUI websocket. Selected via a ConnectionType enum {SerialPort, Telnet, WebSocket}. No native Bluetooth stack. Note: classic/older Candle builds were serial-only; the Telnet/WebSocket connections are a newer addition to the connections/ layer.",
+
+  "transport_abstraction_maturity": "Partially mature — the transport layer is cleanly abstracted but the protocol/streaming layer is NOT separated from the UI. There is an abstract 'Connection' base class (src/candle/connections/connection.h) with a minimal, protocol-agnostic interface: connect()/disconnect()/isConnected()/send(QByteArray|QString|char*) plus Qt signals dataReceived(QString), errorOccurred(QString), connected(), disconnected(). Three concrete implementations (SerialPortConnection, TelnetConnection, WebSocketConnection) are interchangeable behind a single 'm_currentConnection' pointer, so swapping serial for TCP/WebSocket touches only which Connection is instantiated. HOWEVER all streaming, buffering, response parsing and state logic live in the ~6100-line frmMain UI class (frmmain.cpp) and call m_currentConnection->send() directly. So transport is decoupled from the rest, but the command/streaming protocol is fused into the main window — the opposite of the clean core/transport/protocol three-tier split ArctZ wants. Good reference for the Connection interface shape; poor reference for protocol reuse.",
+
+  "bt_profile_type": "No dedicated Bluetooth support of any kind. Candle has no BLE (GATT/Nordic UART) and no explicit Bluetooth Classic SPP code. The only way to use Bluetooth is if the OS exposes a Classic-SPP device as a virtual serial COM port, which Candle's SerialPortConnection would then open like any other serial port. Provides no reusable BLE design for ArctZ.",
+
+  "esp32_variant_support": "[uncertain] Not a property of the sender. Candle only sees a serial/TCP/WebSocket link; which ESP32 variant offers BT SPP vs BLE-only is a firmware/hardware matter outside Candle's scope (Classic WROOM/WROVER = SPP-capable; S3/C3/C6/H2 = BLE-only, which Candle cannot use over Bluetooth at all).",
+
+  "radio_coexistence": "[uncertain] Firmware/hardware concern outside Candle's scope. Candle connects over a single chosen link (serial, telnet/TCP, or websocket) and has no logic concerning simultaneous WiFi+BT on the controller.",
+
+  "firmware_build_variant": "[uncertain] Firmware-side concern. Enabling BT/WiFi is a FluidNC/GRBL_ESP32 configuration matter; Candle just opens the resulting COM port or network socket.",
+
+  "bt_mtu_packet_size": "[uncertain] Not applicable — Candle has no BLE path, so there is no GATT MTU concept. Data is sent as a byte stream via Connection::send(); framing/flow-control is done by the character-counting buffer accounting, not by packet sizing. Over a network transport, TCP/WebSocket handles segmentation.",
+
+  "bt_throughput": "[uncertain] No Bluetooth throughput figures — Candle publishes no BT benchmarks and has no BT transport of its own.",
+
+  "bt_reconnect_behavior": "[uncertain] No Bluetooth-specific reconnect handling exists. Generic link loss is surfaced by Connection::disconnected()/errorOccurred() signals; on soft-reset/disconnect Candle clears its in-flight command list and wait queue (m_commands.clear(); m_queue.clear()). Reconnection is user-initiated (reopen the connection); there is no automatic mid-job resume of a partially streamed file. Any machine-side feed-hold/alarm on link drop is firmware behavior, not orchestrated by Candle.",
+
+  "bt_pairing_model": "[uncertain] No in-app pairing/scanning/bonding. If Bluetooth is used at all it is via an OS-level paired Classic-SPP virtual COM port that the user selects like any serial port; there is no Candle-managed pairing model.",
+
+  "os_bt_api": "Candle uses no native Bluetooth API on any platform — no WinRT BLE, no Android BluetoothLeGatt, no iOS CoreBluetooth, no Web Bluetooth (Qt has QtBluetooth but Candle does not use it). It is desktop-only (Windows/Linux/macOS/RPi) and reaches a controller only through QSerialPort, QTcpSocket or QWebSocket. None of ArctZ's mobile/web BT APIs are exercised by Candle.",
+
+  "streaming_strategy": "Classic GRBL character-counting streaming (send-ahead), and Candle is one of the simplest readable references for it. Constant BUFFERLENGTH = 127 (frmmain.h). Two lists in frmMain: m_commands (QList<CommandAttributes> — commands already sent to GRBL, awaiting 'ok'/error) and m_queue (QList<CommandQueue> — commands that did not fit, waiting for room). bufferLength() sums the byte length of every in-flight command (each command's length is stored as command.length()+1 to count the trailing newline). sendCommand() appends to m_queue if (bufferLength() + command.length() + 1) > BUFFERLENGTH, otherwise appends to m_commands and calls m_currentConnection->send(). On each GRBL response the head of m_commands is popped with takeFirst(), freeing buffer space, and pending m_queue items / next file lines are pushed. sendNextFileCommands() loops while (bufferLength() + nextLen + 1) <= BUFFERLENGTH, streaming ahead. This is neither naive wait-for-ok nor blind buffered send — it is true character counting.",
+
+  "rx_buffer_handling": "Modeled with a single hard-coded constant: BUFFERLENGTH = 127 (one byte of safety margin under the GRBL 128-byte serial RX buffer). It is NOT negotiated or firmware-specific — every controller is assumed to have the GRBL 128-byte buffer. A source TODO ('Store firmware version, features, buffer size on $I command' / '[OPT:VL,15,128]') notes the intent to read the real buffer size from $I but this is not implemented, so FluidNC/grblHAL controllers with different RX buffer sizes are still driven with the fixed 127-byte assumption.",
+
+  "command_queue_model": "Single unified pipeline, NOT the separate feeder/sender pair of CNCjs. Everything flows through sendCommand(command, tableIndex, ...): file lines, UI commands, jog commands and utility commands all share the same two structures — m_commands (in-flight, sent, awaiting ok) and m_queue (overflow, not yet sent). The 'tableIndex' argument tags a command's origin (0..n = g-code program line, -1 = UI command, -2/-3 = utility/internal commands such as $#, $G, $$), which is used for routing response side-effects, but they are not physically separate queues. Jog and file streaming therefore compete for the same 127-byte budget. Real-time single bytes are the one exception (see realtime_bypass_path).",
+
+  "realtime_bypass_path": "Real-time single-byte commands are written straight to the transport via m_currentConnection->send(...), completely bypassing sendCommand(), m_commands, m_queue and the character-count accounting. Observed in source: status query send(\"?\") (onTimerStateQuery), feed-hold/resume send(checked ? \"!\" : \"~\"), soft-reset send(\"\\x18\") (0x18 / Ctrl+X, in grblReset()), and jog-cancel send(\"\\x85\") (0x85, in jogContinuous()). Because these go directly to the Connection, they are delivered regardless of buffer fullness — exactly the immediate-dispatch mechanism ArctZ needs for a responsive joystick and e-stop. (Override bytes 0x90+ are driven from the slider controls; the raw real-time bytes above are the clearest examples.)",
+
+  "jog_mode_types": "Two modes, both using the GRBL 1.1 '$J=' jog protocol with G91 relative distance and G20/G21 units, optionally including a 4th (A) axis. (1) Step/incremental jog: jogStep() sends one '$J=G21G91X..Y..Z..F..' of the fixed step selected in cboJogStep. (2) Continuous / hold-to-move jog: when the step combo value is 0, jogContinuous() computes the distance from the current machine position to the soft-limit boundary along the pressed direction and sends a single large '$J=' toward that bound; releasing or changing direction cancels it. There is no separate absolute-jog mode — all jogging is relative via G91.",
+
+  "jog_cancel_mechanism": "Uses the GRBL 1.1 real-time jog-cancel byte 0x85, sent as m_currentConnection->send(\"\\x85\"). In continuous mode, when the jog vector changes (direction change or release) jogContinuous() sends 0x85 and then BUSY-WAITS: 'while (m_deviceState == DeviceJog && t.elapsed() < 5000) qApp->processEvents();' — i.e. it spins the event loop up to 5 seconds until the machine reports it has left the Jog state before issuing the next jog. Runaway protection: because each continuous jog is pre-sized to stop exactly at the machine soft-limit boundary (bounds/soft-limit math in jogContinuous), a lost key-up still halts at the limit rather than running forever. The blocking 5s busy-wait for jog-cancel confirmation is a notable design smell and a direct cautionary lesson for ArctZ's VirtualJoystick: on a slow/high-latency link this wait can freeze the UI.",
+
+  "mode_mutual_exclusion": "[uncertain] There is no strong explicit lockout separating manual jog from file streaming — both use the same sendCommand pipeline and buffer. In practice jog is only meaningful in an idle/jog device state, and GRBL itself rejects out-of-state '$J=' with an error, so the firmware provides the real interlock rather than Candle enforcing a hard software mutex. Exact guarding of jog-while-running in the current source is not fully verified.",
+
+  "jog_latency_budget": "[uncertain] No explicit latency budget or minimum send-interval tuning. Continuous jog relies on the 0x85 jog-cancel plus the blocking wait (up to 5000ms) for the machine to leave the Jog state before the next jog is sent, rather than a rate-limited stream of small jogs. This design assumes a low-latency serial link; on a high-latency BLE/WiFi transport the round-trip for the jog-cancel confirmation lengthens and the busy-wait could visibly stall the UI. No measured numbers are provided.",
+
+  "status_report_format": "Parses GRBL 1.1 '<...>' status reports with QRegExp patterns. Machine position: mpx = 'MPos:([^,]*),([^,]*),([^,>|]*)(?:,([^,|]*))*' (supports X,Y,Z and optional 4th/A axis). Work position is derived from the work-coordinate offset: wpx = 'WCO:([^,]*),...' and WPos is computed as MPos - WCO (ui->txtWPosX = MPos - workOffset). Spindle speed and parser modal info are obtained separately from the '$G' report; feed/override values drive the slider controls.",
+
+  "state_machine": "DeviceState enum (frmmain.h) covering DeviceUnknown(-1), DeviceIdle(1), DeviceAlarm(2), DeviceRun(3), DeviceHome(4), DeviceHold0(5), DeviceHold1(6), DeviceQueue(7)-ish, DeviceCheck(8), DeviceDoor0..3, DeviceJog, DeviceSleep. The state token from each '<...>' status report sets m_deviceState, which drives control enable/disable, status-bar caption and color, and jog gating.",
+
+  "status_report_polling_model": "Active host-driven polling, not push. A QTimer (m_timerStateQuery) fires at the configured queryStateTime() interval and, when connected and ready, sends the real-time '?' byte. It is throttled by an m_statusReceived flag: onTimerStateQuery only sends the next '?' if the previous status has already been received (m_statusReceived reset to false on send, set true on report), preventing a backlog of queries. The interval is temporarily raised (e.g. 1000ms) in certain states. Relevant to ArctZ: on a bandwidth-limited BLE link this fixed-interval '?' polling competes with jog traffic and would need tuning.",
+
+  "coordinate_system_handling": "Supports work coordinate systems G54-G59: the active WCS is parsed from the '$G' parser-state report (QRegExp 'G5[4-9]') and stored in m_storedVars. Distinguishes machine coordinates (MPos, parsed directly) from work coordinates (WPos = MPos - WCO offset). Offsets are refreshed via the '$#' report (storeOffsetsVars), and '$#' is auto-requested after G92/G10 commands.",
+
+  "ui_pattern": "Not MVVM and not a clean MVC — a Qt Widgets application centered on a single ~6100-line frmMain god-object (the main window) built from a Qt Designer .ui form. Business logic, streaming protocol, response parsing, jog logic and widget updates are all methods of frmMain. This is the strongest divergence from ArctZ's CommunityToolkit.Mvvm view-model approach: there are no view-models and no data-binding layer, just direct widget manipulation from the form class.",
+
+  "comm_ui_separation": "Poor — a cautionary anti-pattern for ArctZ's reusable-core goal. Only the transport is separated (the Connection classes). All streaming/buffering, GRBL response handling, status parsing, state machine and jog logic live inside the frmMain UI class and directly manipulate widgets (ui->txtMPosX->setValue, ui->txtConsole->appendPlainText, etc.). There is no headless core that could be reused across platforms or driven without the GUI, unlike UGS's BackendAPI. ArctZ should emulate Candle's clean Connection interface but explicitly avoid Candle's fusion of protocol logic into the window class.",
+
+  "alarm_codes": "Alarm handling is basic/string-based, not an enumerated code table. DeviceAlarm is a state; 'floating' terminal messages are matched literally in dataIsFloating(): 'Reset to continue', \"'$H'|'$X' to unlock\", 'ALARM: Soft limit', 'ALARM: Hard limit', 'Check Door'. Recovery is via user-issued $X (unlock) / $H (home) / soft reset (Ctrl+X). No mapping of numeric ALARM:n / error:n codes to descriptions like UGS/FluidNC provide.",
+
+  "reconnect_logic": "Minimal. The Connection layer emits disconnected() and errorOccurred(QString) signals; on soft-reset or disconnect Candle clears its in-flight/queue lists (m_commands.clear(); m_queue.clear()) and resets sender/device state. Reconnection is user-initiated (reopen the connection). There is no automatic reconnect timer and no mid-job resume of a partially streamed program after a drop — an interrupted job must be restarted. Adequate for stable USB serial; insufficient for ArctZ's flaky-BLE case, which would need stronger auto-reconnect than Candle offers.",
+
+  "preview_rendering": "Yes — a full 3D OpenGL toolpath visualizer (glwVisualizer / GLWidget) renders the loaded G-code plus live tool position, buffer state and parser status overlay. Requires an OpenGL 2.0 GPU and SSE2 CPU per the README. A core, prominent feature of Candle.",
+
+  "arc_modal_parsing": "Yes — GcodeViewParse together with GcodePreprocessorUtils parse the program, tracking modal state and expanding G2/G3 arcs into segments for the visualizer; also used for height-map Z-offsetting of the program. Comment removal (GcodePreprocessorUtils::removeComment) is applied before command inspection.",
+
+  "platform_support": "Desktop only: Windows, Linux (Ubuntu), macOS, and Raspberry Pi OS (Trixie), all as native Qt Widgets builds. No mobile (Android/iOS) and no browser/web build. This is a key divergence from ArctZ, whose Avalonia stack additionally targets Android/iOS/WASM; Candle offers no reference for mobile/web transport or touch UI, and its Qt-Widgets-on-desktop model does not translate to ArctZ's cross-platform-core + thin-heads structure.",
+
+  "config_access_model": "GRBL-centric. Reads/writes GRBL '$$' numbered settings (processSettingsResponse parses the '$$' report, and settings are written as '$x=val'); reads offsets via '$#', parser modal state via '$G', and intends to read version/features via '$I' (partially TODO). There is no FluidNC YAML config-file upload/download workflow and no grblHAL-specific settings path — configuration is the classic GRBL '$'-settings model only.",
+
+  "max_concurrent_connections": "One. A single m_currentConnection is active at a time; Candle drives exactly one controller per application instance. No multi-connection support.",
+
+  "supported_dialects": "Primarily GRBL — v1.1 (current) and v0.9-and-below (legacy), per the README. There is no active welcome-string/dialect auto-detection routine (a TODO exists to store firmware version/features/buffer size from the '$I' [VER:]/[OPT:] response, e.g. '[VER:1.1d.20161014:...]', but it is not implemented). FluidNC and grblHAL work only insofar as they are GRBL-1.1-compatible; there is no FluidNC- or grblHAL-specific handling. The Candle2 fork extends dialect support to GRBL-Advanced.",
+
+  "probing_support": "Yes — G38.2 straight-probe is handled (PRB response parsed via QRegExp 'PRB:...' into probe coordinates), and Candle includes a height-map / auto-leveling mode (m_heightMapMode, a dedicated heightmap model and program-transform that offsets each line's Z from a probed surface mesh). A solid probing + surface-autolevel workflow.",
+
+  "uncertain": [
+    "esp32_variant_support",
+    "radio_coexistence",
+    "firmware_build_variant",
+    "bt_mtu_packet_size",
+    "bt_throughput",
+    "bt_reconnect_behavior",
+    "bt_pairing_model",
+    "mode_mutual_exclusion",
+    "jog_latency_budget"
+  ]
+}

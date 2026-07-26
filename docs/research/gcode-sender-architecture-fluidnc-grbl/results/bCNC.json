@@ -1,0 +1,73 @@
+{
+  "name": "bCNC",
+  "type": "sender",
+  "stack": "Python / Tkinter",
+  "note": "Advanced GRBL sender with character-counting buffer streaming, autoleveler and G-code editor",
+
+  "language_platform": "Python (Python 3; legacy Python 2 compatibility). GUI built on Tkinter (the standard-library widget toolkit). Single cross-platform desktop codebase; runs even on slow hardware such as Raspberry Pi.",
+  "license": "GPL-2.0 for the main application. The repository also bundles some third-party components under BSD-3 and MIT.",
+  "repository": "https://github.com/vlachoudis/bCNC",
+  "maintenance_activity": "Actively maintained rolling 'master' (no recent formal tagged releases; distributed as pip package 'bCNC'). Last push 2026-04-15, repo metadata updated 2026-07-23; ~2260 commits, ~513 open issues. Note: maintainers warn macOS support may be broken in current dev.",
+
+  "supported_transports": "Primary transport is serial/USB via pyserial. Because the port is opened with pyserial serial_for_url(), network URLs are also accepted transparently: socket://host:port, telnet://host:port and rfc2217:// — this is the only 'WiFi' path (raw TCP to a serial bridge), there is no dedicated WebSocket client. No native Bluetooth stack: BT works only if the OS exposes a Bluetooth-Classic SPP device as a virtual serial (COM/rfcomm) port. bCNC additionally runs its own HTTP 'pendant' server (default port 8080) for remote browser control, but that is a front-end to the desktop app, not a controller transport.",
+  "transport_abstraction_maturity": "Weak transport abstraction. The link is hardwired to a single pyserial handle (self.serial = serial.serial_for_url(...)) inside Sender.py; there is no dedicated pluggable ITransport interface decoupled from the streaming loop. bCNC's real abstraction line is at the PROTOCOL/DIALECT level (the Controllers/ plugin classes), not the transport level. serial_for_url gives free socket/telnet support but transport and protocol are not cleanly separated. For ArctZ this is only a partial reference: dialect-vs-protocol separation is good, transport-vs-protocol separation is not.",
+
+  "bt_profile_type": "[uncertain] No first-class Bluetooth support. Only reachable via Bluetooth Classic SPP (RFCOMM) that the OS presents as a virtual serial/COM port. BLE (GATT/Nordic UART Service) is NOT supported, because a BLE device cannot be surfaced as a serial port to pyserial. Inferred from architecture, not documented.",
+  "esp32_variant_support": "[uncertain] Not handled at the sender level — bCNC has no ESP32-specific Bluetooth code. If BT-SPP is used it implicitly requires classic-radio ESP32 (WROOM/WROVER); newer BLE-only parts (S3/C3/C6/H2) cannot present an SPP virtual COM port and would therefore not work over Bluetooth with bCNC.",
+  "radio_coexistence": "[uncertain] Out of scope for bCNC; WiFi/BT coexistence is a firmware/board concern, not managed by the sender.",
+  "firmware_build_variant": "[uncertain] Not managed by bCNC; whether a separate FluidNC firmware build/toggle is needed to enable BT is a firmware-side decision the sender is unaware of.",
+  "bt_mtu_packet_size": "[uncertain] Not handled or reported by bCNC. Its flow control is based on the assumed 128-byte GRBL RX buffer, not on a Bluetooth MTU; over an SPP virtual COM port the OS driver handles packetization/fragmentation transparently.",
+  "bt_throughput": "[uncertain] Not measured or documented. No BT-vs-USB/WiFi throughput figures exist because bCNC has no native BT path.",
+  "bt_reconnect_behavior": "[uncertain] No Bluetooth-specific reconnect handling. On any serial-link loss bCNC raises a pyserial exception, aborts the stream and reports an error; reconnection is a manual Open/Close by the user. There is no automatic reconnect and no automatic feed-hold-on-disconnect handshake, so a mid-stream drop leaves machine state undefined (classic GRBL keeps executing already-buffered lines). Behavior inferred from serial error handling.",
+  "bt_pairing_model": "[uncertain] Delegated entirely to the OS; bCNC only ever sees an already-paired virtual serial port. No in-app pairing/bonding UI or logic.",
+  "os_bt_api": "[uncertain] bCNC uses NO OS Bluetooth API (no Win32 BLE, Android, iOS CoreBluetooth, or Web Bluetooth). It depends solely on OS-level SPP-to-serial bridging. As a Tkinter desktop app it has no Android/iOS/web build, so mobile CoreBluetooth and Web Bluetooth are simply not applicable.",
+
+  "streaming_strategy": "Character-counting flow control (the advanced technique this project is known for). Constant RX_BUFFER_SIZE = 128; it keeps a running list `cline` of the byte length of each line already pushed into the controller's RX buffer, and only sends the next line while sum(cline) < RX_BUFFER_SIZE, popping an entry each time an 'ok'/'error' response arrives. This keeps the GRBL serial RX buffer as full as possible without overflowing — significantly faster than naive send-line/wait-for-ok. Current fill is exposed via _sumcline / getBufferFill().",
+  "rx_buffer_handling": "Fixed constant RX_BUFFER_SIZE = 128 bytes, matching classic AVR GRBL's serial RX buffer. It is NOT auto-negotiated per firmware, so on FluidNC/grblHAL (which have larger buffers) bCNC under-utilizes the buffer but remains safe. Status is polled on a SERIAL_POLL = 0.125 s (~8 Hz) timer.",
+
+  "command_queue_model": "Single unified outbound queue (self.queue) drained by one serial I/O thread; there is NO feeder/sender split as in CNCjs. Manual commands (jog, MDI) and file-stream lines share the same queue and the same character-counting loop. The only exception is real-time single-byte commands (see realtime_bypass_path).",
+  "realtime_bypass_path": "Real-time / immediate commands (?, !, ~, and immediate strings starting with $ ( @ {) are detected in executeGcode() and written straight to the serial port, outside the character-counting accounting, so a full RX buffer does not block them. However there is NO dedicated priority queue, and 0x18 soft-reset is a separate hardResetGrbl() path rather than a queued byte. So a bypass exists for status/hold/resume/reset, but it is not a clean generalized real-time byte channel (contrast with senders that maintain a separate realtime write path).",
+  "jog_mode_types": "[uncertain] Incremental/step jog (fixed X/Y/Z step buttons with selectable step size) and keyboard/arrow jogging are the main modes. Continuous hold-to-move historically issued discrete queued G0/G1 goto moves rather than GRBL 1.1's $J continuous-with-cancel jog; current master's $J adoption is unverified.",
+  "jog_cancel_mechanism": "[uncertain] Historically weak. GRBL 1.1's real-time jog cancel (0x85) was reported as not implemented (issue #510); jog used queued moves via mcontrol.goto(), which cannot be cancelled instantly — a feed hold (!) or soft reset (Ctrl-X) is the fallback to stop motion, which risks overshoot/runaway if a key-up event is lost. Whether newer master added $J+0x85 jog cancel is unconfirmed.",
+  "mode_mutual_exclusion": "[uncertain] While a file is streaming (self.running), executeGcode() suppresses most immediate/manual command injection, effectively serializing manual input behind the stream; only genuine real-time bytes pass. GRBL itself also rejects new motion commands with an error mid-cycle. Exact UI lockout details not fully verified.",
+  "jog_latency_budget": "[uncertain] No explicit jog latency budget or held-jog send-rate throttle designed for high-latency links; bCNC assumes a low-latency local serial connection. Status polling is fixed at SERIAL_POLL = 0.125 s. Over a laggy BT/WiFi link the queued-move jog model would accumulate lag and overshoot. Not documented.",
+
+  "status_report_format": "Parses GRBL status reports of the form <State|MPos:x,y,z|WPos:...|FS:feed,spindle|...> via the controller plugin (parseLine in _GenericGRBL / GRBL1). Extracts machine and work positions, feed and spindle. Both GRBL 0.9 and 1.1 report grammars are handled through the separate GRBL0 / GRBL1 dialect classes.",
+  "state_machine": "Tracks the GRBL-reported states Idle / Run / Hold / Jog / Alarm / Door / Check / Home / Sleep; the UI reflects the state (label/colour). State is taken directly from the status-report string rather than reconstructed independently.",
+  "status_report_polling_model": "Active polling: bCNC sends '?' on a timer (SERIAL_POLL = 0.125 s, ~8 Hz) rather than relying on firmware auto-push. A slower G_POLL = 10 s timer refreshes modal/state info when idle. This constant ~8 Hz poll rate would be relatively heavy for a BLE channel.",
+  "coordinate_system_handling": "Supports work coordinate systems G54–G59, displays and switches between machine (MPos) and work (WPos) coordinates, and sets WCS/zero offsets (e.g. G10 L20, G92).",
+
+  "ui_pattern": "Not MVVM/MVC. A Tkinter widget-based, event-driven procedural GUI organised around large god-classes (Sender, CNCCanvas, ribbon/page plugins). Logic and UI are intertwined; there is no data-binding layer comparable to CommunityToolkit.Mvvm.",
+  "comm_ui_separation": "Partial separation. The communication/streaming core lives in Sender.py plus the Controllers/ plugins and is logically distinct from the Tkinter widgets — the same core also backs the headless pendant HTTP server and the command line, proving some reusability. But there is no clean interface boundary: Sender is also the central app object and reaches back into GUI/state, so reusing the core outside Tkinter is possible yet not cleanly modularized. Moderate reference value for ArctZ's core-vs-head split.",
+
+  "alarm_codes": "Detects GRBL ALARM state and error/alarm messages from the response stream, maps numeric GRBL error/alarm codes to human-readable text, surfaces them to the user and halts streaming; offers unlock ($X) and soft-reset actions.",
+  "reconnect_logic": "Minimal. On serial errors the connection is closed and streaming aborts; reconnection is a manual Open/Close toggle. No automatic retry/backoff and no Bluetooth-specific recovery.",
+
+  "preview_rendering": "Yes — a rich 2D toolpath preview on a custom Tkinter Canvas (CNCCanvas) with pan/zoom and live tool-position marker, plus a separate OpenGL 3D viewer plugin.",
+  "arc_modal_parsing": "Full G-code interpreter (CNC.py) tracks modal state (motion G0/1/2/3, plane, units, active WCS) and tessellates arcs (G2/G3 via I/J or R) into line segments for both preview and the autoleveler/editor.",
+
+  "platform_support": "Desktop-only, from a single Python/Tkinter codebase: Windows, Linux, macOS (macOS flagged as possibly broken in current dev) and Raspberry Pi. There is NO native mobile (Android/iOS) or web application. 'Remote' access is provided by the built-in pendant HTTP server (port 8080) which serves a lightweight, mobile-friendly web UI proxied to the running desktop instance — a remote control surface, not a true cross-platform client. This contrasts sharply with ArctZ's Avalonia approach of shipping desktop + mobile + web heads from shared UI code.",
+
+  "config_access_model": "GRBL $$ settings model: reads and writes $$ number=value settings, presents them in an editable settings table, and issues $ commands. FluidNC's YAML config upload/edit is not a first-class feature (FluidNC is driven as a GRBL-1.1-compatible controller). grblHAL extended settings are surfaced generically.",
+  "max_concurrent_connections": "One controller serial connection at a time. The pendant HTTP server can serve several browser clients simultaneously, but they all funnel through the single controller link.",
+
+  "supported_dialects": "Controller-plugin abstraction in bCNC/controllers/: _GenericController (base), _GenericGRBL, GRBL0 (0.9), GRBL1 (1.1), SMOOTHIE (Smoothieware), G2Core (and historically TinyG). Classic GRBL and grblHAL (driven through the GRBL1 dialect) are the primary targets; FluidNC is used as a GRBL-1.1-compatible controller. The active dialect is chosen by the user in configuration; welcome-string/$I parsing informs identification rather than fully automatic switching.",
+
+  "probing_support": "Strong and a flagship feature. Native G38.2 probing plus a full autoleveler: probes a grid to build a height map and applies per-segment Z compensation to the toolpath. Also supports single-point/tool-length probing and camera-based alignment.",
+
+  "uncertain": [
+    "bt_profile_type",
+    "esp32_variant_support",
+    "radio_coexistence",
+    "firmware_build_variant",
+    "bt_mtu_packet_size",
+    "bt_throughput",
+    "bt_reconnect_behavior",
+    "bt_pairing_model",
+    "os_bt_api",
+    "jog_mode_types",
+    "jog_cancel_mechanism",
+    "mode_mutual_exclusion",
+    "jog_latency_budget"
+  ]
+}

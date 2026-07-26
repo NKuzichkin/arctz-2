@@ -1,0 +1,212 @@
+topic: "Программная архитектура G-code sender для FluidNC/GRBL"
+
+field_categories:
+  - category: basic_info
+    description: Базовая идентификация проекта
+    fields:
+      - name: language_platform
+        description: Язык и платформа/фреймворк реализации
+        detail_level: brief
+        required: true
+      - name: license
+        description: Лицензия (важно при потенциальном заимствовании кода/идей)
+        detail_level: brief
+        required: true
+      - name: repository
+        description: Ссылка на исходный код
+        detail_level: brief
+        required: true
+      - name: maintenance_activity
+        description: Активность поддержки (дата последнего релиза/коммита)
+        detail_level: brief
+        required: false
+
+  - category: transport_layer
+    description: Транспортные механизмы связи с контроллером
+    fields:
+      - name: supported_transports
+        description: serial/USB, WiFi-Telnet, WebSocket, Bluetooth — какие поддерживаются
+        detail_level: moderate
+        required: true
+      - name: transport_abstraction_maturity
+        description: Есть ли единый интерфейс транспорта, отделённый от протокола команд — прямой ориентир для архитектуры ArctZ
+        detail_level: detailed
+        required: true
+
+  - category: bluetooth_specifics
+    description: >
+      Углублённое поле по явному запросу — Bluetooth критичен для ArctZ как основной
+      целевой транспорт управления FluidNC.
+    fields:
+      - name: bt_profile_type
+        description: BLE (GATT/NUS) vs Bluetooth Classic SPP (RFCOMM)
+        detail_level: detailed
+        required: true
+      - name: esp32_variant_support
+        description: На каких вариантах ESP32 доступен BT-режим (WROOM/WROVER = SPP; S3/C3/C6/H2 = только BLE)
+        detail_level: detailed
+        required: false
+      - name: radio_coexistence
+        description: Могут ли WiFi и Bluetooth работать одновременно на одной плате
+        detail_level: moderate
+        required: false
+      - name: firmware_build_variant
+        description: Нужна ли отдельная сборка/переключение прошивки для включения BT
+        detail_level: moderate
+        required: false
+      - name: bt_mtu_packet_size
+        description: MTU/размер полезной нагрузки пакета, влияние на фрагментацию G-code строк
+        detail_level: moderate
+        required: false
+      - name: bt_throughput
+        description: Измеренная или заявленная пропускная способность в сравнении с USB/WiFi
+        detail_level: moderate
+        required: false
+      - name: bt_reconnect_behavior
+        description: Поведение при разрыве связи — автопереподключение, feed hold/alarm станка
+        detail_level: detailed
+        required: true
+      - name: bt_pairing_model
+        description: Механизм сопряжения (OS-level pairing/bonding vs программный коннект)
+        detail_level: moderate
+        required: false
+      - name: os_bt_api
+        description: Системный API на каждой платформе (Windows, Android, iOS CoreBluetooth, Web Bluetooth) — iOS не поддерживает SPP
+        detail_level: detailed
+        required: false
+
+  - category: streaming_protocol
+    description: Протокол потоковой передачи G-code
+    fields:
+      - name: streaming_strategy
+        description: Character-counting vs buffered vs simple send-response ожидание "ok"
+        detail_level: detailed
+        required: true
+      - name: rx_buffer_handling
+        description: Учёт размера RX-буфера контроллера (GRBL ~128 байт, FluidNC — иначе)
+        detail_level: moderate
+        required: false
+
+  - category: jogging_vs_file_streaming
+    description: >
+      Углублённое поле по явному запросу — разделение режимов ручного управления (joystick/jog)
+      и потоковой отправки файла, напрямую относится к VirtualJoystick в ArctZ.
+    fields:
+      - name: command_queue_model
+        description: Единая очередь vs раздельные очереди (модель feeder/sender из CNCjs)
+        detail_level: detailed
+        required: true
+      - name: realtime_bypass_path
+        description: Как real-time байты (?, !, ~, 0x18, 0x85, overrides) инжектируются в поток минуя буфер отправки
+        detail_level: detailed
+        required: true
+      - name: jog_mode_types
+        description: Непрерывный (hold-to-move) vs пошаговый (incremental) vs абсолютный jog
+        detail_level: moderate
+        required: false
+      - name: jog_cancel_mechanism
+        description: Реализация отмены jog (0x85) и защита от "убегания" станка при потере keyup-события
+        detail_level: detailed
+        required: false
+      - name: mode_mutual_exclusion
+        description: Блокировка jog во время файлового стриминга и наоборот (GRBL lockout error)
+        detail_level: moderate
+        required: false
+      - name: jog_latency_budget
+        description: Транспортная задержка jog-команд и минимальный интервал отправки при удержании (особенно по BLE/WiFi)
+        detail_level: detailed
+        required: false
+
+  - category: status_state_machine
+    description: Обработка статуса и состояния контроллера
+    fields:
+      - name: status_report_format
+        description: Формат status report и его парсинг (MPos/WPos, feed, spindle)
+        detail_level: moderate
+        required: false
+      - name: state_machine
+        description: Модель состояний Idle/Run/Hold/Alarm/Jog/Door
+        detail_level: moderate
+        required: false
+      - name: status_report_polling_model
+        description: Активный опрос "?" с интервалом vs авто-push статусов (влияет на нагрузку BLE-канала)
+        detail_level: moderate
+        required: false
+      - name: coordinate_system_handling
+        description: WCS G54-G59, работа с machine vs work coordinates
+        detail_level: brief
+        required: false
+
+  - category: ui_architecture
+    description: Архитектура пользовательского интерфейса
+    fields:
+      - name: ui_pattern
+        description: MVVM/MVC/другое, соответствие паттерну ArctZ (CommunityToolkit.Mvvm)
+        detail_level: moderate
+        required: false
+      - name: comm_ui_separation
+        description: Насколько слой связи отделён от UI (переиспользуемость ядра между платформами)
+        detail_level: detailed
+        required: false
+
+  - category: error_handling_recovery
+    description: Обработка ошибок и восстановление соединения
+    fields:
+      - name: alarm_codes
+        description: Обработка alarm-состояний контроллера
+        detail_level: brief
+        required: false
+      - name: reconnect_logic
+        description: Логика восстановления после разрыва связи (включая специфику BT — см. bt_reconnect_behavior)
+        detail_level: moderate
+        required: false
+
+  - category: visualization
+    description: Визуализация G-code (не приоритет для ArctZ, но полезно для полноты)
+    fields:
+      - name: preview_rendering
+        description: 2D/3D preview траектории
+        detail_level: brief
+        required: false
+      - name: arc_modal_parsing
+        description: Парсинг дуг и модальных состояний для превью
+        detail_level: brief
+        required: false
+
+  - category: cross_platform
+    description: Многоплатформенность реализации
+    fields:
+      - name: platform_support
+        description: Desktop/mobile/web поддержка общим кодом — прямое сравнение с Avalonia-подходом ArctZ
+        detail_level: detailed
+        required: true
+
+  - category: configuration_settings
+    description: Работа с настройками контроллера
+    fields:
+      - name: config_access_model
+        description: "$$/$Report (GRBL) vs YAML upload (FluidNC) vs $ settings (grblHAL)"
+        detail_level: moderate
+        required: false
+      - name: max_concurrent_connections
+        description: Ограничение одновременных соединений (актуально для WebSocket/ESP32 WebUI)
+        detail_level: brief
+        required: false
+
+  - category: firmware_dialect_support
+    description: Поддержка диалектов прошивок
+    fields:
+      - name: supported_dialects
+        description: "GRBL 1.1 / FluidNC / grblHAL / другие, и как определяется диалект (welcome string, $I)"
+        detail_level: moderate
+        required: false
+
+  - category: probing_workflow
+    description: Поддержка пробирования/автовыравнивания
+    fields:
+      - name: probing_support
+        description: G38.x, height-map/autoleveling
+        detail_level: brief
+        required: false
+
+uncertain: []

@@ -1,0 +1,100 @@
+topic: "Программная архитектура G-code sender для FluidNC/GRBL"
+context: >
+  Исследование для проекта ArctZ (Avalonia .NET, кроссплатформенный клон Edelkrone JibONE).
+  Цель — собрать архитектурные паттерны существующих G-code sender'ов для проектирования
+  собственного слоя связи/стриминга с прошивкой FluidNC, с приоритетом на Bluetooth-транспорт
+  и чёткое разделение real-time jogging и файлового стриминга G-code.
+
+items:
+  - name: Universal Gcode Sender (UGS)
+    type: sender
+    stack: Java (Swing / NetBeans Platform)
+    notes: Самый известный open-source sender для GRBL; две редакции (Classic/Platform).
+
+  - name: CNCjs
+    type: sender
+    stack: Node.js/Express + React (web)
+    notes: >
+      Эталон разделения очередей feeder (ручные/real-time команды) vs sender
+      (потоковая отправка файла) — ключевой референс для аспекта Jogging vs File streaming.
+
+  - name: bCNC
+    type: sender
+    stack: Python/Tkinter
+    notes: Продвинутая обработка буфера отправки для GRBL.
+
+  - name: gSender
+    type: sender
+    stack: Electron (JS)
+    vendor: Sienci Labs
+    notes: Современный форк идей CNCjs; известные баги continuous-jogging по клавиатуре (issue #545).
+
+  - name: Candle
+    type: sender
+    stack: C++/Qt
+    notes: Лёгкий референс character-counting протокола.
+
+  - name: OpenBuilds CONTROL
+    type: sender
+    stack: Electron (JS)
+    notes: ""
+
+  - name: ESP3D-WebUI (FluidNC WebUI)
+    type: sender / firmware-embedded-client
+    stack: JS (встроен в прошивку ESP32)
+    repo: luc-github/ESP3D-WEBUI
+    notes: >
+      "Родной" клиент FluidNC/Grbl_ESP32/grblHAL. WebSocket/HTTP протокол,
+      лимит ~5 одновременных соединений, минимизация под flash ESP32.
+
+  - name: ChiliPeppr
+    type: sender
+    stack: браузерный, плагинная архитектура workspace
+    notes: ""
+
+  - name: grblHAL
+    type: firmware
+    stack: "C (32-bit MCU: STM32, RP2040, ESP32, Teensy)"
+    notes: >
+      32-битный "конкурирующий наследник" GRBL 1.1f с открытой plugin-архитектурой
+      (сетевые плагины Telnet/WebSocket/FTP/HTTP на LwIP). Важен как второй целевой диалект.
+
+  - name: ioSender
+    type: sender
+    stack: C#/WPF (Windows)
+    author: terjeio
+    notes: >
+      Эталонный sender для grblHAL, тот же стек (.NET), что и ArctZ — приоритетный
+      источник архитектурных паттернов (keyboard jogging, DRO, character-counting).
+
+  - name: LaserGRBL
+    type: sender
+    stack: C#/.NET (Windows)
+    notes: Простой character-counting, минимальный .NET-референс.
+
+  - name: Grbl-Plotter
+    type: sender
+    stack: C#/.NET (Windows)
+    notes: Продвинутая 2D-визуализация и трансформация G-code.
+
+  - name: OpenCNCPilot
+    type: sender
+    stack: C#/WPF (Windows)
+    notes: Референс probing/height-map (autoleveling) workflow.
+
+  - name: Fluid-controller (gjkrediet)
+    type: pendant / mobile client
+    stack: ESP32 + Android/iOS приложение, Telnet/WiFi
+    notes: >
+      Прямой аналог задачи ArctZ — беспроводной пульт для FluidNC. Изучить транспортный
+      и UI-протокол.
+
+  - name: LightBurn
+    type: sender (commercial, closed-source)
+    detail_level: brief
+    notes: Референс UX для лазеров/FluidNC; закрытый исходный код — только внешнее поведение.
+
+execution:
+  batch_size: 5
+  items_per_agent: 1
+  output_dir: ./results
