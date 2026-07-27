@@ -70,8 +70,8 @@ public sealed class DeviceSession : IDeviceSession
 
         _eventQueue.Enqueue(() =>
         {
-            SetConnectionState(ConnectionState.Connected);
             _statusPoller.Start();
+            SetConnectionState(ConnectionState.Connected);
         });
     }
 
@@ -110,6 +110,14 @@ public sealed class DeviceSession : IDeviceSession
     public Task ResumeAsync(CancellationToken cancellationToken = default) =>
         _realtimeChannel.SendAsync(RealtimeCommand.CycleStartResume, cancellationToken);
 
+    /// <summary>
+    /// Fires ConnectionStateChanged synchronously, so a subscriber's
+    /// continuation (e.g. an awaiter on a TaskCompletionSource without
+    /// RunContinuationsAsynchronously) can resume inline before this call
+    /// returns. Call this last within an enqueued action, after any other
+    /// state a subscriber might read (e.g. _statusPoller having started)
+    /// is already in place.
+    /// </summary>
     private void SetConnectionState(ConnectionState state)
     {
         ConnectionState = state;
@@ -145,8 +153,8 @@ public sealed class DeviceSession : IDeviceSession
                     }
 
                     LastError = null;
-                    SetConnectionState(ConnectionState.Connected);
                     _statusPoller.Start();
+                    SetConnectionState(ConnectionState.Connected);
                 });
 
                 if (stale)
