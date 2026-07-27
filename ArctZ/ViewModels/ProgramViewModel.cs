@@ -217,6 +217,9 @@ public partial class ProgramViewModel : ViewModelBase
     private bool _pausedForLinkLoss;
 
     [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(PlayCommand))]
+    [NotifyCanExecuteChangedFor(nameof(PauseCommand))]
+    [NotifyCanExecuteChangedFor(nameof(StopCommand))]
     private PlaybackState _playbackState = PlaybackState.Idle;
 
     [ObservableProperty]
@@ -251,7 +254,18 @@ public partial class ProgramViewModel : ViewModelBase
             PlaybackState = PlaybackState.Faulted;
         }
         // ConnectionState.Connected after Reconnecting: stays Paused — resuming is an explicit user action.
+
+        PlayCommand.NotifyCanExecuteChanged();
     }
+
+    private bool CanPlay() =>
+        Connection.Session is not null &&
+        PlaybackState != PlaybackState.Running &&
+        (PlaybackState != PlaybackState.Paused || !_pausedForLinkLoss || Connection.Session.ConnectionState == ConnectionState.Connected);
+
+    private bool CanPause() => PlaybackState == PlaybackState.Running && Connection.Session is not null;
+
+    private bool CanStop() => PlaybackState is PlaybackState.Running or PlaybackState.Paused;
 
     private JibProgram BuildProgram()
     {
@@ -261,10 +275,10 @@ public partial class ProgramViewModel : ViewModelBase
         return program;
     }
 
-    [RelayCommand(AllowConcurrentExecutions = true)]
+    [RelayCommand(AllowConcurrentExecutions = true, CanExecute = nameof(CanPlay))]
     private async Task PlayAsync()
     {
-        if (Connection.Session is null || PlaybackState == PlaybackState.Running)
+        if (!CanPlay())
         {
             return;
         }
@@ -273,7 +287,7 @@ public partial class ProgramViewModel : ViewModelBase
         {
             _pausedForLinkLoss = false;
             PlaybackState = PlaybackState.Running;
-            if (Connection.Session.ConnectionState == ConnectionState.Connected)
+            if (Connection.Session!.ConnectionState == ConnectionState.Connected)
             {
                 await Connection.Session.ResumeAsync().ConfigureAwait(false);
             }
@@ -296,7 +310,7 @@ public partial class ProgramViewModel : ViewModelBase
         for (var i = 0; i < steps.Count; i++)
         {
             var line = ((GCodeLineCommand)steps[i].Command).Line;
-            dispatched[i] = (steps[i], Connection.Session.SendGCodeAsync(line));
+            dispatched[i] = (steps[i], Connection.Session!.SendGCodeAsync(line));
         }
 
         foreach (var (step, completion) in dispatched)
@@ -325,21 +339,26 @@ public partial class ProgramViewModel : ViewModelBase
         }
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanPause))]
     private Task PauseAsync()
     {
-        if (PlaybackState != PlaybackState.Running || Connection.Session is null)
+        if (!CanPause())
         {
             return Task.CompletedTask;
         }
 
         PlaybackState = PlaybackState.Paused;
-        return Connection.Session.FeedHoldAsync();
+        return Connection.Session!.FeedHoldAsync();
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanStop))]
     private Task StopAsync()
     {
+        if (!CanStop())
+        {
+            return Task.CompletedTask;
+        }
+
         PlaybackState = PlaybackState.Stopped;
         CurrentSegmentIndex = null;
         SegmentProgress = 0;

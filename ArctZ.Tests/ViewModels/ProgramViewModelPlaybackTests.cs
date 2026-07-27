@@ -125,4 +125,26 @@ public class ProgramViewModelPlaybackTests
 
         Assert.Equal(PlaybackState.Faulted, vm.PlaybackState);
     }
+
+    [Fact]
+    public async Task PlayWhileReconnecting_IsIgnored_AndFaultedStillFiresOnceExhausted()
+    {
+        var vm = CreateViewModel(out var transport);
+        await vm.Connection.ConnectCommand.ExecuteAsync(null);
+        SeedTwoSegmentProgram(vm, transport);
+        transport.ConnectFailuresRemaining = 10;
+
+        _ = vm.PlayCommand.ExecuteAsync(null);
+        transport.SimulateDisconnect();
+        Assert.Equal(PlaybackState.Paused, vm.PlaybackState);
+        var sentLinesWhileReconnecting = transport.SentLines.Count;
+
+        await vm.PlayCommand.ExecuteAsync(null); // ignored: still Reconnecting, not actually back
+        Assert.Equal(PlaybackState.Paused, vm.PlaybackState);
+        Assert.Equal(sentLinesWhileReconnecting, transport.SentLines.Count);
+
+        await WaitUntilAsync(() => vm.PlaybackState == PlaybackState.Faulted, TimeSpan.FromSeconds(3));
+
+        Assert.Equal(PlaybackState.Faulted, vm.PlaybackState);
+    }
 }
