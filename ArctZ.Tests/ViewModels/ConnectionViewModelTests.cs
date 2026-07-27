@@ -46,7 +46,7 @@ public class ConnectionViewModelTests
     }
 
     [Fact]
-    public async Task DisconnectCommand_DisconnectsActiveSession()
+    public async Task DisconnectCommand_DisconnectsActiveSessionAndClearsIt()
     {
         var realTransport = new FakeDeviceTransport();
         var vm = new ConnectionViewModel(realTransport, () => new FakeDeviceTransport(), new DeviceSessionFactory(MachineLimits.Default));
@@ -55,6 +55,39 @@ public class ConnectionViewModelTests
         await vm.DisconnectCommand.ExecuteAsync(null);
 
         Assert.False(realTransport.IsConnected);
-        Assert.Equal(ConnectionState.Disconnected, vm.Session!.ConnectionState);
+        Assert.Null(vm.Session);
+    }
+
+    [Fact]
+    public async Task ConnectCommand_WhileAlreadyConnected_DisconnectsPreviousSessionBeforeCreatingNewOne()
+    {
+        var realTransport = new FakeDeviceTransport();
+        var vm = new ConnectionViewModel(realTransport, () => new FakeDeviceTransport(), new DeviceSessionFactory(MachineLimits.Default));
+        await vm.ConnectCommand.ExecuteAsync(null);
+        var firstSession = vm.Session;
+
+        await vm.ConnectCommand.ExecuteAsync(null);
+
+        Assert.NotNull(firstSession);
+        Assert.NotSame(firstSession, vm.Session);
+        Assert.Equal(ConnectionState.Disconnected, firstSession!.ConnectionState);
+        Assert.Equal(ConnectionState.Connected, vm.Session!.ConnectionState);
+        Assert.True(realTransport.IsConnected);
+    }
+
+    [Fact]
+    public async Task ConnectCommand_SwitchingEndpointWhileConnected_TearsDownTheRealTransportSession()
+    {
+        var realTransport = new FakeDeviceTransport();
+        var demoTransport = new FakeDeviceTransport();
+        var vm = new ConnectionViewModel(realTransport, () => demoTransport, new DeviceSessionFactory(MachineLimits.Default));
+        await vm.ConnectCommand.ExecuteAsync(null);
+
+        vm.SelectedEndpoint = vm.AvailableEndpoints.Single(e => e.Kind == ConnectionEndpointKind.Demo);
+        await vm.ConnectCommand.ExecuteAsync(null);
+
+        Assert.False(realTransport.IsConnected);
+        Assert.True(demoTransport.IsConnected);
+        Assert.Equal(ConnectionState.Connected, vm.Session!.ConnectionState);
     }
 }

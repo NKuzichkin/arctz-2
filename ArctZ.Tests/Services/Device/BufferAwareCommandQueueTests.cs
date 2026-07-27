@@ -130,6 +130,40 @@ public class BufferAwareCommandQueueTests
     }
 
     [Fact]
+    public async Task AbortPending_ResolvesPendingAsAbortedAndLeavesInFlightUntouched()
+    {
+        var transport = new FakeDeviceTransport();
+        var queue = new BufferAwareCommandQueue(transport);
+        queue.UpdateBufferCapacity(rxBytesAvailable: 10, plannerBlocksAvailable: 15);
+        var completed = new List<(GCodeLineCommand Command, CommandResult Result)>();
+        queue.CommandCompleted += (command, result) => completed.Add((command, result));
+
+        var inFlight = queue.EnqueueAsync(new GCodeLineCommand("G1 X1"));
+        var pendingB = queue.EnqueueAsync(new GCodeLineCommand("G1 X2"));
+        var pendingC = queue.EnqueueAsync(new GCodeLineCommand("G1 X3"));
+
+        Assert.Equal(new[] { "G1 X1" }, transport.SentLines);
+
+        queue.AbortPending();
+
+        Assert.Equal(CommandOutcome.Aborted, (await pendingB).Outcome);
+        Assert.Equal(CommandOutcome.Aborted, (await pendingC).Outcome);
+        Assert.False(inFlight.IsCompleted);
+
+        Assert.Equal(2, completed.Count);
+        Assert.Equal("G1 X2", completed[0].Command.Line);
+        Assert.Equal(CommandOutcome.Aborted, completed[0].Result.Outcome);
+        Assert.Equal("G1 X3", completed[1].Command.Line);
+        Assert.Equal(CommandOutcome.Aborted, completed[1].Result.Outcome);
+
+        // The aborted commands must never reach the controller, even once the in-flight one acks.
+        queue.HandleOk();
+
+        Assert.Equal(CommandOutcome.Acknowledged, (await inFlight).Outcome);
+        Assert.Equal(new[] { "G1 X1" }, transport.SentLines);
+    }
+
+    [Fact]
     public void Enqueue_ExclusiveDollarCommand_WaitsForQueueToDrainBeforeSending()
     {
         var transport = new FakeDeviceTransport();

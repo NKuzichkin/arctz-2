@@ -98,6 +98,8 @@ public sealed class DeviceSession : IDeviceSession
     public Task<CommandResult> SendGCodeAsync(string line, CancellationToken cancellationToken = default) =>
         _commandQueue.EnqueueAsync(new GCodeLineCommand(line), cancellationToken);
 
+    public void AbortPendingCommands() => _commandQueue.AbortPending();
+
     public Task<CommandResult> HomeAsync(CancellationToken cancellationToken = default) =>
         _commandQueue.EnqueueAsync(new GCodeLineCommand("$H"), cancellationToken);
 

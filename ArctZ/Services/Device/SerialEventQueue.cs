@@ -15,6 +15,14 @@ public sealed class SerialEventQueue : ISerialEventQueue
     private readonly Queue<Action> _queue = new();
     private bool _isDraining;
 
+    /// <summary>
+    /// Raised when an enqueued action throws. The exception is swallowed rather
+    /// than propagated: callers include System.Threading.Timer callbacks
+    /// (JogScheduler, StatusPoller) where an escaping exception crashes the
+    /// process and strands the rest of the queue.
+    /// </summary>
+    public event Action<Exception>? UnhandledException;
+
     public void Enqueue(Action action)
     {
         lock (_lock)
@@ -30,7 +38,15 @@ public sealed class SerialEventQueue : ISerialEventQueue
             {
                 while (_queue.Count > 0)
                 {
-                    _queue.Dequeue()();
+                    var next = _queue.Dequeue();
+                    try
+                    {
+                        next();
+                    }
+                    catch (Exception ex)
+                    {
+                        UnhandledException?.Invoke(ex);
+                    }
                 }
             }
             finally

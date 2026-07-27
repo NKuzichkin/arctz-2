@@ -11,6 +11,14 @@ namespace ArctZ.Services.Device.Simulation;
 /// same RX/planner buffer bookkeeping, same realtime-byte behavior, and a
 /// timed (not physically accurate) simulation of motion so Demo mode is
 /// usable without hardware.
+///
+/// All mutable state is guarded by <c>_lock</c>: in production three
+/// independent threads touch it — the caller of SendLineAsync, the motion
+/// ticker's timer thread (OnTick), and the status poller / jog scheduler
+/// timer threads (SendRawByteAsync). Following the BufferAwareCommandQueue
+/// idiom, any line to raise via LineReceived is built while holding the lock
+/// but the event is invoked only after the lock is released, so subscriber
+/// code never runs under the lock.
 /// </summary>
 public sealed class MockDeviceTransport : IDeviceTransport
 {
@@ -21,12 +29,14 @@ public sealed class MockDeviceTransport : IDeviceTransport
     private readonly IPeriodicTimer _motionTicker;
     private readonly TimeSpan _tickInterval;
     private readonly Queue<string> _pendingLines = new();
+    private readonly object _lock = new();
 
     private MachinePose _currentPose = MachinePose.Zero;
     private MachinePose? _targetPose;
     private double _feedUnitsPerMin = 1;
     private double _dwellSecondsRemaining;
     private bool _alarm;
+    private bool _held;
     private int _rxBytesInFlight;
     private int? _forcedErrorForNextDequeue;
 
@@ -62,21 +72,41 @@ public sealed class MockDeviceTransport : IDeviceTransport
 
     public Task SendLineAsync(string line, CancellationToken cancellationToken = default)
     {
-        _pendingLines.Enqueue(line);
-        _rxBytesInFlight += line.Length + 1;
+        lock (_lock)
+        {
+            _pendingLines.Enqueue(line);
+            _rxBytesInFlight += line.Length + 1;
+        }
+
         return Task.CompletedTask;
     }
 
     public Task SendRawByteAsync(byte value, CancellationToken cancellationToken = default)
     {
-        switch (value)
+        string? statusLine = null;
+
+        lock (_lock)
         {
-            case (byte)'?':
-                LineReceived?.Invoke(FormatStatusLine());
-                break;
-            case 0x85: // jog cancel
-                _targetPose = null;
-                break;
+            switch (value)
+            {
+                case (byte)'?':
+                    statusLine = FormatStatusLine();
+                    break;
+                case (byte)'!': // feed hold
+                    _held = true;
+                    break;
+                case (byte)'~': // cycle start / resume
+                    _held = false;
+                    break;
+                case 0x85: // jog cancel
+                    _targetPose = null;
+                    break;
+            }
+        }
+
+        if (statusLine is not null)
+        {
+            LineReceived?.Invoke(statusLine);
         }
 
         return Task.CompletedTask;
@@ -84,15 +114,26 @@ public sealed class MockDeviceTransport : IDeviceTransport
 
     private void OnTick()
     {
-        ProcessOnePendingLine();
-        AdvanceMotion();
+        string? lineToRaise;
+
+        lock (_lock)
+        {
+            lineToRaise = ProcessOnePendingLine();
+            AdvanceMotion();
+        }
+
+        if (lineToRaise is not null)
+        {
+            LineReceived?.Invoke(lineToRaise);
+        }
     }
 
-    private void ProcessOnePendingLine()
+    /// <summary>Caller must hold `_lock`. Returns the line to raise via LineReceived (after releasing the lock), or null.</summary>
+    private string? ProcessOnePendingLine()
     {
         if (_pendingLines.Count == 0)
         {
-            return;
+            return null;
         }
 
         var line = _pendingLines.Dequeue();
@@ -101,12 +142,11 @@ public sealed class MockDeviceTransport : IDeviceTransport
         if (_forcedErrorForNextDequeue is { } code)
         {
             _forcedErrorForNextDequeue = null;
-            LineReceived?.Invoke($"error:{code}");
-            return;
+            return $"error:{code}";
         }
 
         ApplyCommand(line);
-        LineReceived?.Invoke("ok");
+        return "ok";
     }
 
     private void ApplyCommand(string line)
@@ -162,6 +202,12 @@ public sealed class MockDeviceTransport : IDeviceTransport
 
     private void AdvanceMotion()
     {
+        if (_held)
+        {
+            // Feed hold: motion and the dwell countdown both freeze until '~' resumes.
+            return;
+        }
+
         var elapsedSeconds = _tickInterval.TotalSeconds;
 
         if (_dwellSecondsRemaining > 0)
@@ -210,6 +256,11 @@ public sealed class MockDeviceTransport : IDeviceTransport
         if (_alarm)
         {
             return MachineState.Alarm;
+        }
+
+        if (_held)
+        {
+            return MachineState.Hold;
         }
 
         if (_dwellSecondsRemaining > 0 || (_targetPose is { } target && target != _currentPose))

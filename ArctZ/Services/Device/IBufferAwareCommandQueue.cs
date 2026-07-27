@@ -28,4 +28,7 @@ public interface IBufferAwareCommandQueue
 
     /// <summary>Call when the transport receives an "error:N" line.</summary>
     void HandleError(int code);
+
+    /// <summary>Discards all not-yet-sent pending commands, resolving each as Aborted. Does not affect a command already in flight.</summary>
+    void AbortPending();
 }

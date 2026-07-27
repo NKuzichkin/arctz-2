@@ -59,7 +59,7 @@ public partial class ProgramViewModel : ViewModelBase
     private async Task RefreshLibraryAsync()
     {
         Library.Clear();
-        foreach (var summary in await _storage.ListAsync().ConfigureAwait(false))
+        foreach (var summary in await _storage.ListAsync())
         {
             Library.Add(summary);
         }
@@ -78,7 +78,7 @@ public partial class ProgramViewModel : ViewModelBase
     [RelayCommand]
     private async Task LoadProgramAsync(ProgramSummary summary)
     {
-        var program = await _storage.LoadAsync(summary.Id).ConfigureAwait(false);
+        var program = await _storage.LoadAsync(summary.Id);
 
         ProgramId = program.Id;
         ProgramName = program.Name;
@@ -105,9 +105,9 @@ public partial class ProgramViewModel : ViewModelBase
         program.Waypoints.AddRange(Waypoints);
         program.Transitions.AddRange(Transitions);
 
-        await _storage.SaveAsync(program).ConfigureAwait(false);
+        await _storage.SaveAsync(program);
         ProgramId = program.Id;
-        await RefreshLibraryAsync().ConfigureAwait(false);
+        await RefreshLibraryAsync();
     }
 
     [RelayCommand]
@@ -237,11 +237,25 @@ public partial class ProgramViewModel : ViewModelBase
     [ObservableProperty]
     private int? _faultedAtSegmentIndex;
 
+    private IDeviceSession? _subscribedSession;
+
     private void OnConnectionPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(ConnectionViewModel.Session) && Connection.Session is not null)
+        if (e.PropertyName != nameof(ConnectionViewModel.Session))
         {
-            Connection.Session.ConnectionStateChanged += OnSessionConnectionStateChanged;
+            return;
+        }
+
+        if (_subscribedSession is not null)
+        {
+            _subscribedSession.ConnectionStateChanged -= OnSessionConnectionStateChanged;
+        }
+
+        _subscribedSession = Connection.Session;
+
+        if (_subscribedSession is not null)
+        {
+            _subscribedSession.ConnectionStateChanged += OnSessionConnectionStateChanged;
         }
     }
 
@@ -295,7 +309,7 @@ public partial class ProgramViewModel : ViewModelBase
             PlaybackState = PlaybackState.Running;
             if (Connection.Session!.ConnectionState == ConnectionState.Connected)
             {
-                await Connection.Session.ResumeAsync().ConfigureAwait(false);
+                await Connection.Session.ResumeAsync();
             }
 
             return;
@@ -321,7 +335,7 @@ public partial class ProgramViewModel : ViewModelBase
 
         foreach (var (step, completion) in dispatched)
         {
-            var result = await completion.ConfigureAwait(false);
+            var result = await completion;
 
             if (PlaybackState == PlaybackState.Stopped)
             {
@@ -368,6 +382,7 @@ public partial class ProgramViewModel : ViewModelBase
         PlaybackState = PlaybackState.Stopped;
         CurrentSegmentIndex = null;
         SegmentProgress = 0;
+        Connection.Session?.AbortPendingCommands();
         return Connection.Session?.FeedHoldAsync() ?? Task.CompletedTask;
     }
 }

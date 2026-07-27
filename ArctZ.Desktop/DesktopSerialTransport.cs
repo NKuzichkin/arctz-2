@@ -25,7 +25,23 @@ public sealed class DesktopSerialTransport : IDeviceTransport
 
     public Task ConnectAsync(string deviceId, CancellationToken cancellationToken = default)
     {
-        _port = new SerialPort(deviceId, 115200) { NewLine = "\n" };
+        // DeviceSession's reconnect loop calls ConnectAsync again without an
+        // intervening DisconnectAsync, so an already-open port would still hold
+        // the OS handle and make every reconnect attempt fail.
+        if (_port is not null)
+        {
+            _port.DataReceived -= OnDataReceived;
+            _port.ErrorReceived -= OnErrorReceived;
+            if (_port.IsOpen)
+            {
+                _port.Close();
+            }
+
+            _port.Dispose();
+            _port = null;
+        }
+
+        _port = new SerialPort(deviceId, 115200) { NewLine = "\n", ReadTimeout = 200 };
         _port.DataReceived += OnDataReceived;
         _port.ErrorReceived += OnErrorReceived;
         _port.Open();

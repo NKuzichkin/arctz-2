@@ -109,6 +109,30 @@ public class ProgramViewModelPlaybackTests
     }
 
     [Fact]
+    public async Task Stop_DiscardsQueuedButUnsentSteps_SoTheyAreNeverResentAfterTheInFlightAck()
+    {
+        var vm = CreateViewModel(out var transport);
+        await vm.Connection.ConnectCommand.ExecuteAsync(null);
+        SeedTwoSegmentProgram(vm, transport);
+
+        // Report an RX buffer that only fits one compiled line, so the second step
+        // stays pending in the queue instead of being sent straight away.
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|Bf:15,25|FS:0,0>");
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+        Assert.Equal(1, transport.SentLines.Count(l => l.StartsWith("G1", StringComparison.Ordinal)));
+
+        await vm.StopCommand.ExecuteAsync(null);
+        Assert.Equal(PlaybackState.Stopped, vm.PlaybackState);
+
+        transport.SimulateReceivedLine("ok"); // resolves the one command that was already in flight
+        await playTask;
+
+        // Without AbortPendingCommands the ack would have pumped the leftover step out to the controller.
+        Assert.Equal(1, transport.SentLines.Count(l => l.StartsWith("G1", StringComparison.Ordinal)));
+    }
+
+    [Fact]
     public async Task LinkLoss_DuringPlayback_PausesImmediatelyThenFaultsIfReconnectExhausted()
     {
         var vm = CreateViewModel(out var transport);

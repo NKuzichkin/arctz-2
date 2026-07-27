@@ -32,6 +32,9 @@ public interface IDeviceSession
 
     Task<CommandResult> SendGCodeAsync(string line, CancellationToken cancellationToken = default);
 
+    /// <summary>Discards all queued-but-not-yet-sent commands, resolving each as Aborted.</summary>
+    void AbortPendingCommands();
+
     Task<CommandResult> HomeAsync(CancellationToken cancellationToken = default);
 
     Task<CommandResult> ResetAlarmAsync(CancellationToken cancellationToken = default);

@@ -44,6 +44,17 @@ public partial class ConnectionViewModel : ViewModelBase
             return;
         }
 
+        // All platform heads register IDeviceTransport as a singleton, so a second
+        // session would wrap the same transport as the first: two LineReceived
+        // subscribers, two status pollers, two racing reconnect loops. Tear the
+        // previous session down first — this covers both reconnecting and
+        // switching endpoints while connected.
+        if (Session is not null)
+        {
+            await Session.DisconnectAsync();
+            Session = null;
+        }
+
         var transport = SelectedEndpoint.Kind == ConnectionEndpointKind.Demo
             ? _createDemoTransport()
             : _realTransport;
@@ -53,7 +64,14 @@ public partial class ConnectionViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private Task DisconnectAsync() => Session?.DisconnectAsync() ?? Task.CompletedTask;
+    private async Task DisconnectAsync()
+    {
+        if (Session is not null)
+        {
+            await Session.DisconnectAsync();
+            Session = null;
+        }
+    }
 
     [RelayCommand]
     private Task HomeAsync() => Session?.HomeAsync() ?? Task.CompletedTask;

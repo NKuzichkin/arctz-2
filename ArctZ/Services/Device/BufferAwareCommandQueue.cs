@@ -51,6 +51,21 @@ public sealed class BufferAwareCommandQueue : IBufferAwareCommandQueue
 
     public void HandleError(int code) => Complete(new CommandResult(CommandOutcome.Rejected, code), abortPending: true);
 
+    public void AbortPending()
+    {
+        List<(GCodeLineCommand Command, CommandResult Result)> toNotify;
+
+        lock (_lock)
+        {
+            toNotify = DrainPendingAsAborted();
+        }
+
+        foreach (var (command, result) in toNotify)
+        {
+            CommandCompleted?.Invoke(command, result);
+        }
+    }
+
     private void Complete(CommandResult inFlightResult, bool abortPending)
     {
         var toNotify = new List<(GCodeLineCommand Command, CommandResult Result)>();
@@ -74,13 +89,7 @@ public sealed class BufferAwareCommandQueue : IBufferAwareCommandQueue
 
             if (abortPending)
             {
-                while (_pending.Count > 0)
-                {
-                    var aborted = _pending.Dequeue();
-                    var abortedResult = new CommandResult(CommandOutcome.Aborted, null);
-                    aborted.Completion.SetResult(abortedResult);
-                    toNotify.Add((aborted.Command, abortedResult));
-                }
+                toNotify.AddRange(DrainPendingAsAborted());
             }
 
             Pump();
@@ -90,6 +99,22 @@ public sealed class BufferAwareCommandQueue : IBufferAwareCommandQueue
         {
             CommandCompleted?.Invoke(command, result);
         }
+    }
+
+    /// <summary>Caller must hold `_lock`. Resolves every pending (not-yet-sent) command as Aborted and returns them for notification after the lock is released.</summary>
+    private List<(GCodeLineCommand Command, CommandResult Result)> DrainPendingAsAborted()
+    {
+        var aborted = new List<(GCodeLineCommand Command, CommandResult Result)>();
+
+        while (_pending.Count > 0)
+        {
+            var entry = _pending.Dequeue();
+            var result = new CommandResult(CommandOutcome.Aborted, null);
+            entry.Completion.SetResult(result);
+            aborted.Add((entry.Command, result));
+        }
+
+        return aborted;
     }
 
     /// <summary>Caller must hold `_lock`.</summary>

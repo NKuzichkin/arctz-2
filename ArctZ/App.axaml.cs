@@ -23,6 +23,7 @@ namespace ArctZ
         public override void OnFrameworkInitializationCompleted()
         {
             var viewModel = Services!.GetRequiredService<ProgramViewModel>();
+            _ = viewModel.RefreshLibraryCommand.ExecuteAsync(null);
 
             if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {

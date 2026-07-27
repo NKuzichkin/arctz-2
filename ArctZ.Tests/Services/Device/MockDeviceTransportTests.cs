@@ -130,6 +130,44 @@ public class MockDeviceTransportTests
     }
 
     [Fact]
+    public async Task SendRawByteAsync_FeedHold_FreezesMotionAndReportsHold()
+    {
+        await _mock.ConnectAsync("demo");
+        await _mock.SendLineAsync("$J=G91 G21 X10 Y0 Z0 A0 F600");
+        _ticker.RaiseElapsed(); // ack + first 1-unit step
+
+        await _mock.SendRawByteAsync((byte)'!');
+        var atHold = QueryStatus();
+
+        _ticker.RaiseElapsed();
+        _ticker.RaiseElapsed();
+        _ticker.RaiseElapsed();
+        var afterHeldTicks = QueryStatus();
+
+        Assert.Equal(MachineState.Hold, afterHeldTicks.State);
+        Assert.Equal(atHold.WPos, afterHeldTicks.WPos);
+    }
+
+    [Fact]
+    public async Task SendRawByteAsync_ResumeAfterFeedHold_ResumesMotion()
+    {
+        await _mock.ConnectAsync("demo");
+        await _mock.SendLineAsync("$J=G91 G21 X10 Y0 Z0 A0 F600");
+        _ticker.RaiseElapsed();
+
+        await _mock.SendRawByteAsync((byte)'!');
+        _ticker.RaiseElapsed();
+        var whileHeld = QueryStatus();
+
+        await _mock.SendRawByteAsync((byte)'~');
+        _ticker.RaiseElapsed();
+        var afterResume = QueryStatus();
+
+        Assert.NotEqual(whileHeld.WPos, afterResume.WPos);
+        Assert.Equal(MachineState.Run, afterResume.State);
+    }
+
+    [Fact]
     public async Task SendLineAsync_Dwell_BlocksMotionWithoutMovingUntilElapsed()
     {
         await _mock.ConnectAsync("demo");
