@@ -139,7 +139,7 @@ public class MockDeviceTransportTests
         var duringDwell = QueryStatus();
         Assert.Equal(MachineState.Run, duringDwell.State);
 
-        for (var i = 0; i < 10; i++)
+        for (var i = 0; i < 9; i++)
         {
             _ticker.RaiseElapsed();
         }

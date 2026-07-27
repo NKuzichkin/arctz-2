@@ -166,7 +166,7 @@ public sealed class MockDeviceTransport : IDeviceTransport
 
         if (_dwellSecondsRemaining > 0)
         {
-            _dwellSecondsRemaining = Math.Max(0, _dwellSecondsRemaining - elapsedSeconds);
+            _dwellSecondsRemaining = _dwellSecondsRemaining <= elapsedSeconds + 1e-10 ? 0 : _dwellSecondsRemaining - elapsedSeconds;
             return;
         }
 
