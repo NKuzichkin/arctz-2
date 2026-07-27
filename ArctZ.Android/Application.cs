@@ -1,7 +1,11 @@
-﻿using Android.App;
+using Android.App;
 using Android.Runtime;
+using ArctZ.Services.Device;
+using ArctZ.Services.Program;
 using Avalonia;
 using Avalonia.Android;
+using Microsoft.Extensions.DependencyInjection;
+using System.IO;
 
 namespace ArctZ.Android
 {
@@ -14,8 +18,15 @@ namespace ArctZ.Android
 
         protected override AppBuilder CustomizeAppBuilder(AppBuilder builder)
         {
+            var services = new ServiceCollection();
+            services.AddArctZCore();
+            services.AddSingleton<IDeviceTransport, NotSupportedDeviceTransport>();
+            services.AddSingleton<IProgramStorage>(_ => new JsonFileProgramStorage(
+                Path.Combine(global::Android.App.Application.Context.FilesDir!.AbsolutePath, "ArctZ", "Programs")));
+            App.Services = services.BuildServiceProvider();
+
             return base.CustomizeAppBuilder(builder)
-            .WithInterFont();
+                .WithInterFont();
         }
     }
 }

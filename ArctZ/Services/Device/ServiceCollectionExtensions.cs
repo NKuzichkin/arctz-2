@@ -1,4 +1,5 @@
 using System;
+using ArctZ.Services.Program;
 using ArctZ.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -8,8 +9,9 @@ public static class ServiceCollectionExtensions
 {
     /// <summary>
     /// Registers everything platform-independent. Each head additionally
-    /// registers its own IDeviceTransport for the real device (see Task 24)
-    /// — this method deliberately does not touch that registration.
+    /// registers its own IDeviceTransport (real transport) and
+    /// IProgramStorage (storage location) — this method deliberately does
+    /// not touch either.
     /// </summary>
     public static IServiceCollection AddArctZCore(this IServiceCollection services)
     {
@@ -19,7 +21,9 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<MachineLimits>(),
             new SystemPeriodicTimer(),
             TimeSpan.FromMilliseconds(100)));
-        services.AddTransient<ConnectionViewModel>();
+        services.AddSingleton<ITrajectoryCompiler, TrajectoryCompiler>();
+        services.AddSingleton<ConnectionViewModel>();
+        services.AddSingleton<ProgramViewModel>();
         return services;
     }
 }
