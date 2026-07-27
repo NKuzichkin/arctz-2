@@ -1,0 +1,150 @@
+using System;
+using System.Threading.Tasks;
+using ArctZ.Services.Device;
+using ArctZ.Services.Device.Simulation;
+
+namespace ArctZ.Tests.Services.Device;
+
+public class MockDeviceTransportTests
+{
+    private readonly ManualPeriodicTimer _ticker = new();
+    private readonly MockDeviceTransport _mock;
+    private readonly FluidNcStatusParser _parser = new();
+
+    public MockDeviceTransportTests()
+    {
+        _mock = new MockDeviceTransport(MachineLimits.Default, _ticker, TimeSpan.FromMilliseconds(100));
+    }
+
+    private DeviceStatus QueryStatus()
+    {
+        StatusReportLine? report = null;
+        void Handler(string line)
+        {
+            if (_parser.Parse(line) is StatusReportLine status)
+            {
+                report = status;
+            }
+        }
+
+        _mock.LineReceived += Handler;
+        _ = _mock.SendRawByteAsync((byte)'?');
+        _mock.LineReceived -= Handler;
+
+        return report!.Status;
+    }
+
+    [Fact]
+    public async Task ConnectAsync_SetsIsConnectedAndStartsMotionTicker()
+    {
+        await _mock.ConnectAsync("demo");
+
+        Assert.True(_mock.IsConnected);
+        Assert.True(_ticker.IsRunning);
+    }
+
+    [Fact]
+    public async Task SendRawByteAsync_StatusQuery_RepliesWithIdleAtOriginAndFullBuffer()
+    {
+        await _mock.ConnectAsync("demo");
+
+        var status = QueryStatus();
+
+        Assert.Equal(MachineState.Idle, status.State);
+        Assert.Equal(MachinePose.Zero, status.WPos);
+        Assert.Equal(15, status.PlannerBlocksAvailable);
+        Assert.Equal(128, status.RxBytesAvailable);
+    }
+
+    [Fact]
+    public async Task SendLineAsync_JogCommand_AcksThenMovesTowardTargetOverTicks()
+    {
+        await _mock.ConnectAsync("demo");
+        string? firstReply = null;
+        _mock.LineReceived += line => firstReply ??= line;
+
+        await _mock.SendLineAsync("$J=G91 G21 X10 Y0 Z0 A0 F600");
+        _ticker.RaiseElapsed(); // dequeues + acks; F600 units/min = 10/sec, tick=0.1s -> 1 unit/tick
+
+        Assert.Equal("ok", firstReply);
+
+        for (var i = 0; i < 20; i++)
+        {
+            _ticker.RaiseElapsed();
+        }
+
+        var status = QueryStatus();
+        Assert.Equal(new MachinePose(10, 0, 0, 0), status.WPos);
+        Assert.Equal(MachineState.Idle, status.State);
+    }
+
+    [Fact]
+    public async Task SendRawByteAsync_JogCancel_StopsMotionImmediately()
+    {
+        await _mock.ConnectAsync("demo");
+        await _mock.SendLineAsync("$J=G91 G21 X10 Y0 Z0 A0 F600");
+        _ticker.RaiseElapsed(); // ack + first 1-unit step
+
+        await _mock.SendRawByteAsync(0x85);
+        var afterCancel = QueryStatus();
+
+        _ticker.RaiseElapsed();
+        _ticker.RaiseElapsed();
+        var afterMoreTicks = QueryStatus();
+
+        Assert.Equal(afterCancel.WPos, afterMoreTicks.WPos);
+        Assert.Equal(MachineState.Idle, afterMoreTicks.State);
+    }
+
+    [Fact]
+    public async Task SendLineAsync_Homing_ResetsPoseToZero()
+    {
+        await _mock.ConnectAsync("demo");
+        await _mock.SendLineAsync("$J=G91 G21 X10 Y0 Z0 A0 F600");
+        for (var i = 0; i < 21; i++)
+        {
+            _ticker.RaiseElapsed();
+        }
+
+        await _mock.SendLineAsync("$H");
+        _ticker.RaiseElapsed();
+
+        var status = QueryStatus();
+        Assert.Equal(MachinePose.Zero, status.WPos);
+    }
+
+    [Fact]
+    public async Task ForceNextCommandError_ReportsErrorInsteadOfOkAndSkipsEffect()
+    {
+        await _mock.ConnectAsync("demo");
+        _mock.ForceNextCommandError(9);
+        string? reply = null;
+        _mock.LineReceived += line => reply ??= line;
+
+        await _mock.SendLineAsync("$J=G91 G21 X10 Y0 Z0 A0 F600");
+        _ticker.RaiseElapsed();
+
+        Assert.Equal("error:9", reply);
+        var status = QueryStatus();
+        Assert.Equal(MachinePose.Zero, status.WPos);
+    }
+
+    [Fact]
+    public async Task SendLineAsync_Dwell_BlocksMotionWithoutMovingUntilElapsed()
+    {
+        await _mock.ConnectAsync("demo");
+        await _mock.SendLineAsync("G4 P1");
+        _ticker.RaiseElapsed(); // ack + starts 1s dwell; this tick consumes 0.1s -> 0.9s remaining
+
+        var duringDwell = QueryStatus();
+        Assert.Equal(MachineState.Run, duringDwell.State);
+
+        for (var i = 0; i < 10; i++)
+        {
+            _ticker.RaiseElapsed();
+        }
+
+        var afterDwell = QueryStatus();
+        Assert.Equal(MachineState.Idle, afterDwell.State);
+    }
+}
