@@ -1,6 +1,8 @@
 using ArctZ.Components.VirtualJoystick;
+using ArctZ.Services.Program;
 using ArctZ.ViewModels;
 using Avalonia.Controls;
+using Avalonia.Interactivity;
 
 namespace ArctZ.Views
 {
@@ -11,15 +13,41 @@ namespace ArctZ.Views
             InitializeComponent();
         }
 
-        private void OnJoystickMove(object? sender, JoystickEventArgs e)
+        private ProgramViewModel? ViewModel => DataContext as ProgramViewModel;
+
+        private void OnLeftJoystickDown(object? sender, JoystickEventArgs e) => ViewModel?.OnLeftJoystickDown(e);
+
+        private void OnLeftJoystickMove(object? sender, JoystickEventArgs e) => ViewModel?.OnLeftJoystickMove(e);
+
+        private void OnLeftJoystickUp(object? sender, JoystickEventArgs e) => ViewModel?.OnLeftJoystickUp(e);
+
+        private void OnRightJoystickDown(object? sender, JoystickEventArgs e) => ViewModel?.OnRightJoystickDown(e);
+
+        private void OnRightJoystickMove(object? sender, JoystickEventArgs e) => ViewModel?.OnRightJoystickMove(e);
+
+        private void OnRightJoystickUp(object? sender, JoystickEventArgs e) => ViewModel?.OnRightJoystickUp(e);
+
+        private void OnAuthoringModeClicked(object? sender, RoutedEventArgs e)
         {
-            if (DataContext is MainViewModel vm)
+            if (ViewModel is { } vm)
             {
-                vm.JoystickX = e.Position.X;
-                vm.JoystickY = e.Position.Y;
-                vm.JoystickForce = e.Force;
-                vm.JoystickAngle = e.AngleDeg;
-                vm.JoystickDirection = e.Direction.ToString();
+                vm.Mode = ProgramMode.Authoring;
+            }
+        }
+
+        private void OnPlaybackModeClicked(object? sender, RoutedEventArgs e)
+        {
+            if (ViewModel is { } vm)
+            {
+                vm.Mode = ProgramMode.Playback;
+            }
+        }
+
+        private async void OnLibrarySelectionChanged(object? sender, SelectionChangedEventArgs e)
+        {
+            if (ViewModel is { } vm && sender is ListBox { SelectedItem: ProgramSummary summary })
+            {
+                await vm.LoadProgramCommand.ExecuteAsync(summary);
             }
         }
     }

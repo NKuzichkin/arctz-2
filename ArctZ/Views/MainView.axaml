@@ -4,45 +4,68 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:ArctZ.ViewModels"
              xmlns:js="using:ArctZ.Components.VirtualJoystick"
-             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+             xmlns:program="using:ArctZ.Services.Program"
+             mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="600"
              x:Class="ArctZ.Views.MainView"
-             x:DataType="vm:MainViewModel">
-    <Design.DataContext>
-        <vm:MainViewModel />
-    </Design.DataContext>
-    <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-        </Grid.RowDefinitions>
-
-        <StackPanel Grid.Row="0" Margin="10">
-            <TextBlock Text="{Binding Greeting}" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,0,0,10"/>
-            <TextBlock HorizontalAlignment="Center">
-                <Run Text="X: " />
-                <Run Text="{Binding JoystickX, StringFormat={}{0:F1}}" />
-                <Run Text=" Y: " />
-                <Run Text="{Binding JoystickY, StringFormat={}{0:F1}}" />
-            </TextBlock>
-            <TextBlock HorizontalAlignment="Center">
-                <Run Text="Force: " />
-                <Run Text="{Binding JoystickForce, StringFormat={}{0:F2}}" />
-                <Run Text=" Angle: " />
-                <Run Text="{Binding JoystickAngle, StringFormat={}{0:F1}}" />
-                <Run Text=" Dir: " />
-                <Run Text="{Binding JoystickDirection}" />
-            </TextBlock>
-        </StackPanel>
-
-        <Grid Grid.Row="1">
-            <js:VirtualJoystick Radius="80"
-                                Mode="Fixed"
-                                Shape="Circle"
-                                Lock="None"
-                                Threshold="0.1"
-                                HorizontalAlignment="Center"
-                                VerticalAlignment="Center"
-                                JoystickMove="OnJoystickMove" />
+             x:DataType="vm:ProgramViewModel">
+    <DockPanel>
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto" Margin="8">
+            <ContentControl Grid.Column="0" Content="{Binding Connection}" />
+            <ToggleButton Grid.Column="1" Content="Программирование" IsChecked="{Binding IsAuthoring}" Click="OnAuthoringModeClicked" Margin="4,0" />
+            <ToggleButton Grid.Column="2" Content="Выполнение" IsChecked="{Binding IsPlayback}" Click="OnPlaybackModeClicked" Margin="4,0" />
         </Grid>
-    </Grid>
+
+        <ListBox DockPanel.Dock="Left" Width="200" Margin="8"
+                 ItemsSource="{Binding Library}"
+                 SelectionChanged="OnLibrarySelectionChanged">
+            <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="program:ProgramSummary">
+                    <TextBlock Text="{Binding Name}" />
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <Grid IsVisible="{Binding IsAuthoring}" ColumnDefinitions="Auto,*,Auto" Margin="8">
+            <js:VirtualJoystick Grid.Column="0" Radius="80" Mode="Fixed" Shape="Circle"
+                                 JoystickDown="OnLeftJoystickDown" JoystickMove="OnLeftJoystickMove" JoystickUp="OnLeftJoystickUp" />
+
+            <StackPanel Grid.Column="1" Spacing="8" Margin="16,0">
+                <TextBox Text="{Binding ProgramName}" Watermark="Имя программы" />
+                <Button Content="Захватить точку" Command="{Binding CaptureWaypointCommand}" />
+                <Button Content="Новая программа" Command="{Binding NewProgramCommand}" />
+                <Button Content="Сохранить" Command="{Binding SaveProgramCommand}" />
+                <ListBox ItemsSource="{Binding Waypoints}" SelectedItem="{Binding SelectedWaypoint}" Height="200">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="program:Waypoint">
+                            <TextBlock Text="{Binding Pose}" />
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+                <Button Content="Удалить точку" Command="{Binding RemoveWaypointCommand}" CommandParameter="{Binding SelectedWaypoint}" />
+            </StackPanel>
+
+            <js:VirtualJoystick Grid.Column="2" Radius="80" Mode="Fixed" Shape="Circle"
+                                 JoystickDown="OnRightJoystickDown" JoystickMove="OnRightJoystickMove" JoystickUp="OnRightJoystickUp" />
+        </Grid>
+
+        <StackPanel IsVisible="{Binding IsPlayback}" Spacing="8" Margin="8">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Content="Play" Command="{Binding PlayCommand}" />
+                <Button Content="Pause" Command="{Binding PauseCommand}" />
+                <Button Content="Stop" Command="{Binding StopCommand}" />
+                <TextBlock Text="{Binding PlaybackState}" VerticalAlignment="Center" />
+            </StackPanel>
+            <ListBox ItemsSource="{Binding Waypoints}">
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="program:Waypoint">
+                        <TextBlock Text="{Binding Pose}" />
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+            <TextBlock Text="{Binding CurrentSegmentIndex, StringFormat='Сегмент: {0}'}" />
+            <ProgressBar Minimum="0" Maximum="1" Value="{Binding SegmentProgress}" />
+            <TextBlock Text="{Binding FaultedAtSegmentIndex, StringFormat='Ошибка на сегменте: {0}'}"
+                       IsVisible="{Binding FaultedAtSegmentIndex, Converter={x:Static ObjectConverters.IsNotNull}}" />
+        </StackPanel>
+    </DockPanel>
 </UserControl>
