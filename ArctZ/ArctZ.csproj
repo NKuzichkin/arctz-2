@@ -24,4 +24,8 @@
   <ItemGroup>
     <Folder Include="Themes\" />
   </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ArctZ.Tests" />
+  </ItemGroup>
 </Project>
