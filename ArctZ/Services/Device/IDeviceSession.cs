@@ -10,6 +10,8 @@ public interface IDeviceSession
 
     DeviceStatus? DeviceStatus { get; }
 
+    string? LastError { get; }
+
     event Action? ConnectionStateChanged;
 
     event Action? DeviceStatusChanged;

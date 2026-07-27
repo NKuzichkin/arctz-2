@@ -22,8 +22,9 @@ public class DeviceSessionTests
         var jogScheduler = new JogScheduler(
             new JogCommandFactory(MachineLimits.Default), serializer, _transport, realtimeChannel, _jogTimer, TimeSpan.FromMilliseconds(100));
         var statusPoller = new StatusPoller(realtimeChannel, _pollTimer, TimeSpan.FromMilliseconds(250));
+        var reconnectPolicy = new FixedDelayReconnectPolicy(maxAttempts: 3, delay: TimeSpan.FromMilliseconds(1));
 
-        _session = new DeviceSession(_transport, _commandQueue, new FluidNcStatusParser(), jogScheduler, statusPoller);
+        _session = new DeviceSession(_transport, _commandQueue, new FluidNcStatusParser(), jogScheduler, statusPoller, reconnectPolicy);
     }
 
     [Fact]
