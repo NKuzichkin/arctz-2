@@ -14,6 +14,7 @@ public sealed class DeviceSession : IDeviceSession
     private readonly IStatusPoller _statusPoller;
     private readonly IReconnectPolicy _reconnectPolicy;
     private readonly ISerialEventQueue _eventQueue;
+    private readonly IRealtimeCommandChannel _realtimeChannel;
     private string? _lastDeviceId;
     private int _connectionGeneration;
 
@@ -24,7 +25,8 @@ public sealed class DeviceSession : IDeviceSession
         IJogScheduler jogScheduler,
         IStatusPoller statusPoller,
         IReconnectPolicy reconnectPolicy,
-        ISerialEventQueue eventQueue)
+        ISerialEventQueue eventQueue,
+        IRealtimeCommandChannel realtimeChannel)
     {
         _transport = transport;
         _commandQueue = commandQueue;
@@ -33,6 +35,7 @@ public sealed class DeviceSession : IDeviceSession
         _statusPoller = statusPoller;
         _reconnectPolicy = reconnectPolicy;
         _eventQueue = eventQueue;
+        _realtimeChannel = realtimeChannel;
 
         _commandQueue.CommandCompleted += OnCommandCompleted;
     }
@@ -100,6 +103,12 @@ public sealed class DeviceSession : IDeviceSession
 
     public Task<CommandResult> ResetAlarmAsync(CancellationToken cancellationToken = default) =>
         _commandQueue.EnqueueAsync(new GCodeLineCommand("$X"), cancellationToken);
+
+    public Task FeedHoldAsync(CancellationToken cancellationToken = default) =>
+        _realtimeChannel.SendAsync(RealtimeCommand.FeedHold, cancellationToken);
+
+    public Task ResumeAsync(CancellationToken cancellationToken = default) =>
+        _realtimeChannel.SendAsync(RealtimeCommand.CycleStartResume, cancellationToken);
 
     private void SetConnectionState(ConnectionState state)
     {

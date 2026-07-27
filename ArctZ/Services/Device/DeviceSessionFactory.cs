@@ -38,6 +38,6 @@ public sealed class DeviceSessionFactory : IDeviceSessionFactory
         var statusPoller = new StatusPoller(realtimeChannel, new SystemPeriodicTimer(), StatusPollInterval);
         var reconnectPolicy = new FixedDelayReconnectPolicy(ReconnectMaxAttempts, ReconnectDelay);
 
-        return new DeviceSession(transport, commandQueue, new FluidNcStatusParser(), jogScheduler, statusPoller, reconnectPolicy, eventQueue);
+        return new DeviceSession(transport, commandQueue, new FluidNcStatusParser(), jogScheduler, statusPoller, reconnectPolicy, eventQueue, realtimeChannel);
     }
 }

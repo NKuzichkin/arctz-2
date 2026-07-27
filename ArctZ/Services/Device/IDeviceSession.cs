@@ -35,4 +35,8 @@ public interface IDeviceSession
     Task<CommandResult> HomeAsync(CancellationToken cancellationToken = default);
 
     Task<CommandResult> ResetAlarmAsync(CancellationToken cancellationToken = default);
+
+    Task FeedHoldAsync(CancellationToken cancellationToken = default);
+
+    Task ResumeAsync(CancellationToken cancellationToken = default);
 }

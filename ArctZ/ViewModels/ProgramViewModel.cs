@@ -1,8 +1,10 @@
 using System;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Threading.Tasks;
 using ArctZ.Components.VirtualJoystick;
 using ArctZ.Services.Device;
+using ArctZ.Services.Device.Commands;
 using ArctZ.Services.Program;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -44,6 +46,7 @@ public partial class ProgramViewModel : ViewModelBase
         Connection = connection;
         _storage = storage;
         _compiler = compiler;
+        Connection.PropertyChanged += OnConnectionPropertyChanged;
     }
 
     [RelayCommand]
@@ -209,5 +212,137 @@ public partial class ProgramViewModel : ViewModelBase
         {
             Connection.Session?.UpdateJog(new DualJoystickState(_leftInput, _rightInput));
         }
+    }
+
+    private bool _pausedForLinkLoss;
+
+    [ObservableProperty]
+    private PlaybackState _playbackState = PlaybackState.Idle;
+
+    [ObservableProperty]
+    private int? _currentSegmentIndex;
+
+    [ObservableProperty]
+    private double _segmentProgress;
+
+    [ObservableProperty]
+    private int? _faultedAtSegmentIndex;
+
+    private void OnConnectionPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ConnectionViewModel.Session) && Connection.Session is not null)
+        {
+            Connection.Session.ConnectionStateChanged += OnSessionConnectionStateChanged;
+        }
+    }
+
+    private void OnSessionConnectionStateChanged()
+    {
+        var state = Connection.Session?.ConnectionState;
+
+        if (state == ConnectionState.Reconnecting && PlaybackState == PlaybackState.Running)
+        {
+            _pausedForLinkLoss = true;
+            PlaybackState = PlaybackState.Paused;
+        }
+        else if (state == ConnectionState.Disconnected && _pausedForLinkLoss)
+        {
+            _pausedForLinkLoss = false;
+            PlaybackState = PlaybackState.Faulted;
+        }
+        // ConnectionState.Connected after Reconnecting: stays Paused — resuming is an explicit user action.
+    }
+
+    private JibProgram BuildProgram()
+    {
+        var program = new JibProgram { Id = ProgramId ?? Guid.NewGuid(), Name = ProgramName };
+        program.Waypoints.AddRange(Waypoints);
+        program.Transitions.AddRange(Transitions);
+        return program;
+    }
+
+    [RelayCommand(AllowConcurrentExecutions = true)]
+    private async Task PlayAsync()
+    {
+        if (Connection.Session is null || PlaybackState == PlaybackState.Running)
+        {
+            return;
+        }
+
+        if (PlaybackState == PlaybackState.Paused)
+        {
+            _pausedForLinkLoss = false;
+            PlaybackState = PlaybackState.Running;
+            if (Connection.Session.ConnectionState == ConnectionState.Connected)
+            {
+                await Connection.Session.ResumeAsync().ConfigureAwait(false);
+            }
+
+            return;
+        }
+
+        var steps = _compiler.Compile(BuildProgram());
+        if (steps.Count == 0)
+        {
+            return;
+        }
+
+        PlaybackState = PlaybackState.Running;
+        CurrentSegmentIndex = null;
+        SegmentProgress = 0;
+        FaultedAtSegmentIndex = null;
+
+        var dispatched = new (CompiledStep Step, Task<CommandResult> Completion)[steps.Count];
+        for (var i = 0; i < steps.Count; i++)
+        {
+            var line = ((GCodeLineCommand)steps[i].Command).Line;
+            dispatched[i] = (steps[i], Connection.Session.SendGCodeAsync(line));
+        }
+
+        foreach (var (step, completion) in dispatched)
+        {
+            var result = await completion.ConfigureAwait(false);
+
+            if (PlaybackState == PlaybackState.Stopped)
+            {
+                return;
+            }
+
+            if (result.Outcome != CommandOutcome.Acknowledged)
+            {
+                PlaybackState = PlaybackState.Faulted;
+                FaultedAtSegmentIndex = step.SegmentIndex;
+                return;
+            }
+
+            CurrentSegmentIndex = step.SegmentIndex;
+            SegmentProgress = step.SegmentProgress;
+        }
+
+        if (PlaybackState == PlaybackState.Running)
+        {
+            PlaybackState = PlaybackState.Completed;
+        }
+    }
+
+    [RelayCommand]
+    private Task PauseAsync()
+    {
+        if (PlaybackState != PlaybackState.Running || Connection.Session is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        PlaybackState = PlaybackState.Paused;
+        return Connection.Session.FeedHoldAsync();
+    }
+
+    [RelayCommand]
+    private Task StopAsync()
+    {
+        PlaybackState = PlaybackState.Stopped;
+        CurrentSegmentIndex = null;
+        SegmentProgress = 0;
+        return Connection.Session?.FeedHoldAsync() ?? Task.CompletedTask;
     }
 }

@@ -22,7 +22,7 @@ public class DeviceSessionReconnectTests
         var statusPoller = new StatusPoller(realtimeChannel, _pollTimer, TimeSpan.FromMilliseconds(250));
         var reconnectPolicy = new FixedDelayReconnectPolicy(maxAttempts: 3, delay: TimeSpan.FromMilliseconds(1));
 
-        _session = new DeviceSession(_transport, commandQueue, new FluidNcStatusParser(), jogScheduler, statusPoller, reconnectPolicy, _eventQueue);
+        _session = new DeviceSession(_transport, commandQueue, new FluidNcStatusParser(), jogScheduler, statusPoller, reconnectPolicy, _eventQueue, realtimeChannel);
     }
 
     private Task WaitForConnectionStateAsync(ConnectionState target)
@@ -105,7 +105,7 @@ public class DeviceSessionReconnectTests
         var jogScheduler = new JogScheduler(
             new JogCommandFactory(MachineLimits.Default), serializer, _transport, realtimeChannel, _jogTimer, TimeSpan.FromMilliseconds(100), _eventQueue);
         var statusPoller = new StatusPoller(realtimeChannel, _pollTimer, TimeSpan.FromMilliseconds(250));
-        var session = new DeviceSession(_transport, commandQueue, new FluidNcStatusParser(), jogScheduler, statusPoller, reconnectPolicy, _eventQueue);
+        var session = new DeviceSession(_transport, commandQueue, new FluidNcStatusParser(), jogScheduler, statusPoller, reconnectPolicy, _eventQueue, realtimeChannel);
 
         await session.ConnectAsync("COM5");
 
