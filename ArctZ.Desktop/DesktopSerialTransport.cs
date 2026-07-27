@@ -60,16 +60,17 @@ public sealed class DesktopSerialTransport : IDeviceTransport
 
     private void OnDataReceived(object sender, SerialDataReceivedEventArgs e)
     {
-        if (_port is null)
+        var port = _port;
+        if (port is null)
         {
             return;
         }
 
         try
         {
-            while (_port.BytesToRead > 0)
+            while (port.BytesToRead > 0)
             {
-                LineReceived?.Invoke(_port.ReadLine());
+                LineReceived?.Invoke(port.ReadLine());
             }
         }
         catch (TimeoutException)
