@@ -315,6 +315,13 @@ public partial class ProgramViewModel : ViewModelBase
             return;
         }
 
+        // A prior StopAsync issues a feed hold; clear it before dispatching a
+        // fresh program so the controller isn't left ignoring motion commands.
+        if (Connection.Session!.ConnectionState == ConnectionState.Connected)
+        {
+            await Connection.Session.ResumeAsync();
+        }
+
         var steps = _compiler.Compile(BuildProgram());
         if (steps.Count == 0)
         {

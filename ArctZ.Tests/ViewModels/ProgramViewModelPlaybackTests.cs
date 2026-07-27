@@ -133,6 +133,34 @@ public class ProgramViewModelPlaybackTests
     }
 
     [Fact]
+    public async Task PlayAsync_AfterStop_SendsResumeBeforeDispatchingFreshProgram()
+    {
+        var vm = CreateViewModel(out var transport);
+        await vm.Connection.ConnectCommand.ExecuteAsync(null);
+        SeedTwoSegmentProgram(vm, transport);
+
+        var firstPlayTask = vm.PlayCommand.ExecuteAsync(null);
+        await vm.StopCommand.ExecuteAsync(null);
+        transport.SimulateReceivedLine("ok"); // resolves the command that was already in flight
+        transport.SimulateReceivedLine("ok");
+        await firstPlayTask;
+        Assert.Equal(PlaybackState.Stopped, vm.PlaybackState);
+
+        var rawBytesBeforeSecondPlay = transport.SentRawBytes.Count;
+        var secondPlayTask = vm.PlayCommand.ExecuteAsync(null);
+
+        // Without clearing the hold left by Stop's feed-hold, the controller
+        // would keep ignoring motion commands even though PlaybackState looks Running.
+        Assert.Contains((byte)'~', transport.SentRawBytes.Skip(rawBytesBeforeSecondPlay));
+        Assert.Equal(4, transport.SentLines.Count(l => l.StartsWith("G1", StringComparison.Ordinal)));
+
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await secondPlayTask;
+        Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
+    }
+
+    [Fact]
     public async Task LinkLoss_DuringPlayback_PausesImmediatelyThenFaultsIfReconnectExhausted()
     {
         var vm = CreateViewModel(out var transport);
