@@ -13,7 +13,9 @@ public sealed class DeviceSession : IDeviceSession
     private readonly IJogScheduler _jogScheduler;
     private readonly IStatusPoller _statusPoller;
     private readonly IReconnectPolicy _reconnectPolicy;
+    private readonly ISerialEventQueue _eventQueue;
     private string? _lastDeviceId;
+    private int _connectionGeneration;
 
     public DeviceSession(
         IDeviceTransport transport,
@@ -21,7 +23,8 @@ public sealed class DeviceSession : IDeviceSession
         IStatusParser statusParser,
         IJogScheduler jogScheduler,
         IStatusPoller statusPoller,
-        IReconnectPolicy reconnectPolicy)
+        IReconnectPolicy reconnectPolicy,
+        ISerialEventQueue eventQueue)
     {
         _transport = transport;
         _commandQueue = commandQueue;
@@ -29,6 +32,7 @@ public sealed class DeviceSession : IDeviceSession
         _jogScheduler = jogScheduler;
         _statusPoller = statusPoller;
         _reconnectPolicy = reconnectPolicy;
+        _eventQueue = eventQueue;
 
         _commandQueue.CommandCompleted += OnCommandCompleted;
     }
@@ -50,19 +54,28 @@ public sealed class DeviceSession : IDeviceSession
     public async Task ConnectAsync(string deviceId, CancellationToken cancellationToken = default)
     {
         _lastDeviceId = deviceId;
-        SetConnectionState(ConnectionState.Connecting);
+        _eventQueue.Enqueue(() =>
+        {
+            _connectionGeneration++;
+            SetConnectionState(ConnectionState.Connecting);
+        });
 
         _transport.LineReceived += OnLineReceived;
         _transport.Disconnected += OnTransportDisconnected;
 
         await _transport.ConnectAsync(deviceId, cancellationToken).ConfigureAwait(false);
 
-        SetConnectionState(ConnectionState.Connected);
-        _statusPoller.Start();
+        _eventQueue.Enqueue(() =>
+        {
+            SetConnectionState(ConnectionState.Connected);
+            _statusPoller.Start();
+        });
     }
 
     public async Task DisconnectAsync()
     {
+        _eventQueue.Enqueue(() => _connectionGeneration++);
+
         _statusPoller.Stop();
         _jogScheduler.Stop();
 
@@ -70,7 +83,7 @@ public sealed class DeviceSession : IDeviceSession
         await _transport.DisconnectAsync().ConfigureAwait(false);
         _transport.LineReceived -= OnLineReceived;
 
-        SetConnectionState(ConnectionState.Disconnected);
+        _eventQueue.Enqueue(() => SetConnectionState(ConnectionState.Disconnected));
     }
 
     public void BeginJog() => _jogScheduler.Start();
@@ -96,9 +109,14 @@ public sealed class DeviceSession : IDeviceSession
 
     private async void OnTransportDisconnected()
     {
-        _statusPoller.Stop();
-        _jogScheduler.Stop();
-        SetConnectionState(ConnectionState.Reconnecting);
+        var myGeneration = 0;
+        _eventQueue.Enqueue(() =>
+        {
+            myGeneration = _connectionGeneration;
+            _statusPoller.Stop();
+            _jogScheduler.Stop();
+            SetConnectionState(ConnectionState.Reconnecting);
+        });
 
         for (var attempt = 1; attempt <= _reconnectPolicy.MaxAttempts; attempt++)
         {
@@ -107,9 +125,26 @@ public sealed class DeviceSession : IDeviceSession
             try
             {
                 await _transport.ConnectAsync(_lastDeviceId!).ConfigureAwait(false);
-                LastError = null;
-                SetConnectionState(ConnectionState.Connected);
-                _statusPoller.Start();
+
+                var stale = false;
+                _eventQueue.Enqueue(() =>
+                {
+                    if (myGeneration != _connectionGeneration)
+                    {
+                        stale = true;
+                        return;
+                    }
+
+                    LastError = null;
+                    SetConnectionState(ConnectionState.Connected);
+                    _statusPoller.Start();
+                });
+
+                if (stale)
+                {
+                    await _transport.DisconnectAsync().ConfigureAwait(false);
+                }
+
                 return;
             }
             catch
@@ -118,8 +153,16 @@ public sealed class DeviceSession : IDeviceSession
             }
         }
 
-        LastError = $"Reconnect failed after {_reconnectPolicy.MaxAttempts} attempts";
-        SetConnectionState(ConnectionState.Disconnected);
+        _eventQueue.Enqueue(() =>
+        {
+            if (myGeneration != _connectionGeneration)
+            {
+                return;
+            }
+
+            LastError = $"Reconnect failed after {_reconnectPolicy.MaxAttempts} attempts";
+            SetConnectionState(ConnectionState.Disconnected);
+        });
     }
 
     private void OnCommandCompleted(GCodeLineCommand command, CommandResult result)

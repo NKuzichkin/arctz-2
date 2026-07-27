@@ -9,6 +9,7 @@ public class DeviceSessionReconnectTests
     private readonly FakeDeviceTransport _transport = new();
     private readonly ManualPeriodicTimer _jogTimer = new();
     private readonly ManualPeriodicTimer _pollTimer = new();
+    private readonly SerialEventQueue _eventQueue = new();
     private readonly DeviceSession _session;
 
     public DeviceSessionReconnectTests()
@@ -17,11 +18,11 @@ public class DeviceSessionReconnectTests
         var realtimeChannel = new RealtimeCommandChannel(_transport);
         var commandQueue = new BufferAwareCommandQueue(_transport);
         var jogScheduler = new JogScheduler(
-            new JogCommandFactory(MachineLimits.Default), serializer, _transport, realtimeChannel, _jogTimer, TimeSpan.FromMilliseconds(100));
+            new JogCommandFactory(MachineLimits.Default), serializer, _transport, realtimeChannel, _jogTimer, TimeSpan.FromMilliseconds(100), _eventQueue);
         var statusPoller = new StatusPoller(realtimeChannel, _pollTimer, TimeSpan.FromMilliseconds(250));
         var reconnectPolicy = new FixedDelayReconnectPolicy(maxAttempts: 3, delay: TimeSpan.FromMilliseconds(1));
 
-        _session = new DeviceSession(_transport, commandQueue, new FluidNcStatusParser(), jogScheduler, statusPoller, reconnectPolicy);
+        _session = new DeviceSession(_transport, commandQueue, new FluidNcStatusParser(), jogScheduler, statusPoller, reconnectPolicy, _eventQueue);
     }
 
     private Task WaitForConnectionStateAsync(ConnectionState target)
@@ -92,5 +93,41 @@ public class DeviceSessionReconnectTests
         _transport.SimulateDisconnect();
 
         Assert.Equal(ConnectionState.Disconnected, _session.ConnectionState);
+    }
+
+    [Fact]
+    public async Task DisconnectDuringInFlightReconnect_StaysDisconnectedAndDoesNotGetClobbered()
+    {
+        var reconnectPolicy = new ManualReconnectPolicy();
+        var serializer = new FluidNcCommandSerializer();
+        var realtimeChannel = new RealtimeCommandChannel(_transport);
+        var commandQueue = new BufferAwareCommandQueue(_transport);
+        var jogScheduler = new JogScheduler(
+            new JogCommandFactory(MachineLimits.Default), serializer, _transport, realtimeChannel, _jogTimer, TimeSpan.FromMilliseconds(100), _eventQueue);
+        var statusPoller = new StatusPoller(realtimeChannel, _pollTimer, TimeSpan.FromMilliseconds(250));
+        var session = new DeviceSession(_transport, commandQueue, new FluidNcStatusParser(), jogScheduler, statusPoller, reconnectPolicy, _eventQueue);
+
+        await session.ConnectAsync("COM5");
+
+        // Unexpected disconnect starts the reconnect loop; it immediately blocks
+        // on WaitBeforeRetryAsync because ManualReconnectPolicy's gate is not yet released.
+        _transport.SimulateDisconnect();
+        Assert.Equal(ConnectionState.Reconnecting, session.ConnectionState);
+
+        // The user manually disconnects while that reconnect attempt is still in flight.
+        await session.DisconnectAsync();
+        Assert.Equal(ConnectionState.Disconnected, session.ConnectionState);
+
+        // Now let the stale reconnect attempt proceed. It will successfully reconnect
+        // the transport (FakeDeviceTransport.ConnectFailuresRemaining is 0 by default),
+        // but the generation guard must recognize it's stale, discard the result, and
+        // tear the transport-level reconnect back down rather than clobbering the
+        // session back to Connected.
+        reconnectPolicy.ReleaseCurrentWait();
+        await Task.Delay(TimeSpan.FromMilliseconds(200));
+
+        Assert.Equal(ConnectionState.Disconnected, session.ConnectionState);
+        Assert.False(_pollTimer.IsRunning);
+        Assert.False(_transport.IsConnected);
     }
 }

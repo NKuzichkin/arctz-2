@@ -7,6 +7,7 @@ public class JogSchedulerTests
 {
     private readonly FakeDeviceTransport _transport = new();
     private readonly ManualPeriodicTimer _timer = new();
+    private readonly SerialEventQueue _eventQueue = new();
     private readonly JogScheduler _scheduler;
 
     public JogSchedulerTests()
@@ -17,7 +18,8 @@ public class JogSchedulerTests
             _transport,
             new RealtimeCommandChannel(_transport),
             _timer,
-            TimeSpan.FromMilliseconds(100));
+            TimeSpan.FromMilliseconds(100),
+            _eventQueue);
     }
 
     [Fact]

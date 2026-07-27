@@ -18,13 +18,14 @@ public class DeviceSessionTests
     {
         var serializer = new FluidNcCommandSerializer();
         var realtimeChannel = new RealtimeCommandChannel(_transport);
+        var eventQueue = new SerialEventQueue();
         _commandQueue = new BufferAwareCommandQueue(_transport);
         var jogScheduler = new JogScheduler(
-            new JogCommandFactory(MachineLimits.Default), serializer, _transport, realtimeChannel, _jogTimer, TimeSpan.FromMilliseconds(100));
+            new JogCommandFactory(MachineLimits.Default), serializer, _transport, realtimeChannel, _jogTimer, TimeSpan.FromMilliseconds(100), eventQueue);
         var statusPoller = new StatusPoller(realtimeChannel, _pollTimer, TimeSpan.FromMilliseconds(250));
         var reconnectPolicy = new FixedDelayReconnectPolicy(maxAttempts: 3, delay: TimeSpan.FromMilliseconds(1));
 
-        _session = new DeviceSession(_transport, _commandQueue, new FluidNcStatusParser(), jogScheduler, statusPoller, reconnectPolicy);
+        _session = new DeviceSession(_transport, _commandQueue, new FluidNcStatusParser(), jogScheduler, statusPoller, reconnectPolicy, eventQueue);
     }
 
     [Fact]
