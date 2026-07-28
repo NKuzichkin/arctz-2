@@ -7,17 +7,17 @@ namespace ArctZ.Tests.Services.Program;
 
 public class JibProgramTests
 {
-    private static TransitionSettings DefaultTransition => new(500, 0, EaseMode.None, ContinuousBlend: false);
+    private static KeyPoint Point(int number, string label, MachinePose pose) =>
+        new(Guid.NewGuid(), number, label, pose, DwellSeconds: 0, FeedRateUnitsPerMin: 500, EaseMode.None, ContinuousBlend: false);
 
     [Fact]
-    public void Segments_ZipsWaypointsAndTransitionsInOrder()
+    public void Segments_ZipsConsecutiveKeyPointsInOrder()
     {
         var program = new JibProgram();
-        var a = new Waypoint(Guid.NewGuid(), "A", new MachinePose(0, 0, 0, 0));
-        var b = new Waypoint(Guid.NewGuid(), "B", new MachinePose(10, 0, 0, 0));
-        var c = new Waypoint(Guid.NewGuid(), "C", new MachinePose(20, 0, 0, 0));
-        program.Waypoints.AddRange(new[] { a, b, c });
-        program.Transitions.AddRange(new[] { DefaultTransition, DefaultTransition });
+        var a = Point(1, "A", new MachinePose(0, 0, 0, 0));
+        var b = Point(2, "B", new MachinePose(10, 0, 0, 0));
+        var c = Point(3, "C", new MachinePose(20, 0, 0, 0));
+        program.KeyPoints.AddRange(new[] { a, b, c });
 
         var segments = program.Segments().ToList();
 
@@ -27,28 +27,11 @@ public class JibProgramTests
     }
 
     [Fact]
-    public void Segments_FewerThanTwoWaypoints_IsEmpty()
+    public void Segments_FewerThanTwoKeyPoints_IsEmpty()
     {
         var program = new JibProgram();
-        program.Waypoints.Add(new Waypoint(Guid.NewGuid(), "A", MachinePose.Zero));
+        program.KeyPoints.Add(Point(1, "A", MachinePose.Zero));
 
         Assert.Empty(program.Segments());
-    }
-
-    [Fact]
-    public void Segments_WaypointAddedWithoutMatchingTransition_StopsBeforeIt()
-    {
-        var program = new JibProgram();
-        var a = new Waypoint(Guid.NewGuid(), "A", MachinePose.Zero);
-        var b = new Waypoint(Guid.NewGuid(), "B", new MachinePose(10, 0, 0, 0));
-        var c = new Waypoint(Guid.NewGuid(), "C", new MachinePose(20, 0, 0, 0));
-        program.Waypoints.AddRange(new[] { a, b, c });
-        program.Transitions.Add(DefaultTransition); // only one transition for 2 segments
-
-        var segments = program.Segments().ToList();
-
-        Assert.Single(segments);
-        Assert.Equal(a, segments[0].From);
-        Assert.Equal(b, segments[0].To);
     }
 }

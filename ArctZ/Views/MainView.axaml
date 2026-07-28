@@ -56,6 +56,12 @@
             <Setter Property="Foreground" Value="{StaticResource HudTextSecondaryBrush}" />
             <Setter Property="LetterSpacing" Value="1.5" />
         </Style>
+
+        <Style Selector="Border.loaded-entry">
+            <Setter Property="Background" Value="{StaticResource HudAccentDimBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource HudAccentBrush}" />
+            <Setter Property="BorderThickness" Value="3,0,0,0" />
+        </Style>
     </UserControl.Styles>
 
     <DockPanel>
@@ -81,8 +87,10 @@
                 <TextBlock DockPanel.Dock="Top" Classes="section-heading" Text="БИБЛИОТЕКА" Margin="12,10,12,6" />
                 <ListBox ItemsSource="{Binding Library}" SelectionChanged="OnLibrarySelectionChanged">
                     <ListBox.ItemTemplate>
-                        <DataTemplate x:DataType="program:ProgramSummary">
-                            <TextBlock Text="{Binding Name}" />
+                        <DataTemplate x:DataType="vm:ProgramLibraryItem">
+                            <Border Classes.loaded-entry="{Binding IsLoaded}" Padding="8,4">
+                                <TextBlock Text="{Binding Name}" />
+                            </Border>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
@@ -91,7 +99,7 @@
 
         <!-- A single Grid is the DockPanel's true last child so it receives the fill slot;
              the Authoring/Playback panels sit stacked inside it, toggled by IsVisible. -->
-        <Grid>
+        <Grid x:Name="RootPanel">
             <Border Classes="reveal-3" Margin="0,12,12,12" IsVisible="{Binding IsAuthoring}"
                     Background="{StaticResource HudPanelBrush}"
                     BorderBrush="{StaticResource HudBorderBrush}"
@@ -105,21 +113,51 @@
                         <TextBlock Classes="section-heading" Text="ПРОГРАММА" />
                         <TextBox Text="{Binding ProgramName}" PlaceholderText="Имя программы" />
                         <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button Classes="primary" Content="Захватить точку" Command="{Binding CaptureWaypointCommand}" />
+                            <Button Classes="primary" Content="Захватить точку" Command="{Binding CaptureKeyPointCommand}" />
                             <Button Content="Новая" Command="{Binding NewProgramCommand}" />
                             <Button Content="Сохранить" Command="{Binding SaveProgramCommand}" />
                         </StackPanel>
                         <TextBlock Classes="section-heading" Text="ТОЧКИ" Margin="0,8,0,0" />
-                        <Border BorderBrush="{StaticResource HudBorderBrush}" BorderThickness="1">
-                            <ListBox ItemsSource="{Binding Waypoints}" SelectedItem="{Binding SelectedWaypoint}" Height="200">
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate x:DataType="program:Waypoint">
-                                        <TextBlock Classes="telemetry" FontSize="14" Text="{Binding Pose}" />
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-                        </Border>
-                        <Button Classes="danger" Content="Удалить точку" Command="{Binding RemoveWaypointCommand}" CommandParameter="{Binding SelectedWaypoint}" />
+                        <ListBox x:Name="AuthoringKeyPointsList" ItemsSource="{Binding KeyPoints}" SelectedItem="{Binding SelectedKeyPoint}" Height="320">
+                            <ListBox.Styles>
+                                <Style Selector="ListBoxItem">
+                                    <Setter Property="Padding" Value="0" />
+                                    <Setter Property="BorderThickness" Value="0" />
+                                    <Setter Property="Margin" Value="0,0,0,8" />
+                                </Style>
+                                <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+                                    <Setter Property="BorderThickness" Value="0" />
+                                </Style>
+                            </ListBox.Styles>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="program:KeyPoint">
+                                    <Border Background="{StaticResource HudPanelElevatedBrush}"
+                                            BorderBrush="{StaticResource HudBorderBrush}" BorderThickness="1"
+                                            Padding="14,12">
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <StackPanel Grid.Column="0" Spacing="4">
+                                                <TextBlock Classes="telemetry" FontSize="16" Text="{Binding Label}" />
+                                                <TextBlock Classes="telemetry" FontSize="13" Opacity="0.7" Text="{Binding Pose}" />
+                                            </StackPanel>
+                                            <Button Grid.Column="1" Content="⋮" Padding="8,2" VerticalAlignment="Center">
+                                                <Button.Flyout>
+                                                    <MenuFlyout>
+                                                        <MenuItem Header="Изменить" CommandParameter="{Binding}"
+                                                                  Command="{Binding ((vm:ProgramViewModel)DataContext).EditKeyPointCommand, ElementName=AuthoringKeyPointsList}" />
+                                                        <MenuItem Header="На точку" CommandParameter="{Binding}"
+                                                                  Command="{Binding ((vm:ProgramViewModel)DataContext).MoveMachineToKeyPointCommand, ElementName=AuthoringKeyPointsList}" />
+                                                        <MenuItem Header="Из машины" CommandParameter="{Binding}"
+                                                                  Command="{Binding ((vm:ProgramViewModel)DataContext).FillKeyPointFromCurrentPositionCommand, ElementName=AuthoringKeyPointsList}" />
+                                                        <MenuItem Header="Удалить" CommandParameter="{Binding}"
+                                                                  Command="{Binding ((vm:ProgramViewModel)DataContext).RemoveKeyPointCommand, ElementName=AuthoringKeyPointsList}" />
+                                                    </MenuFlyout>
+                                                </Button.Flyout>
+                                            </Button>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
                     </StackPanel>
 
                     <js:VirtualJoystick Grid.Column="2" Radius="80" Mode="Fixed" Shape="Circle"
@@ -145,10 +183,13 @@
 
                     <TextBlock Classes="section-heading" Text="ТОЧКИ" />
                     <Border BorderBrush="{StaticResource HudBorderBrush}" BorderThickness="1">
-                        <ListBox ItemsSource="{Binding Waypoints}">
+                        <ListBox ItemsSource="{Binding KeyPoints}">
                             <ListBox.ItemTemplate>
-                                <DataTemplate x:DataType="program:Waypoint">
-                                    <TextBlock Classes="telemetry" FontSize="14" Text="{Binding Pose}" />
+                                <DataTemplate x:DataType="program:KeyPoint">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <TextBlock Classes="telemetry" FontSize="14" Text="{Binding Label}" />
+                                        <TextBlock Classes="telemetry" FontSize="14" Opacity="0.7" Text="{Binding Pose}" />
+                                    </StackPanel>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
                         </ListBox>
@@ -168,6 +209,49 @@
                                    Text="{Binding FaultedAtSegmentIndex, StringFormat='Ошибка на сегменте: {0}'}" />
                     </Border>
                 </StackPanel>
+            </Border>
+
+            <Border IsVisible="{Binding IsEditingKeyPoint}" Background="#CC0A0E12">
+                <Border x:DataType="vm:KeyPointEditorViewModel" DataContext="{Binding KeyPointEditor}"
+                        Width="320" Background="{StaticResource HudPanelElevatedBrush}"
+                        BorderBrush="{StaticResource HudBorderStrongBrush}" BorderThickness="1"
+                        Padding="20" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <StackPanel Spacing="10">
+                        <TextBlock Classes="section-heading" Text="{Binding Number, StringFormat='ТОЧКА №{0}'}" />
+                        <TextBox Text="{Binding Label}" PlaceholderText="Название" />
+                        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" Margin="0,4,0,0">
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="X" VerticalAlignment="Center" Margin="0,0,10,6" />
+                            <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding X}" Margin="0,0,0,6" />
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Y" VerticalAlignment="Center" Margin="0,0,10,6" />
+                            <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Y}" Margin="0,0,0,6" />
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Z" VerticalAlignment="Center" Margin="0,0,10,6" />
+                            <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding Z}" Margin="0,0,0,6" />
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="A" VerticalAlignment="Center" Margin="0,0,10,6" />
+                            <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding A}" Margin="0,0,0,6" />
+                            <TextBlock Grid.Row="4" Grid.Column="0" Text="Стоянка, с" VerticalAlignment="Center" Margin="0,0,10,0" />
+                            <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding DwellSeconds}" />
+                        </Grid>
+                        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,6,0,0">
+                            <Button Content="Отмена" Command="{Binding CancelCommand}" />
+                            <Button Classes="primary" Content="Сохранить" Command="{Binding SaveCommand}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </Border>
+
+            <Border IsVisible="{Binding PendingConfirmation, Converter={x:Static ObjectConverters.IsNotNull}}" Background="#CC0A0E12">
+                <Border x:DataType="vm:ConfirmationRequest" DataContext="{Binding PendingConfirmation}"
+                        Width="360" Background="{StaticResource HudPanelElevatedBrush}"
+                        BorderBrush="{StaticResource HudBorderStrongBrush}" BorderThickness="1"
+                        Padding="20" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <StackPanel Spacing="14">
+                        <TextBlock Text="{Binding Message}" TextWrapping="Wrap" />
+                        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                            <Button Content="Нет" Command="{Binding ((vm:ProgramViewModel)DataContext).ConfirmNoCommand, ElementName=RootPanel}" />
+                            <Button Classes="primary" Content="Да" Command="{Binding ((vm:ProgramViewModel)DataContext).ConfirmYesCommand, ElementName=RootPanel}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
             </Border>
         </Grid>
     </DockPanel>

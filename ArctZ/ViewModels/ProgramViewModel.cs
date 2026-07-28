@@ -1,6 +1,8 @@
 using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
+using System.Linq;
 using System.Threading.Tasks;
 using ArctZ.Components.VirtualJoystick;
 using ArctZ.Services.Device;
@@ -38,14 +40,17 @@ public partial class ProgramViewModel : ViewModelBase
     private string _programName = "Новая программа";
 
     [ObservableProperty]
-    private Waypoint? _selectedWaypoint;
+    private KeyPoint? _selectedKeyPoint;
 
-    public ObservableCollection<Waypoint> Waypoints { get; } = new();
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsEditingKeyPoint))]
+    private KeyPointEditorViewModel? _keyPointEditor;
 
-    /// <summary>Transitions[i] describes the move from Waypoints[i] to Waypoints[i+1] — kept in sync by CaptureWaypoint/RemoveWaypoint.</summary>
-    public ObservableCollection<TransitionSettings> Transitions { get; } = new();
+    public bool IsEditingKeyPoint => KeyPointEditor is not null;
 
-    public ObservableCollection<ProgramSummary> Library { get; } = new();
+    public ObservableCollection<KeyPoint> KeyPoints { get; } = new();
+
+    public ObservableCollection<ProgramLibraryItem> Library { get; } = new();
 
     public ProgramViewModel(ConnectionViewModel connection, IProgramStorage storage, ITrajectoryCompiler compiler)
     {
@@ -61,7 +66,15 @@ public partial class ProgramViewModel : ViewModelBase
         Library.Clear();
         foreach (var summary in await _storage.ListAsync())
         {
-            Library.Add(summary);
+            Library.Add(new ProgramLibraryItem(summary, summary.Id == ProgramId));
+        }
+    }
+
+    partial void OnProgramIdChanged(Guid? value)
+    {
+        foreach (var item in Library)
+        {
+            item.IsLoaded = item.Id == value;
         }
     }
 
@@ -70,48 +83,85 @@ public partial class ProgramViewModel : ViewModelBase
     {
         ProgramId = null;
         ProgramName = "Новая программа";
-        Waypoints.Clear();
-        Transitions.Clear();
-        SelectedWaypoint = null;
+        KeyPoints.Clear();
+        SelectedKeyPoint = null;
     }
 
     [RelayCommand]
-    private async Task LoadProgramAsync(ProgramSummary summary)
+    private async Task LoadProgramAsync(ProgramLibraryItem summary)
     {
         var program = await _storage.LoadAsync(summary.Id);
 
         ProgramId = program.Id;
         ProgramName = program.Name;
 
-        Waypoints.Clear();
-        foreach (var waypoint in program.Waypoints)
+        KeyPoints.Clear();
+        foreach (var keyPoint in program.KeyPoints)
         {
-            Waypoints.Add(waypoint);
+            KeyPoints.Add(keyPoint);
         }
 
-        Transitions.Clear();
-        foreach (var transition in program.Transitions)
-        {
-            Transitions.Add(transition);
-        }
+        SelectedKeyPoint = null;
+    }
 
-        SelectedWaypoint = null;
+    [ObservableProperty]
+    private ConfirmationRequest? _pendingConfirmation;
+
+    private Task<bool> ConfirmAsync(string message)
+    {
+        var completion = new TaskCompletionSource<bool>();
+        PendingConfirmation = new ConfirmationRequest(message, completion);
+        return completion.Task;
+    }
+
+    [RelayCommand]
+    private void ConfirmYes()
+    {
+        PendingConfirmation?.Completion.TrySetResult(true);
+        PendingConfirmation = null;
+    }
+
+    [RelayCommand]
+    private void ConfirmNo()
+    {
+        PendingConfirmation?.Completion.TrySetResult(false);
+        PendingConfirmation = null;
     }
 
     [RelayCommand]
     private async Task SaveProgramAsync()
     {
-        var program = new JibProgram { Id = ProgramId ?? Guid.NewGuid(), Name = ProgramName };
-        program.Waypoints.AddRange(Waypoints);
-        program.Transitions.AddRange(Transitions);
+        if (ProgramId is not null)
+        {
+            var confirmed = await ConfirmAsync(
+                $"Сохранить поверх ранее сохранённой программы «{ProgramName}»? Текущие данные на диске будут перезаписаны.");
+            if (!confirmed)
+            {
+                return;
+            }
+        }
 
+        var hasNameCollision = Library.Any(item =>
+            item.Id != ProgramId && string.Equals(item.Name.Trim(), ProgramName.Trim(), StringComparison.OrdinalIgnoreCase));
+
+        if (hasNameCollision)
+        {
+            var confirmed = await ConfirmAsync(
+                $"В библиотеке уже есть программа с именем «{ProgramName}». Сохранить ещё одну с таким же именем?");
+            if (!confirmed)
+            {
+                return;
+            }
+        }
+
+        var program = BuildProgram();
         await _storage.SaveAsync(program);
         ProgramId = program.Id;
         await RefreshLibraryAsync();
     }
 
     [RelayCommand]
-    private void CaptureWaypoint()
+    private void CaptureKeyPoint()
     {
         var pose = Connection.Session?.DeviceStatus?.WPos;
         if (pose is null)
@@ -119,36 +169,93 @@ public partial class ProgramViewModel : ViewModelBase
             return;
         }
 
-        Waypoints.Add(new Waypoint(Guid.NewGuid(), Label: null, pose.Value));
-
-        if (Waypoints.Count > 1)
-        {
-            Transitions.Add(new TransitionSettings(FeedRateUnitsPerMin: 500, DwellSeconds: 0, EaseMode.None, ContinuousBlend: false));
-        }
+        var number = KeyPoints.Count + 1;
+        KeyPoints.Add(new KeyPoint(
+            Guid.NewGuid(),
+            number,
+            Label: $"Точка {number}",
+            pose.Value,
+            DwellSeconds: 0,
+            FeedRateUnitsPerMin: 500,
+            EaseMode.None,
+            ContinuousBlend: false));
     }
 
     [RelayCommand]
-    private void RemoveWaypoint(Waypoint waypoint)
+    private void RemoveKeyPoint(KeyPoint keyPoint)
     {
-        var index = Waypoints.IndexOf(waypoint);
+        var index = KeyPoints.IndexOf(keyPoint);
         if (index < 0)
         {
             return;
         }
 
-        Waypoints.RemoveAt(index);
+        KeyPoints.RemoveAt(index);
+        RenumberKeyPoints();
 
-        if (Transitions.Count > 0)
+        if (SelectedKeyPoint == keyPoint)
         {
-            var transitionIndexToRemove = Math.Min(Math.Max(0, index - 1), Transitions.Count - 1);
-            Transitions.RemoveAt(transitionIndexToRemove);
-        }
-
-        if (SelectedWaypoint == waypoint)
-        {
-            SelectedWaypoint = null;
+            SelectedKeyPoint = null;
         }
     }
+
+    private void RenumberKeyPoints()
+    {
+        for (var i = 0; i < KeyPoints.Count; i++)
+        {
+            if (KeyPoints[i].Number != i + 1)
+            {
+                KeyPoints[i] = KeyPoints[i] with { Number = i + 1 };
+            }
+        }
+    }
+
+    [RelayCommand]
+    private void EditKeyPoint(KeyPoint keyPoint)
+    {
+        KeyPointEditor = new KeyPointEditorViewModel(keyPoint, ApplyKeyPointEdit, () => KeyPointEditor = null);
+    }
+
+    private void ApplyKeyPointEdit(KeyPoint updated)
+    {
+        var index = KeyPoints.IndexOf(KeyPoints.First(k => k.Id == updated.Id));
+        KeyPoints[index] = updated;
+        KeyPointEditor = null;
+    }
+
+    [RelayCommand]
+    private void FillKeyPointFromCurrentPosition(KeyPoint keyPoint)
+    {
+        var pose = Connection.Session?.DeviceStatus?.WPos;
+        if (pose is null)
+        {
+            return;
+        }
+
+        var index = KeyPoints.IndexOf(keyPoint);
+        if (index < 0)
+        {
+            return;
+        }
+
+        KeyPoints[index] = keyPoint with { Pose = pose.Value };
+    }
+
+    [RelayCommand]
+    private async Task MoveMachineToKeyPointAsync(KeyPoint keyPoint)
+    {
+        var session = Connection.Session;
+        if (session is null)
+        {
+            return;
+        }
+
+        var pose = keyPoint.Pose;
+        var line = $"G1 X{FormatAxis(pose.X)} Y{FormatAxis(pose.Y)} Z{FormatAxis(pose.Z)} A{FormatAxis(pose.A)} F{FormatAxis(keyPoint.FeedRateUnitsPerMin)}";
+        await session.SendGCodeAsync(line);
+    }
+
+    private static string FormatAxis(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
 
     public void OnLeftJoystickDown(JoystickEventArgs e) => OnStickDown(isLeft: true, e);
 
@@ -290,8 +397,7 @@ public partial class ProgramViewModel : ViewModelBase
     private JibProgram BuildProgram()
     {
         var program = new JibProgram { Id = ProgramId ?? Guid.NewGuid(), Name = ProgramName };
-        program.Waypoints.AddRange(Waypoints);
-        program.Transitions.AddRange(Transitions);
+        program.KeyPoints.AddRange(KeyPoints);
         return program;
     }
 

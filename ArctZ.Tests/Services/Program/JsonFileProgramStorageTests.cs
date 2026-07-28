@@ -27,9 +27,8 @@ public class JsonFileProgramStorageTests : IDisposable
     private static JibProgram SampleProgram(string name)
     {
         var program = new JibProgram { Name = name };
-        program.Waypoints.Add(new Waypoint(Guid.NewGuid(), "A", new MachinePose(1, 2, 3, 4)));
-        program.Waypoints.Add(new Waypoint(Guid.NewGuid(), "B", new MachinePose(5, 6, 7, 8)));
-        program.Transitions.Add(new TransitionSettings(500, 1.5, EaseMode.EaseInOut, ContinuousBlend: true));
+        program.KeyPoints.Add(new KeyPoint(Guid.NewGuid(), 1, "A", new MachinePose(1, 2, 3, 4), DwellSeconds: 0, FeedRateUnitsPerMin: 500, EaseMode.None, ContinuousBlend: false));
+        program.KeyPoints.Add(new KeyPoint(Guid.NewGuid(), 2, "B", new MachinePose(5, 6, 7, 8), DwellSeconds: 1.5, FeedRateUnitsPerMin: 500, EaseMode.EaseInOut, ContinuousBlend: true));
         return program;
     }
 
@@ -43,10 +42,9 @@ public class JsonFileProgramStorageTests : IDisposable
 
         Assert.Equal(program.Id, loaded.Id);
         Assert.Equal("Демо-программа", loaded.Name);
-        Assert.Equal(2, loaded.Waypoints.Count);
-        Assert.Equal(program.Waypoints[0].Pose, loaded.Waypoints[0].Pose);
-        Assert.Single(loaded.Transitions);
-        Assert.Equal(1.5, loaded.Transitions[0].DwellSeconds);
+        Assert.Equal(2, loaded.KeyPoints.Count);
+        Assert.Equal(program.KeyPoints[0].Pose, loaded.KeyPoints[0].Pose);
+        Assert.Equal(1.5, loaded.KeyPoints[1].DwellSeconds);
     }
 
     [Fact]

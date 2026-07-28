@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using System.Threading.Tasks;
 using ArctZ.Components.VirtualJoystick;
@@ -20,60 +21,74 @@ public class ProgramViewModelAuthoringTests
     }
 
     [Fact]
-    public async Task CaptureWaypoint_UsesCurrentDeviceStatusPosition()
+    public async Task CaptureKeyPoint_UsesCurrentDeviceStatusPosition()
     {
         var vm = CreateViewModel(out var transport, out _);
         await vm.Connection.ConnectCommand.ExecuteAsync(null);
         transport.SimulateReceivedLine("<Idle|WPos:1,2,3,4|FS:0,0>");
 
-        vm.CaptureWaypointCommand.Execute(null);
+        vm.CaptureKeyPointCommand.Execute(null);
 
-        Assert.Single(vm.Waypoints);
-        Assert.Equal(new MachinePose(1, 2, 3, 4), vm.Waypoints[0].Pose);
+        Assert.Single(vm.KeyPoints);
+        Assert.Equal(new MachinePose(1, 2, 3, 4), vm.KeyPoints[0].Pose);
     }
 
     [Fact]
-    public async Task CaptureWaypoint_SecondPoint_AddsDefaultTransition()
+    public async Task CaptureKeyPoint_AssignsSequentialNumbers()
     {
         var vm = CreateViewModel(out var transport, out _);
         await vm.Connection.ConnectCommand.ExecuteAsync(null);
         transport.SimulateReceivedLine("<Idle|WPos:0,0,0,0|FS:0,0>");
-        vm.CaptureWaypointCommand.Execute(null);
+        vm.CaptureKeyPointCommand.Execute(null);
 
         transport.SimulateReceivedLine("<Idle|WPos:10,0,0,0|FS:0,0>");
-        vm.CaptureWaypointCommand.Execute(null);
+        vm.CaptureKeyPointCommand.Execute(null);
 
-        Assert.Equal(2, vm.Waypoints.Count);
-        Assert.Single(vm.Transitions);
+        Assert.Equal(2, vm.KeyPoints.Count);
+        Assert.Equal(1, vm.KeyPoints[0].Number);
+        Assert.Equal(2, vm.KeyPoints[1].Number);
     }
 
     [Fact]
-    public void CaptureWaypoint_NoActiveSession_DoesNothing()
+    public async Task CaptureKeyPoint_DefaultsLabelToPointNumber()
+    {
+        var vm = CreateViewModel(out var transport, out _);
+        await vm.Connection.ConnectCommand.ExecuteAsync(null);
+        transport.SimulateReceivedLine("<Idle|WPos:0,0,0,0|FS:0,0>");
+
+        vm.CaptureKeyPointCommand.Execute(null);
+
+        Assert.Equal("Точка 1", vm.KeyPoints[0].Label);
+    }
+
+    [Fact]
+    public void CaptureKeyPoint_NoActiveSession_DoesNothing()
     {
         var vm = CreateViewModel(out _, out _);
 
-        vm.CaptureWaypointCommand.Execute(null);
+        vm.CaptureKeyPointCommand.Execute(null);
 
-        Assert.Empty(vm.Waypoints);
+        Assert.Empty(vm.KeyPoints);
     }
 
     [Fact]
-    public async Task RemoveWaypoint_MiddlePoint_RemovesItAndKeepsTransitionsInSync()
+    public async Task RemoveKeyPoint_MiddlePoint_RemovesItAndRenumbersTheRest()
     {
         var vm = CreateViewModel(out var transport, out _);
         await vm.Connection.ConnectCommand.ExecuteAsync(null);
         foreach (var pose in new[] { "0,0,0,0", "10,0,0,0", "20,0,0,0" })
         {
             transport.SimulateReceivedLine($"<Idle|WPos:{pose}|FS:0,0>");
-            vm.CaptureWaypointCommand.Execute(null);
+            vm.CaptureKeyPointCommand.Execute(null);
         }
 
-        var middle = vm.Waypoints[1];
-        vm.RemoveWaypointCommand.Execute(middle);
+        var middle = vm.KeyPoints[1];
+        vm.RemoveKeyPointCommand.Execute(middle);
 
-        Assert.Equal(2, vm.Waypoints.Count);
-        Assert.Single(vm.Transitions);
-        Assert.DoesNotContain(middle, vm.Waypoints);
+        Assert.Equal(2, vm.KeyPoints.Count);
+        Assert.DoesNotContain(middle, vm.KeyPoints);
+        Assert.Equal(1, vm.KeyPoints[0].Number);
+        Assert.Equal(2, vm.KeyPoints[1].Number);
     }
 
     [Fact]
@@ -82,13 +97,217 @@ public class ProgramViewModelAuthoringTests
         var vm = CreateViewModel(out var transport, out _);
         await vm.Connection.ConnectCommand.ExecuteAsync(null);
         transport.SimulateReceivedLine("<Idle|WPos:0,0,0,0|FS:0,0>");
-        vm.CaptureWaypointCommand.Execute(null);
+        vm.CaptureKeyPointCommand.Execute(null);
         vm.ProgramName = "Тест";
 
         await vm.SaveProgramCommand.ExecuteAsync(null);
         await vm.RefreshLibraryCommand.ExecuteAsync(null);
 
         Assert.Contains(vm.Library, s => s.Name == "Тест");
+    }
+
+    [Fact]
+    public async Task SaveProgramAsync_ThenRefreshLibrary_MarksSavedProgramAsLoaded()
+    {
+        var vm = CreateViewModel(out var transport, out _);
+        await vm.Connection.ConnectCommand.ExecuteAsync(null);
+        transport.SimulateReceivedLine("<Idle|WPos:0,0,0,0|FS:0,0>");
+        vm.CaptureKeyPointCommand.Execute(null);
+        vm.ProgramName = "Тест";
+
+        await vm.SaveProgramCommand.ExecuteAsync(null);
+        await vm.RefreshLibraryCommand.ExecuteAsync(null);
+
+        Assert.True(vm.Library.Single(s => s.Name == "Тест").IsLoaded);
+    }
+
+    [Fact]
+    public async Task LoadProgram_MarksOnlyThatEntryAsLoaded()
+    {
+        var vm = CreateViewModel(out _, out var storage);
+        await storage.SaveAsync(new JibProgram { Id = Guid.NewGuid(), Name = "A" });
+        await storage.SaveAsync(new JibProgram { Id = Guid.NewGuid(), Name = "B" });
+        await vm.RefreshLibraryCommand.ExecuteAsync(null);
+        var target = vm.Library.Single(p => p.Name == "B");
+
+        await vm.LoadProgramCommand.ExecuteAsync(target);
+
+        Assert.True(vm.Library.Single(p => p.Name == "B").IsLoaded);
+        Assert.False(vm.Library.Single(p => p.Name == "A").IsLoaded);
+    }
+
+    [Fact]
+    public async Task NewProgram_ClearsLoadedFlagOnAllEntries()
+    {
+        var vm = CreateViewModel(out _, out var storage);
+        await storage.SaveAsync(new JibProgram { Id = Guid.NewGuid(), Name = "A" });
+        await vm.RefreshLibraryCommand.ExecuteAsync(null);
+        await vm.LoadProgramCommand.ExecuteAsync(vm.Library[0]);
+
+        vm.NewProgramCommand.Execute(null);
+
+        Assert.All(vm.Library, p => Assert.False(p.IsLoaded));
+    }
+
+    [Fact]
+    public async Task SaveProgramAsync_OverwritingLoadedProgram_AsksForConfirmation()
+    {
+        var vm = CreateViewModel(out var transport, out _);
+        await vm.Connection.ConnectCommand.ExecuteAsync(null);
+        transport.SimulateReceivedLine("<Idle|WPos:0,0,0,0|FS:0,0>");
+        vm.CaptureKeyPointCommand.Execute(null);
+        vm.ProgramName = "Тест";
+        await vm.SaveProgramCommand.ExecuteAsync(null);
+
+        var saveTask = vm.SaveProgramCommand.ExecuteAsync(null);
+
+        Assert.NotNull(vm.PendingConfirmation);
+        vm.ConfirmYesCommand.Execute(null);
+        await saveTask;
+
+        Assert.Null(vm.PendingConfirmation);
+    }
+
+    [Fact]
+    public async Task SaveProgramAsync_DecliningOverwriteConfirmation_DoesNotSave()
+    {
+        var vm = CreateViewModel(out var transport, out var storage);
+        await vm.Connection.ConnectCommand.ExecuteAsync(null);
+        transport.SimulateReceivedLine("<Idle|WPos:0,0,0,0|FS:0,0>");
+        vm.CaptureKeyPointCommand.Execute(null);
+        vm.ProgramName = "Тест";
+        await vm.SaveProgramCommand.ExecuteAsync(null);
+        var savedId = vm.ProgramId!.Value;
+
+        transport.SimulateReceivedLine("<Idle|WPos:10,0,0,0|FS:0,0>");
+        vm.CaptureKeyPointCommand.Execute(null);
+
+        var saveTask = vm.SaveProgramCommand.ExecuteAsync(null);
+        Assert.NotNull(vm.PendingConfirmation);
+        vm.ConfirmNoCommand.Execute(null);
+        await saveTask;
+
+        var stored = await storage.LoadAsync(savedId);
+        Assert.Single(stored.KeyPoints);
+    }
+
+    [Fact]
+    public async Task SaveProgramAsync_NameCollidesWithDifferentProgram_AsksForConfirmation()
+    {
+        var vm = CreateViewModel(out _, out var storage);
+        await storage.SaveAsync(new JibProgram { Id = Guid.NewGuid(), Name = "Existing" });
+        await vm.RefreshLibraryCommand.ExecuteAsync(null);
+        vm.ProgramName = "Existing";
+
+        var saveTask = vm.SaveProgramCommand.ExecuteAsync(null);
+
+        Assert.NotNull(vm.PendingConfirmation);
+        vm.ConfirmYesCommand.Execute(null);
+        await saveTask;
+
+        Assert.NotNull(vm.ProgramId);
+    }
+
+    [Fact]
+    public async Task SaveProgramAsync_DecliningNameCollisionConfirmation_DoesNotSave()
+    {
+        var vm = CreateViewModel(out _, out var storage);
+        await storage.SaveAsync(new JibProgram { Id = Guid.NewGuid(), Name = "Existing" });
+        await vm.RefreshLibraryCommand.ExecuteAsync(null);
+        vm.ProgramName = "Existing";
+
+        var saveTask = vm.SaveProgramCommand.ExecuteAsync(null);
+        Assert.NotNull(vm.PendingConfirmation);
+        vm.ConfirmNoCommand.Execute(null);
+        await saveTask;
+
+        Assert.Null(vm.ProgramId);
+    }
+
+    [Fact]
+    public async Task EditKeyPoint_OpensEditorPrefilledFromThePoint()
+    {
+        var vm = CreateViewModel(out var transport, out _);
+        await vm.Connection.ConnectCommand.ExecuteAsync(null);
+        transport.SimulateReceivedLine("<Idle|WPos:1,2,3,4|FS:0,0>");
+        vm.CaptureKeyPointCommand.Execute(null);
+
+        vm.EditKeyPointCommand.Execute(vm.KeyPoints[0]);
+
+        Assert.True(vm.IsEditingKeyPoint);
+        Assert.NotNull(vm.KeyPointEditor);
+        Assert.Equal(1, vm.KeyPointEditor!.Number);
+        Assert.Equal(1, vm.KeyPointEditor.X);
+        Assert.Equal(2, vm.KeyPointEditor.Y);
+        Assert.Equal(3, vm.KeyPointEditor.Z);
+        Assert.Equal(4, vm.KeyPointEditor.A);
+    }
+
+    [Fact]
+    public async Task EditKeyPoint_Save_UpdatesThePointInPlaceAndClosesEditor()
+    {
+        var vm = CreateViewModel(out var transport, out _);
+        await vm.Connection.ConnectCommand.ExecuteAsync(null);
+        transport.SimulateReceivedLine("<Idle|WPos:0,0,0,0|FS:0,0>");
+        vm.CaptureKeyPointCommand.Execute(null);
+
+        vm.EditKeyPointCommand.Execute(vm.KeyPoints[0]);
+        vm.KeyPointEditor!.Label = "Общий план";
+        vm.KeyPointEditor.X = 42;
+        vm.KeyPointEditor.DwellSeconds = 5;
+        vm.KeyPointEditor.SaveCommand.Execute(null);
+
+        Assert.False(vm.IsEditingKeyPoint);
+        Assert.Equal("Общий план", vm.KeyPoints[0].Label);
+        Assert.Equal(new MachinePose(42, 0, 0, 0), vm.KeyPoints[0].Pose);
+        Assert.Equal(5, vm.KeyPoints[0].DwellSeconds);
+        Assert.Equal(1, vm.KeyPoints[0].Number);
+    }
+
+    [Fact]
+    public async Task EditKeyPoint_Cancel_LeavesThePointUnchangedAndClosesEditor()
+    {
+        var vm = CreateViewModel(out var transport, out _);
+        await vm.Connection.ConnectCommand.ExecuteAsync(null);
+        transport.SimulateReceivedLine("<Idle|WPos:0,0,0,0|FS:0,0>");
+        vm.CaptureKeyPointCommand.Execute(null);
+        var original = vm.KeyPoints[0];
+
+        vm.EditKeyPointCommand.Execute(original);
+        vm.KeyPointEditor!.X = 99;
+        vm.KeyPointEditor.CancelCommand.Execute(null);
+
+        Assert.False(vm.IsEditingKeyPoint);
+        Assert.Equal(original, vm.KeyPoints[0]);
+    }
+
+    [Fact]
+    public async Task FillKeyPointFromCurrentPosition_ReplacesPoseButKeepsOtherFields()
+    {
+        var vm = CreateViewModel(out var transport, out _);
+        await vm.Connection.ConnectCommand.ExecuteAsync(null);
+        transport.SimulateReceivedLine("<Idle|WPos:0,0,0,0|FS:0,0>");
+        vm.CaptureKeyPointCommand.Execute(null);
+        var beforeNumber = vm.KeyPoints[0].Number;
+
+        transport.SimulateReceivedLine("<Idle|WPos:5,6,7,8|FS:0,0>");
+        vm.FillKeyPointFromCurrentPositionCommand.Execute(vm.KeyPoints[0]);
+
+        Assert.Equal(new MachinePose(5, 6, 7, 8), vm.KeyPoints[0].Pose);
+        Assert.Equal(beforeNumber, vm.KeyPoints[0].Number);
+    }
+
+    [Fact]
+    public async Task MoveMachineToKeyPoint_SendsG1MoveToThePointsPoseAndFeed()
+    {
+        var vm = CreateViewModel(out var transport, out _);
+        await vm.Connection.ConnectCommand.ExecuteAsync(null);
+        transport.SimulateReceivedLine("<Idle|WPos:0,0,0,0|FS:0,0>");
+        vm.CaptureKeyPointCommand.Execute(null);
+
+        _ = vm.MoveMachineToKeyPointCommand.ExecuteAsync(vm.KeyPoints[0]);
+
+        Assert.Contains(transport.SentLines, l => l == "G1 X0 Y0 Z0 A0 F500");
     }
 
     [Fact]

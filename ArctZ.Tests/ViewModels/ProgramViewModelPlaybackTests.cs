@@ -19,18 +19,18 @@ public class ProgramViewModelPlaybackTests
         return new ProgramViewModel(connection, storage, new TrajectoryCompiler());
     }
 
-    /// <summary>3 waypoints, 2 continuous-blend segments -> 2 compiled G1 steps, no G4.</summary>
+    /// <summary>3 key points, 2 continuous-blend segments -> 2 compiled G1 steps, no G4.</summary>
     private static void SeedTwoSegmentProgram(ProgramViewModel vm, FakeDeviceTransport transport)
     {
         foreach (var pose in new[] { "0,0,0,0", "10,0,0,0", "20,0,0,0" })
         {
             transport.SimulateReceivedLine($"<Idle|WPos:{pose}|FS:0,0>");
-            vm.CaptureWaypointCommand.Execute(null);
+            vm.CaptureKeyPointCommand.Execute(null);
         }
 
-        for (var i = 0; i < vm.Transitions.Count; i++)
+        for (var i = 0; i < vm.KeyPoints.Count; i++)
         {
-            vm.Transitions[i] = new TransitionSettings(500, 0, EaseMode.None, ContinuousBlend: true);
+            vm.KeyPoints[i] = vm.KeyPoints[i] with { FeedRateUnitsPerMin = 500, DwellSeconds = 0, Ease = EaseMode.None, ContinuousBlend = true };
         }
     }
 

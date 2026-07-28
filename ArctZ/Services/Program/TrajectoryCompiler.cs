@@ -16,19 +16,19 @@ public sealed class TrajectoryCompiler : ITrajectoryCompiler
 
         foreach (var segment in program.Segments())
         {
-            if (segment.Transition.Ease == EaseMode.EaseInOut)
+            if (segment.To.Ease == EaseMode.EaseInOut)
             {
                 CompileEased(segment, steps);
             }
             else
             {
-                var command = MoveCommand(segment.To.Pose, segment.Transition.FeedRateUnitsPerMin);
+                var command = MoveCommand(segment.To.Pose, segment.To.FeedRateUnitsPerMin);
                 steps.Add(new CompiledStep(segment.Index, command, SegmentProgress: 1.0));
             }
 
-            if (segment.Transition.StopsAtWaypoint)
+            if (segment.To.StopsAtWaypoint)
             {
-                var dwellLine = $"G4 P{Format(segment.Transition.DwellSeconds)}";
+                var dwellLine = $"G4 P{Format(segment.To.DwellSeconds)}";
                 steps.Add(new CompiledStep(segment.Index, new GCodeLineCommand(dwellLine), SegmentProgress: 1.0));
             }
         }
@@ -42,7 +42,7 @@ public sealed class TrajectoryCompiler : ITrajectoryCompiler
         {
             var t = (double)i / EaseSubdivisions;
             var pose = Interpolate(segment.From.Pose, segment.To.Pose, t);
-            var feed = FeedMultiplier(t) * segment.Transition.FeedRateUnitsPerMin;
+            var feed = FeedMultiplier(t) * segment.To.FeedRateUnitsPerMin;
             steps.Add(new CompiledStep(segment.Index, MoveCommand(pose, feed), SegmentProgress: t));
         }
     }

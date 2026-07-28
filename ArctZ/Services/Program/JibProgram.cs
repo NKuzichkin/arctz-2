@@ -9,17 +9,14 @@ public sealed class JibProgram
 
     public string Name { get; set; } = "Новая программа";
 
-    public List<Waypoint> Waypoints { get; } = new();
+    public List<KeyPoint> KeyPoints { get; } = new();
 
-    /// <summary>Transitions[i] describes the move from Waypoints[i] to Waypoints[i+1].</summary>
-    public List<TransitionSettings> Transitions { get; } = new();
-
+    /// <summary>Segment i describes the move from KeyPoints[i] to KeyPoints[i+1], using KeyPoints[i+1]'s own feed/ease/dwell settings.</summary>
     public IEnumerable<ProgramSegment> Segments()
     {
-        var count = Math.Min(Waypoints.Count - 1, Transitions.Count);
-        for (var i = 0; i < count; i++)
+        for (var i = 0; i < KeyPoints.Count - 1; i++)
         {
-            yield return new ProgramSegment(i, Waypoints[i], Waypoints[i + 1], Transitions[i]);
+            yield return new ProgramSegment(i, KeyPoints[i], KeyPoints[i + 1]);
         }
     }
 }

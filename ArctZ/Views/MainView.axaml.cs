@@ -45,7 +45,7 @@ namespace ArctZ.Views
 
         private async void OnLibrarySelectionChanged(object? sender, SelectionChangedEventArgs e)
         {
-            if (ViewModel is { } vm && sender is ListBox { SelectedItem: ProgramSummary summary })
+            if (ViewModel is { } vm && sender is ListBox { SelectedItem: ProgramLibraryItem summary })
             {
                 await vm.LoadProgramCommand.ExecuteAsync(summary);
             }

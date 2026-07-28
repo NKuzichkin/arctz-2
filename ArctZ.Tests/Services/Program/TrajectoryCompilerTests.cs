@@ -11,12 +11,20 @@ public class TrajectoryCompilerTests
 {
     private readonly TrajectoryCompiler _compiler = new();
 
-    private static JibProgram SingleSegmentProgram(TransitionSettings transition)
+    private static KeyPoint Point(
+        int number,
+        MachinePose pose,
+        double feedRateUnitsPerMin = 500,
+        double dwellSeconds = 0,
+        EaseMode ease = EaseMode.None,
+        bool continuousBlend = false) =>
+        new(Guid.NewGuid(), number, Label: null, pose, dwellSeconds, feedRateUnitsPerMin, ease, continuousBlend);
+
+    private static JibProgram SingleSegmentProgram(KeyPoint to)
     {
         var program = new JibProgram();
-        program.Waypoints.Add(new Waypoint(Guid.NewGuid(), "A", MachinePose.Zero));
-        program.Waypoints.Add(new Waypoint(Guid.NewGuid(), "B", new MachinePose(60, 0, 0, 0)));
-        program.Transitions.Add(transition);
+        program.KeyPoints.Add(Point(1, MachinePose.Zero));
+        program.KeyPoints.Add(to);
         return program;
     }
 
@@ -29,8 +37,8 @@ public class TrajectoryCompilerTests
     [Fact]
     public void Compile_NoEase_ProducesSingleG1StepAtFullProgress()
     {
-        var transition = new TransitionSettings(FeedRateUnitsPerMin: 1000, DwellSeconds: 0, EaseMode.None, ContinuousBlend: false);
-        var program = SingleSegmentProgram(transition);
+        var to = Point(2, new MachinePose(60, 0, 0, 0), feedRateUnitsPerMin: 1000);
+        var program = SingleSegmentProgram(to);
 
         var steps = _compiler.Compile(program);
 
@@ -43,8 +51,8 @@ public class TrajectoryCompilerTests
     [Fact]
     public void Compile_EaseInOut_ProducesSixSubstepsWithRampedFeedAndIncreasingProgress()
     {
-        var transition = new TransitionSettings(FeedRateUnitsPerMin: 1000, DwellSeconds: 0, EaseMode.EaseInOut, ContinuousBlend: false);
-        var program = SingleSegmentProgram(transition);
+        var to = Point(2, new MachinePose(60, 0, 0, 0), feedRateUnitsPerMin: 1000, ease: EaseMode.EaseInOut);
+        var program = SingleSegmentProgram(to);
 
         var steps = _compiler.Compile(program);
         var motionSteps = steps.Where(s => ((GCodeLineCommand)s.Command).Line.StartsWith("G1", StringComparison.Ordinal)).ToList();
@@ -63,8 +71,8 @@ public class TrajectoryCompilerTests
     [Fact]
     public void Compile_DwellPositive_AppendsG4AfterMotionAtFullProgress()
     {
-        var transition = new TransitionSettings(FeedRateUnitsPerMin: 1000, DwellSeconds: 2.5, EaseMode.None, ContinuousBlend: true);
-        var program = SingleSegmentProgram(transition);
+        var to = Point(2, new MachinePose(60, 0, 0, 0), feedRateUnitsPerMin: 1000, dwellSeconds: 2.5, continuousBlend: true);
+        var program = SingleSegmentProgram(to);
 
         var steps = _compiler.Compile(program);
 
@@ -78,8 +86,8 @@ public class TrajectoryCompilerTests
     [Fact]
     public void Compile_ContinuousBlendNoDwell_DoesNotAppendDwell()
     {
-        var transition = new TransitionSettings(FeedRateUnitsPerMin: 1000, DwellSeconds: 0, EaseMode.None, ContinuousBlend: true);
-        var program = SingleSegmentProgram(transition);
+        var to = Point(2, new MachinePose(60, 0, 0, 0), feedRateUnitsPerMin: 1000, continuousBlend: true);
+        var program = SingleSegmentProgram(to);
 
         var steps = _compiler.Compile(program);
 
@@ -91,12 +99,9 @@ public class TrajectoryCompilerTests
     public void Compile_MultipleSegments_AssignsCorrectSegmentIndexToEachStep()
     {
         var program = new JibProgram();
-        program.Waypoints.Add(new Waypoint(Guid.NewGuid(), "A", MachinePose.Zero));
-        program.Waypoints.Add(new Waypoint(Guid.NewGuid(), "B", new MachinePose(10, 0, 0, 0)));
-        program.Waypoints.Add(new Waypoint(Guid.NewGuid(), "C", new MachinePose(20, 0, 0, 0)));
-        var transition = new TransitionSettings(FeedRateUnitsPerMin: 500, DwellSeconds: 0, EaseMode.None, ContinuousBlend: false);
-        program.Transitions.Add(transition);
-        program.Transitions.Add(transition);
+        program.KeyPoints.Add(Point(1, MachinePose.Zero));
+        program.KeyPoints.Add(Point(2, new MachinePose(10, 0, 0, 0)));
+        program.KeyPoints.Add(Point(3, new MachinePose(20, 0, 0, 0)));
 
         var steps = _compiler.Compile(program);
 
