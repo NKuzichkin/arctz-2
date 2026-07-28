@@ -14,10 +14,25 @@ public partial class ConnectionViewModel : ViewModelBase
     private readonly IDeviceSessionFactory _sessionFactory;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsConnectionModalVisible))]
     private IDeviceSession? _session;
 
+    // Mirrors Session.ConnectionState. IDeviceSession does not implement
+    // INotifyPropertyChanged, so a direct "Session.ConnectionState" binding
+    // only ever reads the value once (when Session itself changes) and never
+    // updates when the same session's state transitions later. This property
+    // is kept current via ConnectionStateChanged (see OnSessionChanged below)
+    // so bindings on THIS view model update live.
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsConnectionModalVisible))]
+    [NotifyCanExecuteChangedFor(nameof(ConnectCommand))]
+    private ConnectionState _connectionState = ConnectionState.Disconnected;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ConnectCommand))]
     private ConnectionEndpoint? _selectedEndpoint;
+
+    public bool IsConnectionModalVisible => Session is null || ConnectionState != ConnectionState.Connected;
 
     public ObservableCollection<ConnectionEndpoint> AvailableEndpoints { get; } = new()
     {
@@ -36,7 +51,31 @@ public partial class ConnectionViewModel : ViewModelBase
         SelectedEndpoint = AvailableEndpoints[0];
     }
 
-    [RelayCommand]
+    partial void OnSessionChanged(IDeviceSession? oldValue, IDeviceSession? newValue)
+    {
+        if (oldValue is not null)
+        {
+            oldValue.ConnectionStateChanged -= OnSessionConnectionStateChanged;
+        }
+
+        if (newValue is not null)
+        {
+            newValue.ConnectionStateChanged += OnSessionConnectionStateChanged;
+        }
+
+        ConnectionState = newValue?.ConnectionState ?? ConnectionState.Disconnected;
+    }
+
+    private void OnSessionConnectionStateChanged()
+    {
+        ConnectionState = Session?.ConnectionState ?? ConnectionState.Disconnected;
+    }
+
+    private bool CanConnect() =>
+        SelectedEndpoint is not null &&
+        ConnectionState is not (ConnectionState.Connecting or ConnectionState.Reconnecting);
+
+    [RelayCommand(CanExecute = nameof(CanConnect))]
     private async Task ConnectAsync()
     {
         if (SelectedEndpoint is null)
