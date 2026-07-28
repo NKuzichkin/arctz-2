@@ -16,18 +16,14 @@
                 Padding="10,6">
             <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                 <Ellipse Width="8" Height="8" VerticalAlignment="Center"
-                         Fill="{Binding Session.ConnectionState, Converter={StaticResource StateToBrush}, FallbackValue={StaticResource HudTextSecondaryBrush}}" />
+                         Fill="{Binding ConnectionState, Converter={StaticResource StateToBrush}}" />
                 <TextBlock VerticalAlignment="Center"
-                           Text="{Binding Session.ConnectionState, Converter={StaticResource StateToLabel}, FallbackValue='Не подключено'}" />
+                           Text="{Binding ConnectionState, Converter={StaticResource StateToLabel}}" />
             </StackPanel>
         </Border>
 
-        <ComboBox ItemsSource="{Binding AvailableEndpoints}"
-                  SelectedItem="{Binding SelectedEndpoint}"
-                  DisplayMemberBinding="{Binding DisplayName}" />
-        <Button Classes="primary" Content="Подключить" Command="{Binding ConnectCommand}" />
-        <Button Content="Отключить" Command="{Binding DisconnectCommand}" />
         <Button Content="Homing" Command="{Binding HomeCommand}" />
         <Button Classes="danger" Content="Сброс аварии" Command="{Binding ResetAlarmCommand}" />
+        <Button Content="Отключить" Command="{Binding DisconnectCommand}" />
     </StackPanel>
 </UserControl>
