@@ -7,65 +7,168 @@
              xmlns:program="using:ArctZ.Services.Program"
              mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="600"
              x:Class="ArctZ.Views.MainView"
-             x:DataType="vm:ProgramViewModel">
+             x:DataType="vm:ProgramViewModel"
+             Background="{StaticResource HudBackgroundBrush}"
+             Foreground="{StaticResource HudTextPrimaryBrush}">
+
+    <UserControl.Styles>
+        <Style Selector="Border.reveal-1, Border.reveal-2, Border.reveal-3">
+            <Style.Animations>
+                <Animation Duration="0:0:0.4" Easing="CubicEaseOut" FillMode="Forward">
+                    <KeyFrame Cue="0%">
+                        <Setter Property="Opacity" Value="0" />
+                    </KeyFrame>
+                    <KeyFrame Cue="100%">
+                        <Setter Property="Opacity" Value="1" />
+                    </KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
+        <Style Selector="Border.reveal-2">
+            <Style.Animations>
+                <Animation Duration="0:0:0.4" Delay="0:0:0.08" Easing="CubicEaseOut" FillMode="Forward">
+                    <KeyFrame Cue="0%">
+                        <Setter Property="Opacity" Value="0" />
+                    </KeyFrame>
+                    <KeyFrame Cue="100%">
+                        <Setter Property="Opacity" Value="1" />
+                    </KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
+        <Style Selector="Border.reveal-3">
+            <Style.Animations>
+                <Animation Duration="0:0:0.4" Delay="0:0:0.16" Easing="CubicEaseOut" FillMode="Forward">
+                    <KeyFrame Cue="0%">
+                        <Setter Property="Opacity" Value="0" />
+                    </KeyFrame>
+                    <KeyFrame Cue="100%">
+                        <Setter Property="Opacity" Value="1" />
+                    </KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
+
+        <Style Selector="TextBlock.section-heading">
+            <Setter Property="FontFamily" Value="{StaticResource HudFontBody}" />
+            <Setter Property="FontSize" Value="{StaticResource HudFontSizeSmall}" />
+            <Setter Property="FontWeight" Value="Medium" />
+            <Setter Property="Foreground" Value="{StaticResource HudTextSecondaryBrush}" />
+            <Setter Property="LetterSpacing" Value="1.5" />
+        </Style>
+    </UserControl.Styles>
+
     <DockPanel>
-        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto" Margin="8">
-            <ContentControl Grid.Column="0" Content="{Binding Connection}" />
-            <ToggleButton Grid.Column="1" Content="Программирование" IsChecked="{Binding IsAuthoring}" Click="OnAuthoringModeClicked" Margin="4,0" />
-            <ToggleButton Grid.Column="2" Content="Выполнение" IsChecked="{Binding IsPlayback}" Click="OnPlaybackModeClicked" Margin="4,0" />
-        </Grid>
+        <Border DockPanel.Dock="Top" Classes="reveal-1"
+                Background="{StaticResource HudPanelBrush}"
+                BorderBrush="{StaticResource HudBorderBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="12,10">
+            <Grid ColumnDefinitions="*,Auto,Auto">
+                <ContentControl Grid.Column="0" Content="{Binding Connection}" />
+                <ToggleButton Grid.Column="1" Classes="mode" Content="ПРОГРАММИРОВАНИЕ"
+                              IsChecked="{Binding IsAuthoring}" Click="OnAuthoringModeClicked" Margin="4,0" />
+                <ToggleButton Grid.Column="2" Classes="mode" Content="ВЫПОЛНЕНИЕ"
+                              IsChecked="{Binding IsPlayback}" Click="OnPlaybackModeClicked" Margin="4,0" />
+            </Grid>
+        </Border>
 
-        <ListBox DockPanel.Dock="Left" Width="200" Margin="8"
-                 ItemsSource="{Binding Library}"
-                 SelectionChanged="OnLibrarySelectionChanged">
-            <ListBox.ItemTemplate>
-                <DataTemplate x:DataType="program:ProgramSummary">
-                    <TextBlock Text="{Binding Name}" />
-                </DataTemplate>
-            </ListBox.ItemTemplate>
-        </ListBox>
-
-        <Grid IsVisible="{Binding IsAuthoring}" ColumnDefinitions="Auto,*,Auto" Margin="8">
-            <js:VirtualJoystick Grid.Column="0" Radius="80" Mode="Fixed" Shape="Circle"
-                                 JoystickDown="OnLeftJoystickDown" JoystickMove="OnLeftJoystickMove" JoystickUp="OnLeftJoystickUp" />
-
-            <StackPanel Grid.Column="1" Spacing="8" Margin="16,0">
-                <TextBox Text="{Binding ProgramName}" Watermark="Имя программы" />
-                <Button Content="Захватить точку" Command="{Binding CaptureWaypointCommand}" />
-                <Button Content="Новая программа" Command="{Binding NewProgramCommand}" />
-                <Button Content="Сохранить" Command="{Binding SaveProgramCommand}" />
-                <ListBox ItemsSource="{Binding Waypoints}" SelectedItem="{Binding SelectedWaypoint}" Height="200">
+        <Border DockPanel.Dock="Left" Classes="reveal-2" Width="220" Margin="12"
+                Background="{StaticResource HudPanelBrush}"
+                BorderBrush="{StaticResource HudBorderBrush}"
+                BorderThickness="1">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Top" Classes="section-heading" Text="БИБЛИОТЕКА" Margin="12,10,12,6" />
+                <ListBox ItemsSource="{Binding Library}" SelectionChanged="OnLibrarySelectionChanged">
                     <ListBox.ItemTemplate>
-                        <DataTemplate x:DataType="program:Waypoint">
-                            <TextBlock Text="{Binding Pose}" />
+                        <DataTemplate x:DataType="program:ProgramSummary">
+                            <TextBlock Text="{Binding Name}" />
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
-                <Button Content="Удалить точку" Command="{Binding RemoveWaypointCommand}" CommandParameter="{Binding SelectedWaypoint}" />
-            </StackPanel>
+            </DockPanel>
+        </Border>
 
-            <js:VirtualJoystick Grid.Column="2" Radius="80" Mode="Fixed" Shape="Circle"
-                                 JoystickDown="OnRightJoystickDown" JoystickMove="OnRightJoystickMove" JoystickUp="OnRightJoystickUp" />
+        <!-- A single Grid is the DockPanel's true last child so it receives the fill slot;
+             the Authoring/Playback panels sit stacked inside it, toggled by IsVisible. -->
+        <Grid>
+            <Border Classes="reveal-3" Margin="0,12,12,12" IsVisible="{Binding IsAuthoring}"
+                    Background="{StaticResource HudPanelBrush}"
+                    BorderBrush="{StaticResource HudBorderBrush}"
+                    BorderThickness="1">
+                <Grid ColumnDefinitions="Auto,*,Auto" Margin="20">
+                    <js:VirtualJoystick Grid.Column="0" Radius="80" Mode="Fixed" Shape="Circle"
+                                         VerticalAlignment="Center"
+                                         JoystickDown="OnLeftJoystickDown" JoystickMove="OnLeftJoystickMove" JoystickUp="OnLeftJoystickUp" />
+
+                    <StackPanel Grid.Column="1" Spacing="10" Margin="24,0" VerticalAlignment="Center" MaxWidth="360">
+                        <TextBlock Classes="section-heading" Text="ПРОГРАММА" />
+                        <TextBox Text="{Binding ProgramName}" PlaceholderText="Имя программы" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Classes="primary" Content="Захватить точку" Command="{Binding CaptureWaypointCommand}" />
+                            <Button Content="Новая" Command="{Binding NewProgramCommand}" />
+                            <Button Content="Сохранить" Command="{Binding SaveProgramCommand}" />
+                        </StackPanel>
+                        <TextBlock Classes="section-heading" Text="ТОЧКИ" Margin="0,8,0,0" />
+                        <Border BorderBrush="{StaticResource HudBorderBrush}" BorderThickness="1">
+                            <ListBox ItemsSource="{Binding Waypoints}" SelectedItem="{Binding SelectedWaypoint}" Height="200">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate x:DataType="program:Waypoint">
+                                        <TextBlock Classes="telemetry" FontSize="14" Text="{Binding Pose}" />
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Border>
+                        <Button Classes="danger" Content="Удалить точку" Command="{Binding RemoveWaypointCommand}" CommandParameter="{Binding SelectedWaypoint}" />
+                    </StackPanel>
+
+                    <js:VirtualJoystick Grid.Column="2" Radius="80" Mode="Fixed" Shape="Circle"
+                                         VerticalAlignment="Center"
+                                         JoystickDown="OnRightJoystickDown" JoystickMove="OnRightJoystickMove" JoystickUp="OnRightJoystickUp" />
+                </Grid>
+            </Border>
+
+            <Border Classes="reveal-3" Margin="0,12,12,12" IsVisible="{Binding IsPlayback}"
+                    Background="{StaticResource HudPanelBrush}"
+                    BorderBrush="{StaticResource HudBorderBrush}"
+                    BorderThickness="1">
+                <StackPanel Spacing="14" Margin="20" MaxWidth="480" HorizontalAlignment="Left">
+                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <Button Classes="primary" Content="Play" Command="{Binding PlayCommand}" />
+                        <Button Content="Pause" Command="{Binding PauseCommand}" />
+                        <Button Classes="danger" Content="Stop" Command="{Binding StopCommand}" />
+                        <Border Background="{StaticResource HudPanelElevatedBrush}" BorderBrush="{StaticResource HudBorderStrongBrush}"
+                                BorderThickness="1" Padding="10,6" Margin="8,0,0,0">
+                            <TextBlock Classes="telemetry" FontSize="14" Text="{Binding PlaybackState}" />
+                        </Border>
+                    </StackPanel>
+
+                    <TextBlock Classes="section-heading" Text="ТОЧКИ" />
+                    <Border BorderBrush="{StaticResource HudBorderBrush}" BorderThickness="1">
+                        <ListBox ItemsSource="{Binding Waypoints}">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="program:Waypoint">
+                                    <TextBlock Classes="telemetry" FontSize="14" Text="{Binding Pose}" />
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Border>
+
+                    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" Margin="0,4,0,0">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Classes="section-heading" Text="СЕГМЕНТ" VerticalAlignment="Center" Margin="0,0,12,0" />
+                        <TextBlock Grid.Row="0" Grid.Column="1" Classes="telemetry" FontSize="16" Text="{Binding CurrentSegmentIndex}" />
+                        <ProgressBar Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,8,0,0"
+                                     Minimum="0" Maximum="1" Value="{Binding SegmentProgress}" />
+                    </Grid>
+
+                    <Border IsVisible="{Binding FaultedAtSegmentIndex, Converter={x:Static ObjectConverters.IsNotNull}}"
+                            Background="{StaticResource HudWarningDimBrush}" BorderBrush="{StaticResource HudWarningBrush}"
+                            BorderThickness="1" Padding="12,8">
+                        <TextBlock Foreground="{StaticResource HudWarningBrush}"
+                                   Text="{Binding FaultedAtSegmentIndex, StringFormat='Ошибка на сегменте: {0}'}" />
+                    </Border>
+                </StackPanel>
+            </Border>
         </Grid>
-
-        <StackPanel IsVisible="{Binding IsPlayback}" Spacing="8" Margin="8">
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <Button Content="Play" Command="{Binding PlayCommand}" />
-                <Button Content="Pause" Command="{Binding PauseCommand}" />
-                <Button Content="Stop" Command="{Binding StopCommand}" />
-                <TextBlock Text="{Binding PlaybackState}" VerticalAlignment="Center" />
-            </StackPanel>
-            <ListBox ItemsSource="{Binding Waypoints}">
-                <ListBox.ItemTemplate>
-                    <DataTemplate x:DataType="program:Waypoint">
-                        <TextBlock Text="{Binding Pose}" />
-                    </DataTemplate>
-                </ListBox.ItemTemplate>
-            </ListBox>
-            <TextBlock Text="{Binding CurrentSegmentIndex, StringFormat='Сегмент: {0}'}" />
-            <ProgressBar Minimum="0" Maximum="1" Value="{Binding SegmentProgress}" />
-            <TextBlock Text="{Binding FaultedAtSegmentIndex, StringFormat='Ошибка на сегменте: {0}'}"
-                       IsVisible="{Binding FaultedAtSegmentIndex, Converter={x:Static ObjectConverters.IsNotNull}}" />
-        </StackPanel>
     </DockPanel>
 </UserControl>

@@ -12,28 +12,74 @@
               Background="Transparent">
 
           <Grid Name="PART_Visuals">
-            <Ellipse Name="PART_Base"
-                     Fill="White"
-                     Opacity="0.3"
-                     Stroke="Gray"
-                     StrokeThickness="1" />
+            <!-- Ambient glow: a soft blurred halo behind the pad, the one indulgent
+                 effect on an otherwise flat instrument-panel surface. -->
+            <Ellipse Fill="{StaticResource HudAccentDimBrush}" Opacity="0.4" IsHitTestVisible="False">
+              <Ellipse.Effect>
+                <BlurEffect Radius="20" />
+              </Ellipse.Effect>
+            </Ellipse>
 
+            <Ellipse Name="PART_Base" StrokeThickness="1.5">
+              <Ellipse.Fill>
+                <RadialGradientBrush Center="50%,42%" GradientOrigin="50%,42%" RadiusX="70%" RadiusY="70%">
+                  <GradientStop Color="#171F27" Offset="0" />
+                  <GradientStop Color="#0C1116" Offset="1" />
+                </RadialGradientBrush>
+              </Ellipse.Fill>
+              <Ellipse.Stroke>
+                <SolidColorBrush Color="{StaticResource HudAccentColor}" Opacity="0.3" />
+              </Ellipse.Stroke>
+            </Ellipse>
+
+            <!-- Threshold reticle: dashed ring marking the dead-zone before a direction
+                 registers, read directly off VirtualJoystick.Threshold in spirit. -->
             <Ellipse Width="50" Height="50"
                      Fill="Transparent"
-                     Stroke="DarkGray"
                      StrokeThickness="1"
+                     StrokeDashArray="2,3"
                      HorizontalAlignment="Center"
                      VerticalAlignment="Center"
-                     IsHitTestVisible="False" />
+                     IsHitTestVisible="False">
+              <Ellipse.Stroke>
+                <SolidColorBrush Color="{StaticResource HudAccentColor}" Opacity="0.35" />
+              </Ellipse.Stroke>
+            </Ellipse>
+
+            <!-- Cardinal ticks give the pad a compass-like reading, reinforcing the
+                 8-direction discretization VirtualJoystick already computes. -->
+            <Rectangle Width="2" Height="8" HorizontalAlignment="Center" VerticalAlignment="Top"
+                       Margin="0,2,0,0" Fill="{StaticResource HudAccentDimBrush}" IsHitTestVisible="False" />
+            <Rectangle Width="2" Height="8" HorizontalAlignment="Center" VerticalAlignment="Bottom"
+                       Margin="0,0,0,2" Fill="{StaticResource HudAccentDimBrush}" IsHitTestVisible="False" />
+            <Rectangle Width="8" Height="2" HorizontalAlignment="Left" VerticalAlignment="Center"
+                       Margin="2,0,0,0" Fill="{StaticResource HudAccentDimBrush}" IsHitTestVisible="False" />
+            <Rectangle Width="8" Height="2" HorizontalAlignment="Right" VerticalAlignment="Center"
+                       Margin="0,0,2,0" Fill="{StaticResource HudAccentDimBrush}" IsHitTestVisible="False" />
 
             <Ellipse Name="PART_Knob"
                      Width="50" Height="50"
-                     Fill="White"
-                     Opacity="0.5"
-                     Stroke="Gray"
-                     StrokeThickness="1"
+                     StrokeThickness="1.5"
                      HorizontalAlignment="Center"
-                     VerticalAlignment="Center" />
+                     VerticalAlignment="Center">
+              <Ellipse.Fill>
+                <RadialGradientBrush Center="35%,28%" GradientOrigin="35%,28%" RadiusX="75%" RadiusY="75%">
+                  <GradientStop Color="#2A3840" Offset="0" />
+                  <GradientStop Color="#171F27" Offset="1" />
+                </RadialGradientBrush>
+              </Ellipse.Fill>
+              <Ellipse.Stroke>
+                <SolidColorBrush Color="{StaticResource HudAccentColor}" Opacity="0.75" />
+              </Ellipse.Stroke>
+              <Ellipse.Effect>
+                <DropShadowEffect Color="#3DDBD9" BlurRadius="10" Opacity="0.35" OffsetX="0" OffsetY="0" />
+              </Ellipse.Effect>
+              <Ellipse.Transitions>
+                <Transitions>
+                  <DoubleTransition Property="Opacity" Duration="0:0:0.15" />
+                </Transitions>
+              </Ellipse.Transitions>
+            </Ellipse>
           </Grid>
         </Grid>
       </ControlTemplate>
@@ -41,11 +87,15 @@
   </Style>
 
   <Style Selector="local|VirtualJoystick:active /template/ Ellipse#PART_Base">
-    <Setter Property="Opacity" Value="0.6" />
+    <Setter Property="Stroke">
+      <SolidColorBrush Color="{StaticResource HudAccentColor}" Opacity="0.55" />
+    </Setter>
   </Style>
 
   <Style Selector="local|VirtualJoystick:active /template/ Ellipse#PART_Knob">
-    <Setter Property="Opacity" Value="0.8" />
+    <Setter Property="Effect">
+      <DropShadowEffect Color="#3DDBD9" BlurRadius="22" Opacity="0.85" OffsetX="0" OffsetY="0" />
+    </Setter>
   </Style>
 
 </Styles>

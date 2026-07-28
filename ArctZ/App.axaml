@@ -2,15 +2,68 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="using:ArctZ"
              x:Class="ArctZ.App"
-             RequestedThemeVariant="Default">
-             <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
+             RequestedThemeVariant="Dark">
+             <!-- Fixed to Dark: the HUD cockpit palette is designed against a near-black
+                  base and doesn't have a light counterpart. -->
 
     <Application.DataTemplates>
         <local:ViewLocator/>
     </Application.DataTemplates>
 
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceInclude Source="avares://ArctZ/Themes/Colors.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- Re-tune FluentTheme's accent cascade (ComboBox selection, ToggleButton
+                 checked state, TextBox focus border, ProgressBar fill, etc.) to the HUD cyan
+                 instead of the OS accent color. Shades set explicitly rather than relying on
+                 FluentTheme's HSL auto-shading, which was tuned for Windows blues. -->
+            <Color x:Key="SystemAccentColor">#3DDBD9</Color>
+            <Color x:Key="SystemAccentColorLight1">#5FE3E1</Color>
+            <Color x:Key="SystemAccentColorLight2">#7FF0EE</Color>
+            <Color x:Key="SystemAccentColorLight3">#A8F5F3</Color>
+            <Color x:Key="SystemAccentColorDark1">#2FB8B6</Color>
+            <Color x:Key="SystemAccentColorDark2">#227371</Color>
+            <Color x:Key="SystemAccentColorDark3">#1A4F4E</Color>
+
+            <!-- FluentTheme's entire control palette (Button/ComboBox/ListBox/TextBox/
+                 ProgressBar backgrounds, borders, hover/pressed overlays) derives from this
+                 small set of base colors, so re-tuning them here recolors every stock control
+                 to the HUD graphite palette without touching a single ControlTemplate. -->
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Dark">
+                    <Color x:Key="SystemBaseHighColor">#FFD8E4E8</Color>
+                    <Color x:Key="SystemBaseMediumHighColor">#CCD8E4E8</Color>
+                    <Color x:Key="SystemBaseMediumColor">#99D8E4E8</Color>
+                    <Color x:Key="SystemBaseMediumLowColor">#663DDBD9</Color>
+                    <Color x:Key="SystemBaseLowColor">#333DDBD9</Color>
+
+                    <Color x:Key="SystemAltHighColor">#FF171F27</Color>
+
+                    <Color x:Key="SystemChromeLowColor">#FF0A0E12</Color>
+                    <Color x:Key="SystemChromeMediumColor">#FF12181F</Color>
+                    <Color x:Key="SystemChromeMediumLowColor">#FF171F27</Color>
+
+                    <Color x:Key="SystemRegionColor">#FF0A0E12</Color>
+
+                    <Color x:Key="SystemListLowColor">#193DDBD9</Color>
+                    <Color x:Key="SystemListMediumColor">#333DDBD9</Color>
+
+                    <Color x:Key="SystemErrorTextColor">#FFE8A33D</Color>
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+
     <Application.Styles>
         <FluentTheme />
+        <StyleInclude Source="avares://ArctZ/Themes/HudControls.axaml" />
         <StyleInclude Source="avares://ArctZ/Themes/VirtualJoystick.axaml" />
+
+        <Style Selector="Window">
+            <Setter Property="Background" Value="{StaticResource HudBackgroundBrush}" />
+        </Style>
     </Application.Styles>
 </Application>

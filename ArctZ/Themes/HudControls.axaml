@@ -1,0 +1,132 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!-- Sharper, more instrument-panel edges than Fluent's default rounded corners,
+       and roomier touch targets since this runs touch and desktop side by side. -->
+  <Style>
+    <Style.Resources>
+      <CornerRadius x:Key="ControlCornerRadius">2</CornerRadius>
+      <CornerRadius x:Key="OverlayCornerRadius">2</CornerRadius>
+      <Thickness x:Key="ButtonPadding">16,10</Thickness>
+      <x:Double x:Key="TextControlThemeMinHeight">40</x:Double>
+      <Thickness x:Key="TextControlThemePadding">12,8,8,8</Thickness>
+    </Style.Resources>
+  </Style>
+
+  <Style Selector="Button, ToggleButton, ComboBox, ComboBoxItem, ListBoxItem, TextBox, TextBlock">
+    <Setter Property="TextElement.FontFamily" Value="{StaticResource HudFontBody}" />
+    <Setter Property="TextElement.FontSize" Value="{StaticResource HudFontSizeBody}" />
+  </Style>
+
+  <Style Selector="Button, ToggleButton, ComboBox, TextBox">
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+
+  <!-- ComboBox has no ButtonPadding-equivalent resource key of its own, so without an
+       explicit Padding/MinHeight it falls back to Fluent's shorter stock vertical padding
+       and sits noticeably shorter than Button/ToggleButton/TextBox in the same toolbar row. -->
+  <Style Selector="ComboBox">
+    <Setter Property="Padding" Value="12,8,8,8" />
+    <Setter Property="MinHeight" Value="40" />
+  </Style>
+
+  <!-- Mode toggle (Программирование / Выполнение): a segmented HUD pill rather than a
+       stock checkbox-like ToggleButton, since this is the primary mode switch a user
+       reaches for constantly. -->
+  <Style Selector="ToggleButton.mode">
+    <Setter Property="Background" Value="{StaticResource HudPanelBrush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource HudBorderBrush}" />
+    <Setter Property="Foreground" Value="{StaticResource HudTextSecondaryBrush}" />
+    <Setter Property="Padding" Value="20,10" />
+    <Setter Property="FontSize" Value="{StaticResource HudFontSizeLabel}" />
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="Background" Duration="0:0:0.15" />
+        <BrushTransition Property="BorderBrush" Duration="0:0:0.15" />
+      </Transitions>
+    </Setter>
+  </Style>
+  <Style Selector="ToggleButton.mode:checked">
+    <Setter Property="Background" Value="{StaticResource HudAccentDimBrush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource HudAccentBrush}" />
+    <Setter Property="Foreground" Value="{StaticResource HudAccentBrightBrush}" />
+  </Style>
+  <Style Selector="ToggleButton.mode:pointerover /template/ ContentPresenter">
+    <Setter Property="BorderBrush" Value="{StaticResource HudAccentDimBrush}" />
+  </Style>
+
+  <!-- Primary action (Play, Захватить точку, ...): the one button per panel that should
+       read as "the thing to press", picked out with the accent instead of flat graphite. -->
+  <Style Selector="Button.primary">
+    <Setter Property="Background" Value="{StaticResource HudAccentDimBrush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource HudAccentBrush}" />
+    <Setter Property="Foreground" Value="{StaticResource HudAccentBrightBrush}" />
+    <Setter Property="FontWeight" Value="Medium" />
+  </Style>
+  <Style Selector="Button.primary:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{StaticResource HudAccentBrush}" />
+    <Setter Property="TextBlock.Foreground" Value="{StaticResource HudBackgroundBrush}" />
+  </Style>
+
+  <!-- Destructive / stop actions get the warning tone, never the accent. -->
+  <Style Selector="Button.danger">
+    <Setter Property="Background" Value="{StaticResource HudWarningDimBrush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource HudWarningBrush}" />
+    <Setter Property="Foreground" Value="{StaticResource HudWarningBrush}" />
+  </Style>
+
+  <!-- List panels read as instrument sub-panels: flat fill, no per-row card shadow,
+       a left accent bar marks the selected row instead of a full highlight fill. -->
+  <Style Selector="ListBox">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="0" />
+  </Style>
+  <Style Selector="ListBoxItem">
+    <Setter Property="Padding" Value="10,8" />
+    <Setter Property="CornerRadius" Value="0" />
+    <Setter Property="BorderThickness" Value="0,0,0,1" />
+    <Setter Property="BorderBrush" Value="{StaticResource HudBorderBrush}" />
+  </Style>
+  <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+    <Setter Property="BorderBrush" Value="{StaticResource HudAccentBrush}" />
+    <Setter Property="BorderThickness" Value="3,0,0,0" />
+  </Style>
+
+  <!-- ComboBox dropdown rows: FluentTheme's default is a solid accent-filled pill with
+       dark text on :selected, which reads as a completely different control language from
+       the rest of the HUD. Bring it in line with ListBoxItem's flat panel + left accent bar. -->
+  <Style Selector="ComboBoxItem">
+    <Setter Property="Padding" Value="10,8" />
+    <Setter Property="CornerRadius" Value="0" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{StaticResource HudTextPrimaryBrush}" />
+  </Style>
+  <Style Selector="ComboBoxItem:pointerover">
+    <Setter Property="Background" Value="{StaticResource HudPanelElevatedBrush}" />
+    <Setter Property="Foreground" Value="{StaticResource HudTextPrimaryBrush}" />
+  </Style>
+  <Style Selector="ComboBoxItem:selected /template/ ContentPresenter">
+    <Setter Property="Background" Value="{StaticResource HudAccentDimBrush}" />
+    <Setter Property="TextElement.Foreground" Value="{StaticResource HudAccentBrightBrush}" />
+    <Setter Property="BorderBrush" Value="{StaticResource HudAccentBrush}" />
+    <Setter Property="BorderThickness" Value="3,0,0,0" />
+  </Style>
+
+  <!-- Telemetry readouts (waypoint pose, segment index) render in mono for that
+       instrument-cluster feel; applied per-view via the HudTelemetry class since not
+       every TextBlock in the app is a numeric readout. -->
+  <Style Selector="TextBlock.telemetry">
+    <Setter Property="FontFamily" Value="{StaticResource HudFontMono}" />
+    <Setter Property="FontSize" Value="{StaticResource HudFontSizeTelemetry}" />
+    <Setter Property="Foreground" Value="{StaticResource HudAccentBrush}" />
+  </Style>
+
+  <Style Selector="ProgressBar">
+    <Setter Property="Background" Value="{StaticResource HudPanelElevatedBrush}" />
+    <Setter Property="Foreground" Value="{StaticResource HudAccentBrush}" />
+    <Setter Property="MinHeight" Value="6" />
+    <Setter Property="CornerRadius" Value="3" />
+  </Style>
+
+</Styles>

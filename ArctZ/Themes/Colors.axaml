@@ -1,0 +1,50 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!-- HUD cockpit palette: near-black graphite base, cold cyan telemetry accent,
+       amber reserved exclusively for Alarm/Fault so it never competes with the accent. -->
+
+  <Color x:Key="HudBackgroundColor">#0A0E12</Color>
+  <Color x:Key="HudPanelColor">#12181F</Color>
+  <Color x:Key="HudPanelElevatedColor">#171F27</Color>
+  <Color x:Key="HudBorderColor">#1E2830</Color>
+  <Color x:Key="HudBorderStrongColor">#2A3840</Color>
+
+  <Color x:Key="HudAccentColor">#3DDBD9</Color>
+  <Color x:Key="HudAccentDimColor">#1F4B4A</Color>
+  <Color x:Key="HudAccentBrightColor">#7FF0EE</Color>
+
+  <Color x:Key="HudWarningColor">#E8A33D</Color>
+  <Color x:Key="HudWarningDimColor">#4D3818</Color>
+
+  <Color x:Key="HudTextPrimaryColor">#D8E4E8</Color>
+  <Color x:Key="HudTextSecondaryColor">#6B7A82</Color>
+
+  <SolidColorBrush x:Key="HudBackgroundBrush" Color="{StaticResource HudBackgroundColor}" />
+  <SolidColorBrush x:Key="HudPanelBrush" Color="{StaticResource HudPanelColor}" />
+  <SolidColorBrush x:Key="HudPanelElevatedBrush" Color="{StaticResource HudPanelElevatedColor}" />
+  <SolidColorBrush x:Key="HudBorderBrush" Color="{StaticResource HudBorderColor}" />
+  <SolidColorBrush x:Key="HudBorderStrongBrush" Color="{StaticResource HudBorderStrongColor}" />
+
+  <SolidColorBrush x:Key="HudAccentBrush" Color="{StaticResource HudAccentColor}" />
+  <SolidColorBrush x:Key="HudAccentDimBrush" Color="{StaticResource HudAccentDimColor}" />
+  <SolidColorBrush x:Key="HudAccentBrightBrush" Color="{StaticResource HudAccentBrightColor}" />
+
+  <SolidColorBrush x:Key="HudWarningBrush" Color="{StaticResource HudWarningColor}" />
+  <SolidColorBrush x:Key="HudWarningDimBrush" Color="{StaticResource HudWarningDimColor}" />
+
+  <SolidColorBrush x:Key="HudTextPrimaryBrush" Color="{StaticResource HudTextPrimaryColor}" />
+  <SolidColorBrush x:Key="HudTextSecondaryBrush" Color="{StaticResource HudTextSecondaryColor}" />
+
+  <!-- Typography: JetBrains Mono for telemetry/numeric readouts, Manrope for interface text.
+       Both are variable fonts (wght axis) embedded from Assets/Fonts, Cyrillic-complete. -->
+  <FontFamily x:Key="HudFontMono">avares://ArctZ/Assets/Fonts#JetBrains Mono</FontFamily>
+  <FontFamily x:Key="HudFontBody">avares://ArctZ/Assets/Fonts#Manrope</FontFamily>
+
+  <x:Double x:Key="HudFontSizeSmall">12</x:Double>
+  <x:Double x:Key="HudFontSizeBody">14</x:Double>
+  <x:Double x:Key="HudFontSizeLabel">13</x:Double>
+  <x:Double x:Key="HudFontSizeTelemetry">20</x:Double>
+  <x:Double x:Key="HudFontSizeHeading">16</x:Double>
+
+</ResourceDictionary>
