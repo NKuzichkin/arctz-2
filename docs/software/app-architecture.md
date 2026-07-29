@@ -1,51 +1,72 @@
 # Архитектура приложения
 
-> **DRAFT** — описывает текущее состояние кода и намеченные, но ещё не
-> реализованные расширения под управление устройством.
-
-## Текущее состояние
-
 Проект — Avalonia UI (.NET 10, MVVM через `CommunityToolkit.Mvvm`), общий код
 в `ArctZ/`, тонкие платформенные точки входа в `ArctZ.Desktop/`,
 `ArctZ.Android/`, `ArctZ.iOS/`, `ArctZ.Browser/`. Подробности — в
 `AI_AGENT_README.md` и корневом `CLAUDE.md`.
 
-Реализовано на данный момент:
+## Текущее состояние
 
+Управление устройством реализовано целиком в `ArctZ/Services/Device/`, не в
+платформенных головах:
+
+- `IDeviceTransport` — абстракция транспорта (serial/Bluetooth-COM);
+  `Simulation/MockDeviceTransport` — рабочая симуляция контроллера (буферы,
+  real-time-байты, таймер движения) для демо-режима без реального устройства.
+  Платформенные точки входа регистрируют свою реализацию `IDeviceTransport`
+  для реального устройства.
+- `IDeviceSession`/`DeviceSession` — жизненный цикл соединения: подключение/
+  отключение, реакция на разрыв связи (`FixedDelayReconnectPolicy`),
+  трансляция входящих строк через `IStatusParser`, генерация состояния
+  (`ConnectionState`, `DeviceStatus`).
+- `FluidNcCommandSerializer`/`FluidNcStatusParser` — диалект G-code/GRBL и
+  разбор статус-ответов FluidNC (`<Idle|WPos:...|Bf:...>`).
+- `JogCommandFactory`/`JogScheduler` — перевод состояния двух джойстиков
+  (`DualJoystickState`) в команды `$J=` с троттлингом по таймеру и отменой
+  джога (`0x85`) при отпускании.
+- `BufferAwareCommandQueue` — очередь исходящих G-code команд с учётом
+  доступного буфера контроллера (`Bf:` из статус-отчёта).
+- `Services/Program/` — программы-траектории: `JibProgram`/`KeyPoint` (ключевые
+  точки), `TrajectoryCompiler` (компиляция в сегменты движения с ease-режимами),
+  `JsonFileProgramStorage` (сохранение/загрузка на диск).
+
+Слой ViewModels/Views:
+
+- `ViewModels/ConnectionViewModel.cs` — подключение к реальному устройству или
+  демо-транспорту, зеркалит `IDeviceSession.ConnectionState`, отвечает за
+  видимость модального окна подключения (`IsConnectionModalVisible`).
+- `ViewModels/ProgramViewModel.cs` — главная вью-модель: режимы
+  «Программирование»/«Выполнение», библиотека сохранённых программ, авторинг
+  ключевых точек (через `KeyPointEditorViewModel`), воспроизведение
+  скомпилированной траектории.
 - `Components/VirtualJoystick/` — кастомный control для тач/мышь-ввода
   (режимы `Fixed`/`Semi`/`Dynamic`, форма `Circle`/`Box`, блокировка оси,
   события `JoystickDown`/`Move`/`Up` с `Force`/`AngleDeg`/`Direction`).
   Design-спека контрола — `Components/VirtualJoystick/virtual-joystick.md`.
-- `ViewModels/MainViewModel.cs` — хранит текущие значения джойстика для
-  отображения (`JoystickX/Y/Force/Angle/Direction`).
-- `Views/MainView.axaml` — единственный экран, показывает телеметрию
-  джойстика и сам контрол.
+  `ViewModels/JoystickInputMapper.cs` переводит эти события в нормализованные
+  оси `X`/`Y` для `Services/Device`.
+- `Views/MainView.axaml` — единственный экран: библиотека программ, панели
+  авторинга/воспроизведения, оверлеи редактора точки/подтверждения/подключения.
+  DataContext — `ProgramViewModel`.
 
-Это — вход управления, ещё не подключённый к реальному устройству.
+Регистрация DI для платформо-независимой части — `Services/Device/ServiceCollectionExtensions.cs`
+(`AddArctZCore`); каждая платформенная голова дополнительно регистрирует свой
+`IDeviceTransport` (реальный транспорт) и `IProgramStorage` (расположение
+хранилища).
 
-## Планируемые дополнения
+Тесты — `ArctZ.Tests/`, детально покрывают `Services/Device` и
+`Services/Program` (буферы, реконнект, планирование джога, сериализация/парсинг,
+компиляция траектории), часть `ViewModels` (`ConnectionViewModel`,
+`ProgramViewModel`, `JoystickInputMapper`), DI-регистрацию
+(`ServiceCollectionExtensionsTests`) и `Components/VirtualJoystick` — через
+`Avalonia.Headless` с ручной инициализацией платформы (`ArctZ.Tests/TestApp.cs`),
+без пакета `Avalonia.Headless.XUnit` (несовместим по версии xunit с остальными
+тестами проекта).
 
-Компоненты, которых пока нет в коде и которые нужны для реализации связи с
-устройством (см. [`../protocol/bluetooth-gcode-control.md`](../protocol/bluetooth-gcode-control.md)):
+## Известные открытые вопросы
 
-- **Сервис подключения** — открытие/закрытие Bluetooth-COM соединения,
-  отслеживание состояния (подключено/потеряно/переподключение).
-- **Генератор G-code** — преобразование телеметрии джойстика (или
-  программных траекторий) в команды FluidNC.
-- **Парсер статуса контроллера** — чтение и разбор ответов FluidNC для
-  отображения состояния устройства в UI.
-- **ViewModel подключения** — управление списком доступных устройств,
-  статусом соединения, ошибками — отдельно от `MainViewModel` или как его
-  расширение (решить при проектировании).
-
-## Открытые вопросы
-
-- [ ] Где по слоям располагается работа с serial-портом — отдельный проект/
-      папка `Services/` в `ArctZ/`, или платформенно-зависимый код в каждой
-      платформенной голове (`ArctZ.Desktop` и т.д.), если единого
-      кроссплатформенного Bluetooth API нет?
-- [ ] Нужна ли отдельная ViewModel/View для экрана управления устройством,
-      или он остаётся частью `MainView`?
-- [ ] Как тестировать логику генерации G-code без реального устройства —
-      симулятор порта/мок FluidNC (в проекте пока нет тестовых проектов, см.
-      `CLAUDE.md`).
+- [ ] Библиотека для serial/Bluetooth-COM на стороне .NET кроссплатформенно —
+      единого API может не быть, особенно в Browser/WASM (см.
+      [`../protocol/bluetooth-gcode-control.md`](../protocol/bluetooth-gcode-control.md)).
+- [ ] Визуальная проверка знака оси Y в `JoystickInputMapper` против реального
+      контрола (см. комментарий в файле, помечено как непроверенное).

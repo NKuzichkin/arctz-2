@@ -3,6 +3,13 @@
 ## 🎯 Цель
 Создать нативный кастомный контрол `VirtualJoystick` для Avalonia UI, полностью воспроизводящий логику, конфигурацию и поведение предоставленного JS-референса (`virtual-joystick.js`), но с использованием идиоматичных паттернов Avalonia (привязки данных, `Pointer` события, `VisualStateManager`, `RenderTransform`).
 
+> **Статус:** ниже — исходное ТЗ, по которому был написан контрол. Реализация
+> (`VirtualJoystick.cs` + `Themes/VirtualJoystick.axaml`) в нескольких местах
+> отошла от буквального текста ТЗ; расхождения зафиксированы в разделе
+> [«Отличия реализации от ТЗ»](#-отличия-реализации-от-тз-актуально) в конце
+> файла — сверяйтесь с ним, а не только с картой соответствия и чек-листом
+> ниже.
+
 ---
 
 ## 🔄 Карта соответствия: JavaScript → Avalonia
@@ -226,3 +233,41 @@ private void OnJoystickMove(object sender, JoystickEventArgs e)
 5. **Тестирование:** Проверьте поведение на тачскринах (мультитач игнорируется, как в JS), на мыши и при изменении DPI/масштаба окна.
 
 Придерживайтесь этой спецификации. Если потребуются уточнения по математике углов или привязке к MVVM, запросите дополнительный контекст. 🚀
+
+---
+
+## ⚠️ Отличия реализации от ТЗ (актуально)
+
+- **Имена частей шаблона.** Реализация использует `PART_Root` (корневой `Grid`,
+  двигается через `TranslateTransform` в режимах `Semi`/`Dynamic`),
+  `PART_Visuals` (внутренний `Grid`, через него управляется видимость —
+  `Opacity`) и `PART_Knob` (стик). `PART_Base` тоже есть в
+  `Themes/VirtualJoystick.axaml`, но код на него не ссылается напрямую — он
+  участвует только в `:active`-псевдоклассовых стилях. ТЗ выше называет части
+  `PART_Base`/`PART_Knob` — при чтении карты соответствия и примера XAML
+  учитывайте эту разницу в именах.
+- **Состояния Active/Inactive.** Вместо `VisualStateManager.GoToState` и
+  `Storyboard`-анимаций реализация переключает `PseudoClasses.Set(":active", …)`,
+  а визуальный отклик (свечение, толщина обводки) задан в `Themes/VirtualJoystick.axaml`
+  через селекторы `VirtualJoystick:active /template/ Ellipse#PART_Base` и
+  `#PART_Knob`. Масштаб стика (`ScaleTransform` 1.0 → 1.1) меняется
+  императивно в C#, а не через `DoubleAnimation`.
+- **`Captured`/`Released`.** `CalculateAndBind` вычисляет переход
+  `None → направление` (`Captured`) и `направление → None` (`Released`) и
+  сохраняет их в поля `_lastCaptured`/`_lastReleased`, которые `BuildEventArgs()`
+  прокидывает в `JoystickEventArgs`. Отдельно обрабатывается отпускание стика
+  (`ResetKnob()`, вызывается из `OnPointerReleased`/`OnPointerCaptureLost`) —
+  туда направление не приходит через `CalculateAndBind`, поэтому `Released`
+  для события `JoystickUp` считается там же явно.
+- **Тестовое покрытие.** `ArctZ.Tests/Components/VirtualJoystickTests.cs`
+  покрывает control через `Avalonia.Headless` (без `Avalonia.Headless.XUnit` —
+  та версия пакета тянет xunit v3, конфликтующий с xunit v2 остальных тестов;
+  вместо неё — ручной `AppBuilder...SetupWithoutStarting()` в
+  `ArctZ.Tests/TestApp.cs` и обычные `[Fact]`). Это выявило реальный баг:
+  `OnPointerCaptureLost` срабатывал повторно сразу после обычного
+  `OnPointerReleased` (потеря захвата указателя — штатное следствие
+  отпускания кнопки), и второй проход обнулял `Captured`/`Released` в уже
+  отправленном `JoystickUp`, потому что `_direction` к этому моменту уже был
+  сброшен первым проходом. Исправлено guard-ом на `_activePointers.Count == 0`
+  в начале `OnPointerCaptureLost`; заодно убран мёртвый `IsPointerIdActive`
+  (всегда возвращал `true`, из-за чего `RemoveWhere` ничего не удалял).

@@ -65,6 +65,8 @@ public class VirtualJoystick : TemplatedControl
     private Point _touchOrigin;
     private double _x, _y, _force, _angle;
     private JoystickDirection _direction;
+    private JoystickDirection? _lastCaptured;
+    private JoystickDirection? _lastReleased;
 
     private Grid? _rootGrid;
     private Grid? _visualsGrid;
@@ -278,38 +280,42 @@ public class VirtualJoystick : TemplatedControl
     protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
     {
         base.OnPointerCaptureLost(e);
-        _activePointers.RemoveWhere(id => !IsPointerIdActive(id));
+
         if (_activePointers.Count == 0)
         {
-            ResetKnob();
-            PseudoClasses.Set(":active", false);
-            if (_knobScale != null)
-            {
-                _knobScale.ScaleX = 1.0;
-                _knobScale.ScaleY = 1.0;
-            }
-
-            if (Mode != JoystickMode.Fixed)
-            {
-                if (_visualsGrid != null)
-                {
-                    _visualsGrid.Opacity = 0.0;
-                }
-
-                if (_rootTranslate != null)
-                {
-                    _rootTranslate.X = 0;
-                    _rootTranslate.Y = 0;
-                }
-            }
-
-            FireJoystickUp();
+            // Releasing pointer capture after a normal OnPointerReleased (the
+            // common case) raises this too. _activePointers is already empty
+            // by then, so there is nothing new to release — without this
+            // guard, ResetKnob()/FireJoystickUp() below would run a second
+            // time and report a bogus JoystickUp with Direction/Released
+            // already zeroed out by the first release.
+            return;
         }
-    }
 
-    private static bool IsPointerIdActive(long id)
-    {
-        return true;
+        _activePointers.Clear();
+        ResetKnob();
+        PseudoClasses.Set(":active", false);
+        if (_knobScale != null)
+        {
+            _knobScale.ScaleX = 1.0;
+            _knobScale.ScaleY = 1.0;
+        }
+
+        if (Mode != JoystickMode.Fixed)
+        {
+            if (_visualsGrid != null)
+            {
+                _visualsGrid.Opacity = 0.0;
+            }
+
+            if (_rootTranslate != null)
+            {
+                _rootTranslate.X = 0;
+                _rootTranslate.Y = 0;
+            }
+        }
+
+        FireJoystickUp();
     }
 
     private void CalculateAndBind(Point pos)
@@ -351,8 +357,8 @@ public class VirtualJoystick : TemplatedControl
 
         var newDirection = force < Threshold ? JoystickDirection.None : GetDirection(angleDeg);
         var prev = _direction;
-        var captured = prev == JoystickDirection.None && newDirection != JoystickDirection.None ? newDirection : (JoystickDirection?)null;
-        var released = prev != JoystickDirection.None && newDirection == JoystickDirection.None ? prev : (JoystickDirection?)null;
+        _lastCaptured = prev == JoystickDirection.None && newDirection != JoystickDirection.None ? newDirection : (JoystickDirection?)null;
+        _lastReleased = prev != JoystickDirection.None && newDirection == JoystickDirection.None ? prev : (JoystickDirection?)null;
 
         SetAndRaise(XProperty, ref _x, dx);
         SetAndRaise(YProperty, ref _y, dy);
@@ -368,6 +374,9 @@ public class VirtualJoystick : TemplatedControl
             _knobTranslate.X = 0;
             _knobTranslate.Y = 0;
         }
+
+        _lastCaptured = null;
+        _lastReleased = _direction != JoystickDirection.None ? _direction : (JoystickDirection?)null;
 
         SetAndRaise(XProperty, ref _x, 0);
         SetAndRaise(YProperty, ref _y, 0);
@@ -410,6 +419,8 @@ public class VirtualJoystick : TemplatedControl
             AngleDeg = _angle,
             AngleRad = _angle * Math.PI / 180.0,
             Direction = _direction,
+            Captured = _lastCaptured,
+            Released = _lastReleased,
         };
     }
 

@@ -18,6 +18,8 @@
   - [`firmware/fluidnc-setup.md`](firmware/fluidnc-setup.md) — настройка платы на FluidNC: формат `config.yaml`, секции `axes`/`stepping`/`homing`, типы моторов/драйверов, требования к Bluetooth-сборке.
 - **Протокол (`protocol/`)**
   - [`protocol/bluetooth-gcode-control.md`](protocol/bluetooth-gcode-control.md) — связь приложение ↔ плата: Bluetooth SPP (виртуальный COM-порт), диалект G-code, jog-режим (`$J=`), realtime-команды, статус-ответы, маппинг джойстика на команды.
+  - [`protocol/gcode_sender_architecture.md`](protocol/gcode_sender_architecture.md) — обзор архитектурных паттернов существующих G-code сендеров (UGS, cncjs, bCNC, ioSender и др.) для GRBL/FluidNC: потоковые протоколы, буферы, джоггинг, конечный автомат состояний.
+  - [`research/gcode-sender-architecture-fluidnc-grbl/report.md`](research/gcode-sender-architecture-fluidnc-grbl/report.md) — детальный исследовательский отчёт, на основе которого написан `gcode_sender_architecture.md` (плюс сырые данные по каждому сендеру в `results/`).
 - **Программное обеспечение (`software/`)**
   - [`software/app-architecture.md`](software/app-architecture.md) — архитектура приложения (`ArctZ/`, Avalonia/MVVM), текущий код (`VirtualJoystick`, `MainViewModel`) и планируемые дополнения.
 
