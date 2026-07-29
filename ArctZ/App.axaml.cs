@@ -8,12 +8,19 @@ using Avalonia.Markup.Xaml;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Linq;
+using Zafiro.Avalonia.ViewLocators;
 
 namespace ArctZ
 {
     public partial class App : Application
     {
         public static IServiceProvider? Services { get; set; }
+
+        [System.Runtime.CompilerServices.ModuleInitializer]
+        internal static void RegisterViews()
+        {
+            DataTypeViewLocator.RegisterGlobal<ConnectionViewModel, ConnectionView>();
+        }
 
         public override void Initialize()
         {
