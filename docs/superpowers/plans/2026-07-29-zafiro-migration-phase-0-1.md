@@ -369,7 +369,7 @@ git commit -m "feat: replace hand-rolled ViewLocator with Zafiro's DataTypeViewL
 
 **Interfaces:**
 - Produces: `ArctZ.ViewModels.ReactiveViewModelBase` — `protected CompositeDisposable Disposables { get; }`, `public void Dispose()`. Later phases (`ProgramViewModel`, `KeyPointEditorViewModel`) derive from this too.
-- Produces: `ConnectionViewModel` public surface unchanged in shape (`Session`, `ConnectionState`, `SelectedEndpoint`, `IsConnectionModalVisible`, `AvailableEndpoints`, `ConnectCommand`/`DisconnectCommand`/`HomeCommand`/`ResetAlarmCommand`) plus a new `ConnectionStateLabel` computed property (replaces the label converter — used by Task 5), but the constructor drops its 4th `IUiDispatcher` parameter (now 3-arg) and the four commands change type from CommunityToolkit's generated `IAsyncRelayCommand` to `Zafiro.UI.Commands.IEnhancedCommand<System.Reactive.Unit, System.Reactive.Unit>`.
+- Produces: `ConnectionViewModel` public surface unchanged in shape (`Session`, `ConnectionState`, `SelectedEndpoint`, `IsConnectionModalVisible`, `AvailableEndpoints`, `ConnectCommand`/`DisconnectCommand`/`HomeCommand`/`ResetAlarmCommand`) plus a new `ConnectionStateLabel` computed property (replaces the label converter — used by Task 5), but the constructor drops its 4th `IUiDispatcher` parameter (now 3-arg) and the four commands change type from CommunityToolkit's generated `IAsyncRelayCommand` to `Zafiro.UI.Commands.IEnhancedCommand<System.Reactive.Unit>`.
 
 - [ ] **Step 1: Rewrite the test file for the new constructor and command shape**
 
@@ -588,10 +588,10 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
         new ConnectionEndpoint("demo", "Демо", ConnectionEndpointKind.Demo),
     };
 
-    public IEnhancedCommand<Unit, Unit> ConnectCommand { get; }
-    public IEnhancedCommand<Unit, Unit> DisconnectCommand { get; }
-    public IEnhancedCommand<Unit, Unit> HomeCommand { get; }
-    public IEnhancedCommand<Unit, Unit> ResetAlarmCommand { get; }
+    public IEnhancedCommand<Unit> ConnectCommand { get; }
+    public IEnhancedCommand<Unit> DisconnectCommand { get; }
+    public IEnhancedCommand<Unit> HomeCommand { get; }
+    public IEnhancedCommand<Unit> ResetAlarmCommand { get; }
 
     public ConnectionViewModel(
         IDeviceTransport realTransport,
@@ -643,7 +643,7 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
         // properties (no ObservableAsPropertyHelper) — re-raise their
         // INotifyPropertyChanged notifications whenever a dependency changes,
         // same intent as CommunityToolkit's [NotifyPropertyChangedFor] before.
-        this.WhenAnyValue(x => x.Session, x => x.ConnectionState)
+        this.WhenAnyValue(x => x.Session, x => x.ConnectionState, (s, cs) => (s, cs))
             .Subscribe(_ =>
             {
                 this.RaisePropertyChanged(nameof(IsConnectionModalVisible));
