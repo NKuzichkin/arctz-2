@@ -1,5 +1,4 @@
 using ArctZ.Services.Device;
-using ArctZ.Tests.Services;
 using ArctZ.Tests.Services.Device;
 using ArctZ.ViewModels;
 using ArctZ.Views;
@@ -35,8 +34,7 @@ public class DataTypeViewLocatorTests
         var vm = new ConnectionViewModel(
             new FakeDeviceTransport(),
             () => new FakeDeviceTransport(),
-            new DeviceSessionFactory(MachineLimits.Default),
-            new InlineUiDispatcher());
+            new DeviceSessionFactory(MachineLimits.Default));
 
         Assert.True(locator.Match(vm));
         Assert.IsType<ConnectionView>(locator.Build(vm));

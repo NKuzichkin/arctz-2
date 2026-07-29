@@ -4,7 +4,6 @@ using System.Threading.Tasks;
 using ArctZ.Components.VirtualJoystick;
 using ArctZ.Services.Device;
 using ArctZ.Services.Program;
-using ArctZ.Tests.Services;
 using ArctZ.Tests.Services.Device;
 using ArctZ.Tests.Services.Program;
 using ArctZ.ViewModels;
@@ -17,7 +16,7 @@ public class ProgramViewModelAuthoringTests
     {
         transport = new FakeDeviceTransport();
         storage = new FakeProgramStorage();
-        var connection = new ConnectionViewModel(transport, () => new FakeDeviceTransport(), new DeviceSessionFactory(MachineLimits.Default), new InlineUiDispatcher());
+        var connection = new ConnectionViewModel(transport, () => new FakeDeviceTransport(), new DeviceSessionFactory(MachineLimits.Default));
         return new ProgramViewModel(connection, storage, new TrajectoryCompiler());
     }
 
@@ -25,7 +24,7 @@ public class ProgramViewModelAuthoringTests
     public async Task CaptureKeyPoint_UsesCurrentDeviceStatusPosition()
     {
         var vm = CreateViewModel(out var transport, out _);
-        await vm.Connection.ConnectCommand.ExecuteAsync(null);
+        await vm.Connection.ConnectCommand.Execute();
         transport.SimulateReceivedLine("<Idle|WPos:1,2,3,4|FS:0,0>");
 
         vm.CaptureKeyPointCommand.Execute(null);
@@ -38,7 +37,7 @@ public class ProgramViewModelAuthoringTests
     public async Task CaptureKeyPoint_AssignsSequentialNumbers()
     {
         var vm = CreateViewModel(out var transport, out _);
-        await vm.Connection.ConnectCommand.ExecuteAsync(null);
+        await vm.Connection.ConnectCommand.Execute();
         transport.SimulateReceivedLine("<Idle|WPos:0,0,0,0|FS:0,0>");
         vm.CaptureKeyPointCommand.Execute(null);
 
@@ -54,7 +53,7 @@ public class ProgramViewModelAuthoringTests
     public async Task CaptureKeyPoint_DefaultsLabelToPointNumber()
     {
         var vm = CreateViewModel(out var transport, out _);
-        await vm.Connection.ConnectCommand.ExecuteAsync(null);
+        await vm.Connection.ConnectCommand.Execute();
         transport.SimulateReceivedLine("<Idle|WPos:0,0,0,0|FS:0,0>");
 
         vm.CaptureKeyPointCommand.Execute(null);
@@ -76,7 +75,7 @@ public class ProgramViewModelAuthoringTests
     public async Task RemoveKeyPoint_MiddlePoint_RemovesItAndRenumbersTheRest()
     {
         var vm = CreateViewModel(out var transport, out _);
-        await vm.Connection.ConnectCommand.ExecuteAsync(null);
+        await vm.Connection.ConnectCommand.Execute();
         foreach (var pose in new[] { "0,0,0,0", "10,0,0,0", "20,0,0,0" })
         {
             transport.SimulateReceivedLine($"<Idle|WPos:{pose}|FS:0,0>");
@@ -96,7 +95,7 @@ public class ProgramViewModelAuthoringTests
     public async Task SaveProgramAsync_ThenRefreshLibrary_ListsSavedProgram()
     {
         var vm = CreateViewModel(out var transport, out _);
-        await vm.Connection.ConnectCommand.ExecuteAsync(null);
+        await vm.Connection.ConnectCommand.Execute();
         transport.SimulateReceivedLine("<Idle|WPos:0,0,0,0|FS:0,0>");
         vm.CaptureKeyPointCommand.Execute(null);
         vm.ProgramName = "Тест";
@@ -111,7 +110,7 @@ public class ProgramViewModelAuthoringTests
     public async Task SaveProgramAsync_ThenRefreshLibrary_MarksSavedProgramAsLoaded()
     {
         var vm = CreateViewModel(out var transport, out _);
-        await vm.Connection.ConnectCommand.ExecuteAsync(null);
+        await vm.Connection.ConnectCommand.Execute();
         transport.SimulateReceivedLine("<Idle|WPos:0,0,0,0|FS:0,0>");
         vm.CaptureKeyPointCommand.Execute(null);
         vm.ProgramName = "Тест";
@@ -154,7 +153,7 @@ public class ProgramViewModelAuthoringTests
     public async Task SaveProgramAsync_OverwritingLoadedProgram_AsksForConfirmation()
     {
         var vm = CreateViewModel(out var transport, out _);
-        await vm.Connection.ConnectCommand.ExecuteAsync(null);
+        await vm.Connection.ConnectCommand.Execute();
         transport.SimulateReceivedLine("<Idle|WPos:0,0,0,0|FS:0,0>");
         vm.CaptureKeyPointCommand.Execute(null);
         vm.ProgramName = "Тест";
@@ -173,7 +172,7 @@ public class ProgramViewModelAuthoringTests
     public async Task SaveProgramAsync_DecliningOverwriteConfirmation_DoesNotSave()
     {
         var vm = CreateViewModel(out var transport, out var storage);
-        await vm.Connection.ConnectCommand.ExecuteAsync(null);
+        await vm.Connection.ConnectCommand.Execute();
         transport.SimulateReceivedLine("<Idle|WPos:0,0,0,0|FS:0,0>");
         vm.CaptureKeyPointCommand.Execute(null);
         vm.ProgramName = "Тест";
@@ -229,7 +228,7 @@ public class ProgramViewModelAuthoringTests
     public async Task EditKeyPoint_OpensEditorPrefilledFromThePoint()
     {
         var vm = CreateViewModel(out var transport, out _);
-        await vm.Connection.ConnectCommand.ExecuteAsync(null);
+        await vm.Connection.ConnectCommand.Execute();
         transport.SimulateReceivedLine("<Idle|WPos:1,2,3,4|FS:0,0>");
         vm.CaptureKeyPointCommand.Execute(null);
 
@@ -248,7 +247,7 @@ public class ProgramViewModelAuthoringTests
     public async Task EditKeyPoint_Save_UpdatesThePointInPlaceAndClosesEditor()
     {
         var vm = CreateViewModel(out var transport, out _);
-        await vm.Connection.ConnectCommand.ExecuteAsync(null);
+        await vm.Connection.ConnectCommand.Execute();
         transport.SimulateReceivedLine("<Idle|WPos:0,0,0,0|FS:0,0>");
         vm.CaptureKeyPointCommand.Execute(null);
 
@@ -269,7 +268,7 @@ public class ProgramViewModelAuthoringTests
     public async Task EditKeyPoint_Cancel_LeavesThePointUnchangedAndClosesEditor()
     {
         var vm = CreateViewModel(out var transport, out _);
-        await vm.Connection.ConnectCommand.ExecuteAsync(null);
+        await vm.Connection.ConnectCommand.Execute();
         transport.SimulateReceivedLine("<Idle|WPos:0,0,0,0|FS:0,0>");
         vm.CaptureKeyPointCommand.Execute(null);
         var original = vm.KeyPoints[0];
@@ -286,7 +285,7 @@ public class ProgramViewModelAuthoringTests
     public async Task FillKeyPointFromCurrentPosition_ReplacesPoseButKeepsOtherFields()
     {
         var vm = CreateViewModel(out var transport, out _);
-        await vm.Connection.ConnectCommand.ExecuteAsync(null);
+        await vm.Connection.ConnectCommand.Execute();
         transport.SimulateReceivedLine("<Idle|WPos:0,0,0,0|FS:0,0>");
         vm.CaptureKeyPointCommand.Execute(null);
         var beforeNumber = vm.KeyPoints[0].Number;
@@ -302,7 +301,7 @@ public class ProgramViewModelAuthoringTests
     public async Task MoveMachineToKeyPoint_SendsG1MoveToThePointsPoseAndFeed()
     {
         var vm = CreateViewModel(out var transport, out _);
-        await vm.Connection.ConnectCommand.ExecuteAsync(null);
+        await vm.Connection.ConnectCommand.Execute();
         transport.SimulateReceivedLine("<Idle|WPos:0,0,0,0|FS:0,0>");
         vm.CaptureKeyPointCommand.Execute(null);
 
@@ -315,7 +314,7 @@ public class ProgramViewModelAuthoringTests
     public async Task LeftAndRightJoystick_EndJogOnlyAfterBothSticksReleased()
     {
         var vm = CreateViewModel(out var transport, out _);
-        await vm.Connection.ConnectCommand.ExecuteAsync(null);
+        await vm.Connection.ConnectCommand.Execute();
 
         vm.OnLeftJoystickDown(new JoystickEventArgs { Force = 1, AngleDeg = 0 });
         vm.OnRightJoystickDown(new JoystickEventArgs { Force = 1, AngleDeg = 90 });
