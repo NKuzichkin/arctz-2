@@ -2,6 +2,7 @@ using ArctZ.Services.Device;
 using ArctZ.Services.Program;
 using Avalonia;
 using Microsoft.Extensions.DependencyInjection;
+using ReactiveUI.Avalonia;
 using System;
 using System.IO;
 
@@ -29,6 +30,7 @@ namespace ArctZ.Desktop
         public static AppBuilder BuildAvaloniaApp()
             => AppBuilder.Configure<App>()
                 .UsePlatformDetect()
+                .UseReactiveUI(b => b.WithAvalonia())
 #if DEBUG
                 .WithDeveloperTools()
 #endif

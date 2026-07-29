@@ -5,6 +5,7 @@ using ArctZ.Services.Program;
 using Avalonia;
 using Avalonia.Browser;
 using Microsoft.Extensions.DependencyInjection;
+using ReactiveUI.Avalonia;
 using System.Runtime.Versioning;
 using System.Threading.Tasks;
 
@@ -20,6 +21,7 @@ internal sealed partial class Program
 
         return BuildAvaloniaApp()
             .WithInterFont()
+            .UseReactiveUI(b => b.WithAvalonia())
 #if DEBUG
             .WithDeveloperTools()
 #endif
