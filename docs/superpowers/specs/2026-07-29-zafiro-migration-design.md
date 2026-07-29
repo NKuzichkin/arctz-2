@@ -24,14 +24,27 @@ Zafiro's `[Section]`/`IShellViewModel`/`INavigator`/`SlimWizard` рассчит�
 - **Откладываем**: `INavigator`/`[Section]`/`SlimWizard` — вводить только когда появится реальная многошаговая навигация (например, отдельный экран настроек, либо редактор ключевой точки оформится как мастер). Вводить их сейчас означало бы проектировать под несуществующую навигацию.
 - Редактор `KeyPointEditorViewModel` **не** переводится на `SlimWizard` в рамках этого перехода — остаётся модалкой, как сейчас, до появления отдельного повода.
 
-## Пакеты
+## Пакеты (версии проверены restore'ом в изолированном scratch-проекте)
 
 Добавляются в `Directory.Packages.props` (централизованно, как `CommunityToolkit.Mvvm` сейчас):
 
-- `ReactiveUI`, `Avalonia.ReactiveUI` (интеграция с Avalonia lifecycle)
-- `ReactiveUI.SourceGenerators` (атрибут `[Reactive]`)
-- `Zafiro.Avalonia` (containers, `IconExtension`, `DataTypeViewLocator`, `.Enhance()`/`IEnhancedCommand`, `INavigator`, `SlimWizard`/`WizardBuilder`, `[Section]` — используем сейчас только первые три группы)
-- `Projektanker.Icons.Avalonia.FontAwesome` + `ProjektankerIconControlProvider` — реальные глифы для `{Icon fa-...}` (нужен, только если фаза 4 берёт иконки; иначе можно исключить)
+- `Zafiro.Avalonia` `53.3.0` — containers (`Zafiro.Avalonia.Controls.HeaderedContainer`/`EdgePanel`/`Card`), `Zafiro.Avalonia.MarkupExtensions.IconExtension`, `Zafiro.Avalonia.ViewLocators.DataTypeViewLocator`. Тянет за собой `Avalonia 12.0.4`, `ReactiveUI.Avalonia 11.4.13`, `ReactiveUI 23.2.28`, `ReactiveUI.Validation 7.1.0`, `Zafiro`/`Zafiro.UI 47.1.1` (откуда `Zafiro.UI.Commands.IEnhancedCommand`/`EnhancedCommand`, `Zafiro.UI.Navigation.INavigator`, `Zafiro.UI.Wizards.Slim.SlimWizard`/`WizardBuilder`, `Zafiro.UI.Shell.Utils.SectionAttribute` — последние три используются только если/когда отложенные Navigator/Wizard/Section всё же понадобятся).
+- `ReactiveUI` `23.2.28` — явный прямой `PackageReference` нужен, т.к. код ViewModels напрямую использует `ReactiveObject`/`WhenAnyValue`/`ReactiveCommand` (транзитивная ссылка через Zafiro.Avalonia не даёт compile-time доступа без явного пакета в проекте).
+- `ReactiveUI.Avalonia` `11.4.13` — **это НЕ пакет `Avalonia.ReactiveUI`** (тот застрял на Avalonia 11.x и несовместим с нашим Avalonia 12). `ReactiveUI.Avalonia` (обратный порядок слов) — актуальный пакет от reactiveui, есть версии под Avalonia 12.x, даёт `AppBuilderExtensions.UseReactiveUI(...)`, `AvaloniaScheduler`.
+- `ReactiveUI.SourceGenerators` `3.1.0` — атрибут `[Reactive]`; лежит **только** в `ReactiveUI.SourceGenerators` namespace (не в `ReactiveUI`) — необходим явный `using ReactiveUI.SourceGenerators;` в каждом файле, иначе `Reactive` резолвится в другой (не-атрибутный) тип из основного `ReactiveUI` неймспейса и компиляция падает с CS0616.
+- `Projektanker.Icons.Avalonia.FontAwesome` `9.6.2` — реальные глифы для `{Icon fa-...}`, нужен только для Фазы 4 (иконки).
+
+**Важное отличие от иллюстративных примеров в skill-файлах** (те написаны под более старый ReactiveUI): в ReactiveUI `23.2.28` статического класса `RxApp` **не существует**. Эквивалент — `ReactiveUI.RxSchedulers.MainThreadScheduler`/`.TaskpoolScheduler` (статические свойства). Кроме того, ReactiveUI требует явной инициализации до первого обращения к `WhenAnyValue`/`[Reactive]`/`ReactiveCommand` — без неё бросает `InvalidOperationException: ReactiveUI has not been initialized`:
+
+```csharp
+ReactiveUI.Builder.RxAppBuilder.CreateReactiveUIBuilder()
+    .WithCoreServices()
+    .BuildApp();
+```
+
+В реальном приложении это делает `AppBuilder.Configure<App>().UseReactiveUI(b => b.WithAvalonia())...` в момент, когда сам `AppBuilder` реально стартует (`StartWithClassicDesktopLifetime`/`SetupWithoutStarting` и т.п.) — подтверждено пробным запуском: после этого `RxSchedulers.MainThreadScheduler` автоматически становится `ReactiveUI.Avalonia.AvaloniaScheduler`. Для `ArctZ.Tests` (голый xUnit-процесс без Avalonia lifetime) нужна отдельная, отдельно вызываемая инициализация — см. Фазу 0.
+
+`.DisposeWith(disposables)` — это **не** ReactiveUI API, а `System.Reactive.Disposables.Fluent.DisposableExtensions.DisposeWith` (современный Rx.NET, требует `using System.Reactive.Disposables.Fluent;`).
 
 `CommunityToolkit.Mvvm` остаётся в `Directory.Packages.props`, пока не мигрирует последний ViewModel (фаза 5).
 
@@ -41,19 +54,21 @@ Zafiro's `[Section]`/`IShellViewModel`/`INavigator`/`SlimWizard` рассчит�
 
 ### Фаза 0 — Фундамент
 
-- Добавить пакеты.
+- Добавить пакеты, поднять пины `Avalonia`/`Avalonia.Themes.Fluent`/`Avalonia.Fonts.Inter`/`Avalonia.Desktop`/`Avalonia.iOS`/`Avalonia.Browser`/`Avalonia.Android` с `12.0.3` на `12.0.4` (минимум, который требует `Zafiro.Avalonia 53.3.0`; без этого `dotnet restore` падает с `NU1605`, подтверждено пробным restore).
+- В каждой из 4 точек входа (`ArctZ.Desktop/Program.cs`, `ArctZ.Android/Application.cs`, `ArctZ.iOS/AppDelegate.cs`, `ArctZ.Browser/Program.cs`) добавить `.UseReactiveUI(b => b.WithAvalonia())` в цепочку `AppBuilder` — это единственное место, где реально инициализируется ReactiveUI и `RxSchedulers.MainThreadScheduler` становится `ReactiveUI.Avalonia.AvaloniaScheduler` (подтверждено пробным запуском: без вызова `UseReactiveUI` любой `WhenAnyValue`/`[Reactive]`/`ReactiveCommand` бросает `InvalidOperationException: ReactiveUI has not been initialized`).
+- `ArctZ.Tests`: добавить `ReactiveUIBootstrap.cs` с `[ModuleInitializer]`-методом, вызывающим `ReactiveUI.Builder.RxAppBuilder.CreateReactiveUIBuilder().WithCoreServices().BuildApp();`, и сразу после — `ReactiveUI.RxSchedulers.MainThreadScheduler = System.Reactive.Concurrency.ImmediateScheduler.Instance;`. `ModuleInitializer` гарантирует однократный запуск при загрузке сборки тестов, до первого теста — без этого каждый тест мигрированного ViewModel упадёт с той же `InvalidOperationException`. `ImmediateScheduler` — тот же выбор, что и раньше в дизайне, просто под правильным именем API (`RxSchedulers`, не `RxApp`).
 - Завести `ReactiveViewModelBase : ReactiveObject, IDisposable` (с `CompositeDisposable`) рядом со старым `ViewModelBase : ObservableObject` — сосуществуют, пока не мигрируют все ViewModels.
-- `App.axaml`: зарегистрировать `<DataTypeViewLocator />` + `<DataTemplateInclude Source="avares://Zafiro.Avalonia/DataTemplates.axaml" />` в `Application.DataTemplates`.
+- `App.axaml`: зарегистрировать `<zafiro:DataTypeViewLocator />` (namespace `Zafiro.Avalonia.ViewLocators`) вместо `<local:ViewLocator/>` в `Application.DataTemplates`. `DataTypeViewLocator` реализует тот же `IDataTemplate` (`Build(object?)`/`Match(object?)`, публичный parameterless-конструктор) — drop-in замена подтверждена рефлексией пакета. Единственное реальное использование через DataTemplate в проекте — `ContentControl Content="{Binding Connection}"` в `MainView.axaml:81`; остальные VM (`KeyPointEditorViewModel`, `ConfirmationRequest`, повторно `ConnectionViewModel` в модалке) привязаны напрямую через `x:DataType`/`DataContext` на литеральных `Border`, DataTemplate их не резолвит. Удалить `ArctZ/ViewLocator.cs` только после визуальной/тестовой проверки, что `ConnectionView` по-прежнему рендерится на месте `ContentControl`.
 - Ввести `CompositionRoot` поверх текущего `AddArctZCore` — не переписывая регистрации `Services/Device`/`Services/Program`.
 - `App.axaml.cs`: заменить ручное `DataContext = viewModel` на резолюцию через `DataTypeViewLocator`.
-- Эта фаза не меняет поведение ни одного ViewModel — существующий `ArctZ.Tests` должен остаться зелёным без изменений в тестах.
+- Эта фаза не меняет поведение ни одного ViewModel — существующий `ArctZ.Tests` должен остаться зелёным без изменений в тестах ViewModels (кроме самой инициализации ReactiveUI, которая ничего не проверяет по бизнес-логике).
 
 ### Фаза 1 — Пилот: `ConnectionViewModel` + `ConnectionView`
 
-- Самый маленький VM (`Session`/`ConnectionState`/`SelectedEndpoint`, 4 команды: `ConnectAsync`/`DisconnectAsync`/`HomeAsync`/`ResetAlarmAsync`) — переписать на `ReactiveObject`+`[Reactive]`, команды на `ReactiveCommand.Create...().Enhance()`.
-- Убрать `IUiDispatcher` из этого VM: `OnSessionConnectionStateChanged` (сейчас ручной `CheckAccess()`/`Post(...)`) заменяется на `Observable.FromEvent(...).ObserveOn(RxApp.MainThreadScheduler)`.
-- Тесты `ConnectionViewModel` переписать: вместо `InlineUiDispatcher` — `RxApp.MainThreadScheduler` подменяется на `ImmediateScheduler.Instance` на время теста.
-- `ConnectionView.axaml`: перевести на `HeaderedContainer`/`EdgePanel`, убрать `ConnectionStateConverters` там, где логику можно перенести в VM-свойство или behavior.
+- Самый маленький VM (`Session`/`ConnectionState`/`SelectedEndpoint`, 4 команды: `ConnectAsync`/`DisconnectAsync`/`HomeAsync`/`ResetAlarmAsync`) — переписать на `ReactiveObject`+`[Reactive]` (`using ReactiveUI.SourceGenerators;` — атрибут лежит не в основном `ReactiveUI` неймспейсе), команды на `ReactiveCommand.CreateFromTask(...).Enhance(text:, name:)` (`Zafiro.UI.Commands.CommandExtensions.Enhance`).
+- Убрать `IUiDispatcher` из этого VM: `OnSessionConnectionStateChanged` (сейчас ручной `CheckAccess()`/`Post(...)`) заменяется на `Observable.FromEvent<Action>(h => session.ConnectionStateChanged += h, h => session.ConnectionStateChanged -= h).ObserveOn(ReactiveUI.RxSchedulers.MainThreadScheduler)`.
+- Тесты `ConnectionViewModel` не нуждаются в per-test подмене scheduler'а — `ReactiveUIBootstrap` из Фазы 0 уже фиксирует `RxSchedulers.MainThreadScheduler = ImmediateScheduler.Instance` глобально на весь тестовый процесс (это безопаснее, чем save/restore вокруг каждого теста, — `RxSchedulers.MainThreadScheduler` статическое изменяемое состояние, а xUnit может параллелить разные test-классы).
+- `ConnectionView.axaml`: перевести на `HeaderedContainer`/`EdgePanel`, убрать `ConnectionStateToLabelConverter` (текст — чистое форматирование, переносится в вычисляемое свойство VM), но **оставить** `ConnectionStateToBrushConverter` как есть — сопоставление состояния с цветом кисти явно подпадает под разрешённое исключение "purely visual, highly reusable" из `behaviors.md`, замена его на классы/стили не даёт выигрыша здесь.
 - Эта фаза фиксирует итоговый паттерн (VM + тест + View) — последующие фазы повторяют его на большем масштабе.
 
 ### Фаза 2 — `ProgramViewModel` + `MainView` (самая крупная)
@@ -82,7 +97,7 @@ Zafiro's `[Section]`/`IShellViewModel`/`INavigator`/`SlimWizard` рассчит�
 
 ## Тестирование (сквозная линия через все фазы)
 
-- Каждая мигрированная VM: тесты переключаются с `InlineUiDispatcher` на подмену `RxApp.MainThreadScheduler` на `ImmediateScheduler.Instance` (через `using` scope вокруг теста).
+- Каждая мигрированная VM: тесты переключаются с `InlineUiDispatcher` на глобальную (заданную один раз в `ReactiveUIBootstrap`, Фаза 0) подмену `RxSchedulers.MainThreadScheduler` на `ImmediateScheduler.Instance` — весь тестовый процесс работает синхронно, отдельного per-test scope не требуется.
 - Ничего не мигрирует без проходящих тестов на этой фазе — это и есть критерий «рабочее приложение на каждом шаге».
 
 ## Ветвление
