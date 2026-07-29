@@ -6,9 +6,10 @@ using ReactiveUI.Builder;
 namespace ArctZ.Tests;
 
 /// <summary>
-/// Runs once when the test assembly loads (before any test executes). Plain xUnit
-/// tests never touch Avalonia's AppBuilder/UseReactiveUI, so without this every
-/// ReactiveObject-derived ViewModel's constructor throws
+/// Runs once when the test assembly loads (before any test executes). No test head calls
+/// UseReactiveUI — VirtualJoystickTests' AvaloniaHeadlessBootstrap does build an Avalonia
+/// AppBuilder, but never calls UseReactiveUI on it — so without this every ReactiveObject-derived
+/// ViewModel's constructor throws
 /// InvalidOperationException("ReactiveUI has not been initialized"). Also forces
 /// RxSchedulers.MainThreadScheduler to ImmediateScheduler for the whole process —
 /// simpler and safer than a per-test save/restore guard, since it's global mutable

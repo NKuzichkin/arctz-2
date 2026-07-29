@@ -126,4 +126,61 @@ public class ConnectionViewModelTests
         Assert.False(vm.IsConnectionModalVisible);
         Assert.Equal(ConnectionState.Connected, vm.Session!.ConnectionState);
     }
+
+    // The two tests below exercise the .Switch()-based rewrite in ConnectionViewModel's
+    // constructor (mirroring Session.ConnectionStateChanged) driven by the SESSION raising a
+    // state change on its own, rather than by a command — the scenario that whole rewrite exists
+    // for. Every other test in this file drives the VM exclusively through
+    // ConnectCommand/DisconnectCommand and would stay green even if .Switch() were deleted
+    // outright.
+
+    [Fact]
+    public async Task UnsolicitedDisconnect_TransitionsToReconnectingAndShowsModal()
+    {
+        var realTransport = new FakeDeviceTransport();
+        var vm = CreateVm(realTransport);
+        await vm.ConnectCommand.Execute();
+
+        // ConnectFailuresRemaining is set only after the initial connect succeeds, so the
+        // upcoming reconnect attempts (not this connect) are the ones that fail — same idiom as
+        // ProgramViewModelPlaybackTests.LinkLoss_DuringPlayback_....
+        realTransport.ConnectFailuresRemaining = 10;
+        realTransport.SimulateDisconnect();
+
+        // DeviceSession.OnTransportDisconnected sets Reconnecting synchronously (via the
+        // lock-guarded SerialEventQueue, which drains inline) before it ever awaits a retry, and
+        // ConnectionViewModel's ObserveOn uses RxSchedulers.MainThreadScheduler, which
+        // ReactiveUIBootstrap pins to ImmediateScheduler for tests — so no wait is needed here.
+        Assert.Equal(ConnectionState.Reconnecting, vm.ConnectionState);
+        Assert.True(vm.IsConnectionModalVisible);
+    }
+
+    [Fact]
+    public async Task ConnectionStateChanged_OnAReplacedSession_DoesNotAffectTheViewModel()
+    {
+        var realTransport = new FakeDeviceTransport();
+        var vm = CreateVm(realTransport);
+        await vm.ConnectCommand.Execute();
+        var session1 = vm.Session;
+
+        vm.SelectedEndpoint = vm.AvailableEndpoints.Single(e => e.Kind == ConnectionEndpointKind.Demo);
+        await vm.ConnectCommand.Execute();
+        var session2 = vm.Session;
+
+        Assert.NotNull(session1);
+        Assert.NotSame(session1, session2);
+        Assert.Equal(ConnectionState.Connected, vm.ConnectionState);
+
+        // session1 is no longer reachable through the VM, but it is still a live DeviceSession
+        // object that can raise ConnectionStateChanged independently of anything the VM does
+        // (e.g. a reconnect loop or a stray disconnect racing the switch to session2). Calling
+        // DisconnectAsync directly on the captured reference reproduces exactly that: it fires
+        // ConnectionStateChanged on session1 without going through the VM at all. Without
+        // .Switch() unsubscribing from session1 when Session moved to session2 (the one thing the
+        // old OnSessionChanged did explicitly), this would stomp vm.ConnectionState back to
+        // Disconnected even though session2 is the one actually connected.
+        await session1!.DisconnectAsync();
+
+        Assert.Equal(ConnectionState.Connected, vm.ConnectionState);
+    }
 }

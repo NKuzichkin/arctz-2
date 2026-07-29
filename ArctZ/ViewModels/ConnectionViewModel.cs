@@ -67,19 +67,16 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
             (endpoint, state) => endpoint is not null &&
                 state is not (ConnectionState.Connecting or ConnectionState.Reconnecting));
 
-        ConnectCommand = ReactiveCommand.CreateFromTask(ConnectAsync, canConnect)
-            .Enhance(text: "Подключить", name: "ConnectCommand");
-        DisconnectCommand = ReactiveCommand.CreateFromTask(DisconnectAsync)
-            .Enhance(text: "Отключить", name: "DisconnectCommand");
-        HomeCommand = ReactiveCommand.CreateFromTask(HomeAsync)
-            .Enhance(text: "Homing", name: "HomeCommand");
-        ResetAlarmCommand = ReactiveCommand.CreateFromTask(ResetAlarmAsync)
-            .Enhance(text: "Сброс аварии", name: "ResetAlarmCommand");
-
-        ((IDisposable)ConnectCommand).DisposeWith(Disposables);
-        ((IDisposable)DisconnectCommand).DisposeWith(Disposables);
-        ((IDisposable)HomeCommand).DisposeWith(Disposables);
-        ((IDisposable)ResetAlarmCommand).DisposeWith(Disposables);
+        // Track() subscribes ThrownExceptions (an unobserved command fault would otherwise crash
+        // the process — see ReactiveViewModelBase.Track) and registers the command for disposal.
+        ConnectCommand = Track(ReactiveCommand.CreateFromTask(ConnectAsync, canConnect)
+            .Enhance(text: "Подключить", name: "ConnectCommand"));
+        DisconnectCommand = Track(ReactiveCommand.CreateFromTask(DisconnectAsync)
+            .Enhance(text: "Отключить", name: "DisconnectCommand"));
+        HomeCommand = Track(ReactiveCommand.CreateFromTask(HomeAsync)
+            .Enhance(text: "Homing", name: "HomeCommand"));
+        ResetAlarmCommand = Track(ReactiveCommand.CreateFromTask(ResetAlarmAsync)
+            .Enhance(text: "Сброс аварии", name: "ResetAlarmCommand"));
 
         // Immediately mirror a newly-assigned session's state, then keep mirroring it
         // as ConnectionStateChanged fires later (on a background thread for the

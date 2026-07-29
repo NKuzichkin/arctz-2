@@ -2,7 +2,6 @@ using System;
 using ArctZ.Services.Program;
 using ArctZ.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
-using ArctZ.Services;
 
 namespace ArctZ.Services.Device;
 
@@ -23,7 +22,6 @@ public static class ServiceCollectionExtensions
             new SystemPeriodicTimer(),
             TimeSpan.FromMilliseconds(100)));
         services.AddSingleton<ITrajectoryCompiler, TrajectoryCompiler>();
-        services.AddSingleton<IUiDispatcher, AvaloniaUiDispatcher>();
         services.AddSingleton<ConnectionViewModel>();
         services.AddSingleton<ProgramViewModel>();
         return services;
