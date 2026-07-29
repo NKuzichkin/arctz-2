@@ -3,6 +3,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using ArctZ.Services.Device;
 using ArctZ.Services.Program;
+using ArctZ.Tests.Services;
 using ArctZ.Tests.Services.Device;
 using ArctZ.Tests.Services.Program;
 using ArctZ.ViewModels;
@@ -15,7 +16,7 @@ public class ProgramViewModelPlaybackTests
     {
         transport = new FakeDeviceTransport();
         var storage = new FakeProgramStorage();
-        var connection = new ConnectionViewModel(transport, () => new FakeDeviceTransport(), new DeviceSessionFactory(MachineLimits.Default));
+        var connection = new ConnectionViewModel(transport, () => new FakeDeviceTransport(), new DeviceSessionFactory(MachineLimits.Default), new InlineUiDispatcher());
         return new ProgramViewModel(connection, storage, new TrajectoryCompiler());
     }
 

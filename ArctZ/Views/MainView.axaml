@@ -71,7 +71,7 @@
     </UserControl.Styles>
 
     <Grid>
-        <DockPanel>
+        <DockPanel IsEnabled="{Binding !Connection.IsConnectionModalVisible}">
             <Border DockPanel.Dock="Top" Classes="reveal-1"
                     Background="{StaticResource HudPanelBrush}"
                     BorderBrush="{StaticResource HudBorderBrush}"

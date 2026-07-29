@@ -1,6 +1,7 @@
 using System;
 using System.Collections.ObjectModel;
 using System.Threading.Tasks;
+using ArctZ.Services;
 using ArctZ.Services.Device;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -12,6 +13,7 @@ public partial class ConnectionViewModel : ViewModelBase
     private readonly IDeviceTransport _realTransport;
     private readonly Func<IDeviceTransport> _createDemoTransport;
     private readonly IDeviceSessionFactory _sessionFactory;
+    private readonly IUiDispatcher _uiDispatcher;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsConnectionModalVisible))]
@@ -43,11 +45,13 @@ public partial class ConnectionViewModel : ViewModelBase
     public ConnectionViewModel(
         IDeviceTransport realTransport,
         Func<IDeviceTransport> createDemoTransport,
-        IDeviceSessionFactory sessionFactory)
+        IDeviceSessionFactory sessionFactory,
+        IUiDispatcher uiDispatcher)
     {
         _realTransport = realTransport;
         _createDemoTransport = createDemoTransport;
         _sessionFactory = sessionFactory;
+        _uiDispatcher = uiDispatcher;
         SelectedEndpoint = AvailableEndpoints[0];
     }
 
@@ -68,6 +72,12 @@ public partial class ConnectionViewModel : ViewModelBase
 
     private void OnSessionConnectionStateChanged()
     {
+        if (!_uiDispatcher.CheckAccess())
+        {
+            _uiDispatcher.Post(OnSessionConnectionStateChanged);
+            return;
+        }
+
         ConnectionState = Session?.ConnectionState ?? ConnectionState.Disconnected;
     }
 
@@ -98,8 +108,23 @@ public partial class ConnectionViewModel : ViewModelBase
             ? _createDemoTransport()
             : _realTransport;
 
-        Session = _sessionFactory.Create(transport);
-        await Session.ConnectAsync(SelectedEndpoint.Id);
+        var session = _sessionFactory.Create(transport);
+        Session = session;
+
+        try
+        {
+            await session.ConnectAsync(SelectedEndpoint.Id);
+        }
+        catch
+        {
+            // A failed connect leaves the transport's LineReceived/Disconnected handlers
+            // subscribed (DeviceSession.ConnectAsync wires them before attempting the
+            // transport-level connect). session.DisconnectAsync() unwinds that — critical
+            // for the real-device transport, which is a singleton reused by the next
+            // attempt; leaked handlers there would double-fire on every subsequent connect.
+            await session.DisconnectAsync();
+            Session = null;
+        }
     }
 
     [RelayCommand]
