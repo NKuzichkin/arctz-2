@@ -8,6 +8,7 @@ using ArctZ.Components.VirtualJoystick;
 
 namespace ArctZ.Tests.Components;
 
+[Collection("AvaloniaHeadless")]
 public class VirtualJoystickTests
 {
     public VirtualJoystickTests() => AvaloniaHeadlessBootstrap.EnsureInitialized();

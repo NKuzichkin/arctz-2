@@ -3,7 +3,6 @@ using System.Linq;
 using System.Threading.Tasks;
 using ArctZ.Services.Device;
 using ArctZ.Services.Program;
-using ArctZ.Tests.Services;
 using ArctZ.Tests.Services.Device;
 using ArctZ.Tests.Services.Program;
 using ArctZ.ViewModels;
@@ -16,7 +15,7 @@ public class ProgramViewModelPlaybackTests
     {
         transport = new FakeDeviceTransport();
         var storage = new FakeProgramStorage();
-        var connection = new ConnectionViewModel(transport, () => new FakeDeviceTransport(), new DeviceSessionFactory(MachineLimits.Default), new InlineUiDispatcher());
+        var connection = new ConnectionViewModel(transport, () => new FakeDeviceTransport(), new DeviceSessionFactory(MachineLimits.Default));
         return new ProgramViewModel(connection, storage, new TrajectoryCompiler());
     }
 
@@ -53,7 +52,7 @@ public class ProgramViewModelPlaybackTests
     public async Task PlayAsync_DispatchesAllStepsBeforeAwaitingAcks_ThenTracksProgress()
     {
         var vm = CreateViewModel(out var transport);
-        await vm.Connection.ConnectCommand.ExecuteAsync(null);
+        await vm.Connection.ConnectCommand.Execute();
         SeedTwoSegmentProgram(vm, transport);
 
         var playTask = vm.PlayCommand.ExecuteAsync(null);
@@ -73,7 +72,7 @@ public class ProgramViewModelPlaybackTests
     public async Task PlayAsync_ErrorOnFirstStep_MarksFaultedWithItsSegmentIndex()
     {
         var vm = CreateViewModel(out var transport);
-        await vm.Connection.ConnectCommand.ExecuteAsync(null);
+        await vm.Connection.ConnectCommand.Execute();
         SeedTwoSegmentProgram(vm, transport);
 
         var playTask = vm.PlayCommand.ExecuteAsync(null);
@@ -88,7 +87,7 @@ public class ProgramViewModelPlaybackTests
     public async Task Pause_SendsFeedHold_PlayAgainSendsResumeWithoutRedispatching()
     {
         var vm = CreateViewModel(out var transport);
-        await vm.Connection.ConnectCommand.ExecuteAsync(null);
+        await vm.Connection.ConnectCommand.Execute();
         SeedTwoSegmentProgram(vm, transport);
 
         var playTask = vm.PlayCommand.ExecuteAsync(null);
@@ -113,7 +112,7 @@ public class ProgramViewModelPlaybackTests
     public async Task Stop_DiscardsQueuedButUnsentSteps_SoTheyAreNeverResentAfterTheInFlightAck()
     {
         var vm = CreateViewModel(out var transport);
-        await vm.Connection.ConnectCommand.ExecuteAsync(null);
+        await vm.Connection.ConnectCommand.Execute();
         SeedTwoSegmentProgram(vm, transport);
 
         // Report an RX buffer that only fits one compiled line, so the second step
@@ -137,7 +136,7 @@ public class ProgramViewModelPlaybackTests
     public async Task PlayAsync_AfterStop_SendsResumeBeforeDispatchingFreshProgram()
     {
         var vm = CreateViewModel(out var transport);
-        await vm.Connection.ConnectCommand.ExecuteAsync(null);
+        await vm.Connection.ConnectCommand.Execute();
         SeedTwoSegmentProgram(vm, transport);
 
         var firstPlayTask = vm.PlayCommand.ExecuteAsync(null);
@@ -165,7 +164,7 @@ public class ProgramViewModelPlaybackTests
     public async Task LinkLoss_DuringPlayback_PausesImmediatelyThenFaultsIfReconnectExhausted()
     {
         var vm = CreateViewModel(out var transport);
-        await vm.Connection.ConnectCommand.ExecuteAsync(null);
+        await vm.Connection.ConnectCommand.Execute();
         SeedTwoSegmentProgram(vm, transport);
         transport.ConnectFailuresRemaining = 10;
 
@@ -183,7 +182,7 @@ public class ProgramViewModelPlaybackTests
     public async Task PlayWhileReconnecting_IsIgnored_AndFaultedStillFiresOnceExhausted()
     {
         var vm = CreateViewModel(out var transport);
-        await vm.Connection.ConnectCommand.ExecuteAsync(null);
+        await vm.Connection.ConnectCommand.Execute();
         SeedTwoSegmentProgram(vm, transport);
         transport.ConnectFailuresRemaining = 10;
 

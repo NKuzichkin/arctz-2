@@ -7,7 +7,7 @@
                   base and doesn't have a light counterpart. -->
 
     <Application.DataTemplates>
-        <local:ViewLocator/>
+        <DataTypeViewLocator />
     </Application.DataTemplates>
 
     <Application.Resources>

@@ -5,6 +5,7 @@ using ArctZ.Services.Program;
 using Avalonia;
 using Avalonia.Android;
 using Microsoft.Extensions.DependencyInjection;
+using ReactiveUI.Avalonia;
 using System.IO;
 
 namespace ArctZ.Android
@@ -26,6 +27,7 @@ namespace ArctZ.Android
             App.Services = services.BuildServiceProvider();
 
             return base.CustomizeAppBuilder(builder)
+                .UseReactiveUI(b => b.WithAvalonia())
                 .WithInterFont();
         }
     }

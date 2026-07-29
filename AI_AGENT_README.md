@@ -32,7 +32,6 @@
 *   **`Services/`** — вся логика, не относящаяся к UI:
     *   `Services/Device/` — связь с контроллером FluidNC: `IDeviceTransport`/`IDeviceSession`/`DeviceSession` (жизненный цикл соединения), `FluidNcCommandSerializer`/`FluidNcStatusParser` (диалект G-code и статус-ответы), `JogCommandFactory`/`JogScheduler` (джойстик → `$J=`), `BufferAwareCommandQueue` (очередь с учётом буфера контроллера), `FixedDelayReconnectPolicy` (переподключение), `Simulation/MockDeviceTransport` (демо-режим без реального устройства). См. `docs/protocol/bluetooth-gcode-control.md`.
     *   `Services/Program/` — программы-траектории: `JibProgram`/`KeyPoint`/`TrajectoryCompiler` (компиляция ключевых точек в сегменты движения), `JsonFileProgramStorage` (сохранение/загрузка программ).
-    *   `IUiDispatcher`/`AvaloniaUiDispatcher` — абстракция над UI-потоком (нужна для тестируемости ViewModels без реального `Dispatcher.UIThread`).
 *   **`ViewModels/`** — слой бизнес-логики и состояния UI.
     *   `ViewModelBase.cs` — базовый класс, наследуется от `ObservableObject` из MVVM Toolkit.
     *   `ProgramViewModel.cs` — вью-модель главного экрана: режимы «Программирование»/«Выполнение», библиотека программ, авторинг ключевых точек, воспроизведение траектории.
@@ -47,5 +46,5 @@
 *   Используются **Compiled Bindings** (`<AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>`), что требует строгой типизации привязок данных (`x:DataType` в разметке).
 *   При создании свойств во ViewModels следует использовать возможности кодогенерации `CommunityToolkit.Mvvm` (атрибуты `[ObservableProperty]`, `[RelayCommand]`).
 *   Стилизация кастомных компонентов происходит через XAML-файлы в папке `Themes/` (с использованием `ControlTheme`), которые затем должны подключаться в `App.axaml`.
-*   Не вызывайте `Dispatcher.UIThread` напрямую во ViewModels — используйте инжектируемый `IUiDispatcher` (`AvaloniaUiDispatcher` в проде, `InlineUiDispatcher` в тестах), иначе тесты теряют детерминированность.
+*   Не вызывайте `Dispatcher.UIThread` напрямую во ViewModels. Мигрированные на `Zafiro.Avalonia`/ReactiveUI вью-модели (например, `ConnectionViewModel`) маршалят на UI-поток через `RxSchedulers.MainThreadScheduler`/`.ObserveOn(...)` — `ArctZ.Tests/ReactiveUIBootstrap.cs` глобально подменяет его на `ImmediateScheduler.Instance` для всего тестового процесса, иначе тесты теряют детерминированность. (Старый seam `IUiDispatcher`/`AvaloniaUiDispatcher` использовался только `ConnectionViewModel` до этой миграции и был удалён вместе с последним вызывающим кодом.)
 *   Перед изменением поведения `Services/Device/*` смотрите `docs/protocol/bluetooth-gcode-control.md` и соответствующие тесты в `ArctZ.Tests/Services/Device/` — там зафиксированы нюансы протокола GRBL/FluidNC (real-time команды, character-counting и т.п.).

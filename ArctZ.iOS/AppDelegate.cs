@@ -6,6 +6,7 @@ using ArctZ.Services.Device;
 using ArctZ.Services.Program;
 using Foundation;
 using Microsoft.Extensions.DependencyInjection;
+using ReactiveUI.Avalonia;
 using System;
 using System.IO;
 using UIKit;
@@ -30,6 +31,7 @@ namespace ArctZ.iOS
             App.Services = services.BuildServiceProvider();
 
             return base.CustomizeAppBuilder(builder)
+                .UseReactiveUI(b => b.WithAvalonia())
                 .WithInterFont();
         }
     }

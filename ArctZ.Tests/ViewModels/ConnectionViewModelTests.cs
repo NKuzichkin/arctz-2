@@ -1,7 +1,6 @@
 using System.Linq;
 using System.Threading.Tasks;
 using ArctZ.Services.Device;
-using ArctZ.Tests.Services;
 using ArctZ.Tests.Services.Device;
 using ArctZ.ViewModels;
 
@@ -9,10 +8,13 @@ namespace ArctZ.Tests.ViewModels;
 
 public class ConnectionViewModelTests
 {
+    private static ConnectionViewModel CreateVm(IDeviceTransport realTransport, IDeviceTransport? demoTransport = null) =>
+        new(realTransport, () => demoTransport ?? new FakeDeviceTransport(), new DeviceSessionFactory(MachineLimits.Default));
+
     [Fact]
     public void Constructor_DefaultsToFirstEndpointAndListsRealAndDemo()
     {
-        var vm = new ConnectionViewModel(new FakeDeviceTransport(), () => new FakeDeviceTransport(), new DeviceSessionFactory(MachineLimits.Default), new InlineUiDispatcher());
+        var vm = CreateVm(new FakeDeviceTransport());
 
         Assert.Equal(2, vm.AvailableEndpoints.Count);
         Assert.Contains(vm.AvailableEndpoints, e => e.Kind == ConnectionEndpointKind.RealDevice);
@@ -25,10 +27,10 @@ public class ConnectionViewModelTests
     {
         var realTransport = new FakeDeviceTransport();
         var demoTransport = new FakeDeviceTransport();
-        var vm = new ConnectionViewModel(realTransport, () => demoTransport, new DeviceSessionFactory(MachineLimits.Default), new InlineUiDispatcher());
+        var vm = CreateVm(realTransport, demoTransport);
         vm.SelectedEndpoint = vm.AvailableEndpoints.Single(e => e.Kind == ConnectionEndpointKind.Demo);
 
-        await vm.ConnectCommand.ExecuteAsync(null);
+        await vm.ConnectCommand.Execute();
 
         Assert.True(demoTransport.IsConnected);
         Assert.False(realTransport.IsConnected);
@@ -39,9 +41,9 @@ public class ConnectionViewModelTests
     public async Task ConnectCommand_RealDeviceSelected_ConnectsUsingRealTransport()
     {
         var realTransport = new FakeDeviceTransport();
-        var vm = new ConnectionViewModel(realTransport, () => new FakeDeviceTransport(), new DeviceSessionFactory(MachineLimits.Default), new InlineUiDispatcher());
+        var vm = CreateVm(realTransport);
 
-        await vm.ConnectCommand.ExecuteAsync(null);
+        await vm.ConnectCommand.Execute();
 
         Assert.True(realTransport.IsConnected);
     }
@@ -50,10 +52,10 @@ public class ConnectionViewModelTests
     public async Task DisconnectCommand_DisconnectsActiveSessionAndClearsIt()
     {
         var realTransport = new FakeDeviceTransport();
-        var vm = new ConnectionViewModel(realTransport, () => new FakeDeviceTransport(), new DeviceSessionFactory(MachineLimits.Default), new InlineUiDispatcher());
-        await vm.ConnectCommand.ExecuteAsync(null);
+        var vm = CreateVm(realTransport);
+        await vm.ConnectCommand.Execute();
 
-        await vm.DisconnectCommand.ExecuteAsync(null);
+        await vm.DisconnectCommand.Execute();
 
         Assert.False(realTransport.IsConnected);
         Assert.Null(vm.Session);
@@ -63,11 +65,11 @@ public class ConnectionViewModelTests
     public async Task ConnectCommand_WhileAlreadyConnected_DisconnectsPreviousSessionBeforeCreatingNewOne()
     {
         var realTransport = new FakeDeviceTransport();
-        var vm = new ConnectionViewModel(realTransport, () => new FakeDeviceTransport(), new DeviceSessionFactory(MachineLimits.Default), new InlineUiDispatcher());
-        await vm.ConnectCommand.ExecuteAsync(null);
+        var vm = CreateVm(realTransport);
+        await vm.ConnectCommand.Execute();
         var firstSession = vm.Session;
 
-        await vm.ConnectCommand.ExecuteAsync(null);
+        await vm.ConnectCommand.Execute();
 
         Assert.NotNull(firstSession);
         Assert.NotSame(firstSession, vm.Session);
@@ -81,11 +83,11 @@ public class ConnectionViewModelTests
     {
         var realTransport = new FakeDeviceTransport();
         var demoTransport = new FakeDeviceTransport();
-        var vm = new ConnectionViewModel(realTransport, () => demoTransport, new DeviceSessionFactory(MachineLimits.Default), new InlineUiDispatcher());
-        await vm.ConnectCommand.ExecuteAsync(null);
+        var vm = CreateVm(realTransport, demoTransport);
+        await vm.ConnectCommand.Execute();
 
         vm.SelectedEndpoint = vm.AvailableEndpoints.Single(e => e.Kind == ConnectionEndpointKind.Demo);
-        await vm.ConnectCommand.ExecuteAsync(null);
+        await vm.ConnectCommand.Execute();
 
         Assert.False(realTransport.IsConnected);
         Assert.True(demoTransport.IsConnected);
@@ -95,14 +97,14 @@ public class ConnectionViewModelTests
     [Fact]
     public async Task IsConnectionModalVisible_TracksSessionLifecycle()
     {
-        var vm = new ConnectionViewModel(new FakeDeviceTransport(), () => new FakeDeviceTransport(), new DeviceSessionFactory(MachineLimits.Default), new InlineUiDispatcher());
+        var vm = CreateVm(new FakeDeviceTransport());
 
         Assert.True(vm.IsConnectionModalVisible);
 
-        await vm.ConnectCommand.ExecuteAsync(null);
+        await vm.ConnectCommand.Execute();
         Assert.False(vm.IsConnectionModalVisible);
 
-        await vm.DisconnectCommand.ExecuteAsync(null);
+        await vm.DisconnectCommand.Execute();
         Assert.True(vm.IsConnectionModalVisible);
     }
 
@@ -110,18 +112,75 @@ public class ConnectionViewModelTests
     public async Task ConnectCommand_TransportThrows_ResetsSessionAndReenablesRetry()
     {
         var realTransport = new FakeDeviceTransport { ConnectFailuresRemaining = 1 };
-        var vm = new ConnectionViewModel(realTransport, () => new FakeDeviceTransport(), new DeviceSessionFactory(MachineLimits.Default), new InlineUiDispatcher());
+        var vm = CreateVm(realTransport);
 
-        await vm.ConnectCommand.ExecuteAsync(null);
+        await vm.ConnectCommand.Execute();
 
         Assert.Null(vm.Session);
         Assert.True(vm.IsConnectionModalVisible);
         Assert.True(vm.ConnectCommand.CanExecute(null));
 
         // Retry succeeds now that ConnectFailuresRemaining is exhausted.
-        await vm.ConnectCommand.ExecuteAsync(null);
+        await vm.ConnectCommand.Execute();
         Assert.NotNull(vm.Session);
         Assert.False(vm.IsConnectionModalVisible);
         Assert.Equal(ConnectionState.Connected, vm.Session!.ConnectionState);
+    }
+
+    // The two tests below exercise the .Switch()-based rewrite in ConnectionViewModel's
+    // constructor (mirroring Session.ConnectionStateChanged) driven by the SESSION raising a
+    // state change on its own, rather than by a command — the scenario that whole rewrite exists
+    // for. Every other test in this file drives the VM exclusively through
+    // ConnectCommand/DisconnectCommand and would stay green even if .Switch() were deleted
+    // outright.
+
+    [Fact]
+    public async Task UnsolicitedDisconnect_TransitionsToReconnectingAndShowsModal()
+    {
+        var realTransport = new FakeDeviceTransport();
+        var vm = CreateVm(realTransport);
+        await vm.ConnectCommand.Execute();
+
+        // ConnectFailuresRemaining is set only after the initial connect succeeds, so the
+        // upcoming reconnect attempts (not this connect) are the ones that fail — same idiom as
+        // ProgramViewModelPlaybackTests.LinkLoss_DuringPlayback_....
+        realTransport.ConnectFailuresRemaining = 10;
+        realTransport.SimulateDisconnect();
+
+        // DeviceSession.OnTransportDisconnected sets Reconnecting synchronously (via the
+        // lock-guarded SerialEventQueue, which drains inline) before it ever awaits a retry, and
+        // ConnectionViewModel's ObserveOn uses RxSchedulers.MainThreadScheduler, which
+        // ReactiveUIBootstrap pins to ImmediateScheduler for tests — so no wait is needed here.
+        Assert.Equal(ConnectionState.Reconnecting, vm.ConnectionState);
+        Assert.True(vm.IsConnectionModalVisible);
+    }
+
+    [Fact]
+    public async Task ConnectionStateChanged_OnAReplacedSession_DoesNotAffectTheViewModel()
+    {
+        var realTransport = new FakeDeviceTransport();
+        var vm = CreateVm(realTransport);
+        await vm.ConnectCommand.Execute();
+        var session1 = vm.Session;
+
+        vm.SelectedEndpoint = vm.AvailableEndpoints.Single(e => e.Kind == ConnectionEndpointKind.Demo);
+        await vm.ConnectCommand.Execute();
+        var session2 = vm.Session;
+
+        Assert.NotNull(session1);
+        Assert.NotSame(session1, session2);
+        Assert.Equal(ConnectionState.Connected, vm.ConnectionState);
+
+        // session1 is no longer reachable through the VM, but it is still a live DeviceSession
+        // object that can raise ConnectionStateChanged independently of anything the VM does
+        // (e.g. a reconnect loop or a stray disconnect racing the switch to session2). Calling
+        // DisconnectAsync directly on the captured reference reproduces exactly that: it fires
+        // ConnectionStateChanged on session1 without going through the VM at all. Without
+        // .Switch() unsubscribing from session1 when Session moved to session2 (the one thing the
+        // old OnSessionChanged did explicitly), this would stomp vm.ConnectionState back to
+        // Disconnected even though session2 is the one actually connected.
+        await session1!.DisconnectAsync();
+
+        Assert.Equal(ConnectionState.Connected, vm.ConnectionState);
     }
 }
