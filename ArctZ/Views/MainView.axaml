@@ -13,7 +13,6 @@
              Foreground="{StaticResource HudTextPrimaryBrush}">
 
     <UserControl.Resources>
-        <conv:ConnectionStateToLabelConverter x:Key="StateToLabel" />
         <conv:ConnectionStateToBrushConverter x:Key="StateToBrush" />
     </UserControl.Resources>
 
@@ -274,7 +273,7 @@
                         <Ellipse Width="8" Height="8" VerticalAlignment="Center"
                                  Fill="{Binding ConnectionState, Converter={StaticResource StateToBrush}}" />
                         <TextBlock VerticalAlignment="Center"
-                                   Text="{Binding ConnectionState, Converter={StaticResource StateToLabel}}" />
+                                   Text="{Binding ConnectionStateLabel}" />
                     </StackPanel>
                     <ComboBox ItemsSource="{Binding AvailableEndpoints}"
                               SelectedItem="{Binding SelectedEndpoint}"

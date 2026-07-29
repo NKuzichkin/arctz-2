@@ -6,21 +6,19 @@
              x:DataType="vm:ConnectionViewModel">
 
     <UserControl.Resources>
-        <conv:ConnectionStateToLabelConverter x:Key="StateToLabel" />
         <conv:ConnectionStateToBrushConverter x:Key="StateToBrush" />
     </UserControl.Resources>
 
     <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-        <Border Background="{StaticResource HudPanelElevatedBrush}"
-                BorderBrush="{StaticResource HudBorderStrongBrush}" BorderThickness="1"
-                Padding="10,6">
-            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                <Ellipse Width="8" Height="8" VerticalAlignment="Center"
-                         Fill="{Binding ConnectionState, Converter={StaticResource StateToBrush}}" />
-                <TextBlock VerticalAlignment="Center"
-                           Text="{Binding ConnectionState, Converter={StaticResource StateToLabel}}" />
-            </StackPanel>
-        </Border>
+        <HeaderedContainer Padding="10,6">
+            <EdgePanel VerticalAlignment="Center">
+                <EdgePanel.StartContent>
+                    <Ellipse Width="8" Height="8" VerticalAlignment="Center"
+                             Fill="{Binding ConnectionState, Converter={StaticResource StateToBrush}}" />
+                </EdgePanel.StartContent>
+                <TextBlock Text="{Binding ConnectionStateLabel}" Margin="8,0,0,0" VerticalAlignment="Center" />
+            </EdgePanel>
+        </HeaderedContainer>
 
         <Button Content="Homing" Command="{Binding HomeCommand}" />
         <Button Classes="danger" Content="Сброс аварии" Command="{Binding ResetAlarmCommand}" />
