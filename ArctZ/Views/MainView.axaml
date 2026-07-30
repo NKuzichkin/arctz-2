@@ -161,13 +161,21 @@
                         <StackPanel Spacing="10">
                             <StackPanel Spacing="10" IsEnabled="{Binding !IsProgramLocked}">
                                 <TextBlock Classes="section-heading" Text="ПРОГРАММА" />
-                                <TextBox Text="{Binding ProgramName}" PlaceholderText="Имя программы" />
-                                <WrapPanel ItemSpacing="8" LineSpacing="8">
-                                    <Button Classes="primary" Content="Захватить точку" Command="{Binding CaptureKeyPointCommand}" />
-                                    <Button Content="Новая" Command="{Binding NewProgramCommand}" />
-                                    <Button Content="Сохранить" Command="{Binding SaveProgramCommand}" />
-                                    <Button Content="Библиотека" Command="{Binding OpenLibraryCommand}" />
-                                </WrapPanel>
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Grid.Column="0" Classes="telemetry" FontSize="16" VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis" Text="{Binding ProgramName}" />
+                                    <Button Grid.Column="1" Content="⋮" Padding="8,2" VerticalAlignment="Center">
+                                        <Button.Flyout>
+                                            <MenuFlyout>
+                                                <MenuItem Header="Переименовать" Command="{Binding RenameProgramCommand}" />
+                                                <MenuItem Header="Новая" Command="{Binding NewProgramCommand}" />
+                                                <MenuItem Header="Сохранить" Command="{Binding SaveProgramCommand}" />
+                                                <MenuItem Header="Библиотека" Command="{Binding OpenLibraryCommand}" />
+                                            </MenuFlyout>
+                                        </Button.Flyout>
+                                    </Button>
+                                </Grid>
+                                <Button Classes="primary" Content="Захватить точку" Command="{Binding CaptureKeyPointCommand}" HorizontalAlignment="Left" />
                                 <TextBlock Classes="section-heading" Text="ТОЧКИ" Margin="0,8,0,0" />
                                 <ListBox x:Name="KeyPointsList" ItemsSource="{Binding KeyPoints}" SelectedItem="{Binding SelectedKeyPoint}" Height="320">
                                     <ListBox.Styles>
@@ -257,6 +265,22 @@
                             <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,6,0,0">
                                 <Button Content="Отмена" Command="{Binding CancelCommand}" />
                                 <Button Classes="primary" Content="Сохранить" Command="{Binding SaveCommand}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </Border>
+
+                <Border IsVisible="{Binding PendingRename, Converter={x:Static ObjectConverters.IsNotNull}}" Background="#CC0A0E12">
+                    <Border x:DataType="vm:RenameProgramRequest" DataContext="{Binding PendingRename}"
+                            Width="320" Background="{StaticResource HudPanelElevatedBrush}"
+                            BorderBrush="{StaticResource HudBorderStrongBrush}" BorderThickness="1"
+                            Padding="20" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <StackPanel Spacing="14">
+                            <TextBlock Classes="section-heading" Text="ИМЯ ПРОГРАММЫ" />
+                            <TextBox Text="{Binding Name}" PlaceholderText="Имя программы" />
+                            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                                <Button Content="Отмена" Command="{Binding ((vm:ProgramViewModel)DataContext).CancelRenameCommand, ElementName=RootPanel}" />
+                                <Button Classes="primary" Content="Сохранить" Command="{Binding ((vm:ProgramViewModel)DataContext).ConfirmRenameCommand, ElementName=RootPanel}" />
                             </StackPanel>
                         </StackPanel>
                     </Border>
