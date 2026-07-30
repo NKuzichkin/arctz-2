@@ -33,7 +33,7 @@ namespace ArctZ.Views
 
             HeaderGrid.RowDefinitions = new RowDefinitions(isNarrow ? "Auto,Auto" : "");
             ContentGrid.ColumnDefinitions = new ColumnDefinitions(isNarrow ? "*,Auto,Auto,*" : "Auto,*,Auto");
-            ContentGrid.RowDefinitions = new RowDefinitions(isNarrow ? "Auto,Auto" : "");
+            ContentGrid.RowDefinitions = new RowDefinitions(isNarrow ? "*,Auto" : "");
         }
 
         private void OnLeftJoystickDown(object? sender, JoystickEventArgs e) => ViewModel?.OnLeftJoystickDown(e);

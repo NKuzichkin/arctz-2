@@ -94,7 +94,7 @@
             <Setter Property="Grid.Column" Value="0" />
             <Setter Property="Radius" Value="80" />
         </Style>
-        <Style Selector="Grid#ContentGrid > StackPanel#ProgramPanel">
+        <Style Selector="Grid#ContentGrid > ScrollViewer#ProgramPanel">
             <Setter Property="Grid.Column" Value="1" />
             <Setter Property="MaxWidth" Value="360" />
             <Setter Property="Margin" Value="24,0" />
@@ -103,7 +103,7 @@
             <Setter Property="Grid.Column" Value="2" />
             <Setter Property="Radius" Value="80" />
         </Style>
-        <Style Selector="Grid#ContentGrid.narrow > StackPanel#ProgramPanel">
+        <Style Selector="Grid#ContentGrid.narrow > ScrollViewer#ProgramPanel">
             <Setter Property="Grid.Row" Value="0" />
             <Setter Property="Grid.Column" Value="0" />
             <Setter Property="Grid.ColumnSpan" Value="4" />
@@ -148,7 +148,6 @@
             <!-- A single Grid is the DockPanel's true last child so it receives the fill slot;
                  the program panel and its overlays sit stacked inside it, toggled by IsVisible. -->
             <Grid x:Name="RootPanel">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <Border Classes="reveal-3" Margin="0,12,12,12"
                         Background="{StaticResource HudPanelBrush}"
                         BorderBrush="{StaticResource HudBorderBrush}"
@@ -158,7 +157,8 @@
                                              VerticalAlignment="Center" IsEnabled="{Binding !IsProgramLocked}"
                                              JoystickDown="OnLeftJoystickDown" JoystickMove="OnLeftJoystickMove" JoystickUp="OnLeftJoystickUp" />
 
-                        <StackPanel x:Name="ProgramPanel" Spacing="10" VerticalAlignment="Center">
+                        <ScrollViewer x:Name="ProgramPanel" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel Spacing="10">
                             <StackPanel Spacing="10" IsEnabled="{Binding !IsProgramLocked}">
                                 <TextBlock Classes="section-heading" Text="ПРОГРАММА" />
                                 <TextBox Text="{Binding ProgramName}" PlaceholderText="Имя программы" />
@@ -226,13 +226,13 @@
                                            Text="{Binding FaultedAtSegmentIndex, StringFormat='Ошибка на сегменте: {0}'}" />
                             </Border>
                         </StackPanel>
+                        </ScrollViewer>
 
                         <js:VirtualJoystick x:Name="RightJoystick" Mode="Fixed" Shape="Circle"
                                              VerticalAlignment="Center" IsEnabled="{Binding !IsProgramLocked}"
                                              JoystickDown="OnRightJoystickDown" JoystickMove="OnRightJoystickMove" JoystickUp="OnRightJoystickUp" />
                     </Grid>
                 </Border>
-                </ScrollViewer>
 
                 <Border IsVisible="{Binding IsEditingKeyPoint}" Background="#CC0A0E12">
                     <Border x:DataType="vm:KeyPointEditorViewModel" DataContext="{Binding KeyPointEditor}"
