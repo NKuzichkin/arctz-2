@@ -50,14 +50,20 @@ Avalonia не имеет media queries. Переключение делаетс�
 
 ## Прокрутка
 
-`Border.reveal-3` (обёртка `ContentGrid`) оборачивается в `ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"`. На широком экране контент по-прежнему помещается — скролл не активируется, `Border` растягивается на весь `ScrollViewer` как раньше (стандартное поведение `ScrollViewer` — растягивать контент под viewport, если он меньше). На узком, когда панель + строка джойстиков суммарно выше экрана, появляется вертикальный скролл.
+**Пересмотрено после первой реализации:** изначально весь `ContentGrid` (оба джойстика + панель программы) оборачивался в один `ScrollViewer` — из-за этого длинный список точек мог утащить джойстики за пределы экрана при прокрутке. Финальная версия: `ScrollViewer` оборачивает **только содержимое `ProgramPanel`** — сам `ProgramPanel` теперь `ScrollViewer x:Name="ProgramPanel"` (не `StackPanel`; внутри — `StackPanel Spacing="10"` с тем же содержимым, что и раньше), стилизуется и позиционируется в точности как раньше (`Grid.Column/Row/ColumnSpan/MaxWidth/Margin` через те же `.narrow`/безусловные стили, только селектор типа поменялся с `StackPanel` на `ScrollViewer`).
 
-Три модальных оверлея (`IsEditingKeyPoint`, `PendingConfirmation`, `IsLibraryOpen`) остаются **вне** `ScrollViewer`, прямыми детьми `RootPanel` — иначе их `HorizontalAlignment/VerticalAlignment=Center` центрировались бы относительно прокручиваемого контента, а не видимой области, и модалка могла бы уехать за пределы экрана при прокрутке.
+В узком режиме `ContentGrid.RowDefinitions` в `OnSizeChanged` теперь `"*,Auto"` (было `"Auto,Auto"`): строка панели (`Row=0`) — звёздочная, забирает всё оставшееся пространство и сама прокручивается внутри себя, если контент выше выделенной высоты; строка джойстиков (`Row=1`) — `Auto`, всегда получает ровно свою естественную высоту и потому прижата ровно к нижнему краю `ContentGrid`, никогда не оказываясь внутри прокручиваемой области. Джойстики физически — соседи `ProgramPanel` внутри `ContentGrid`, а не его потомки, поэтому прокрутка панели их не касается вообще.
+
+Подтверждено headless-прогоном Avalonia (не визуально, а измерено): нижняя граница ряда джойстиков совпадает с нижней границей `ContentGrid` на всех проверенных ширинах; `LeftJoystick`/`RightJoystick` не являются визуальными потомками `ScrollViewer`; на очень низком окне (380×500) джойстик остаётся полностью в границах окна, при этом `ScrollViewer` панели показывает `V-SCROLL=YES`.
+
+В широком режиме `ContentGrid` без явных `RowDefinitions` (один неявный растягивающийся ряд, как и раньше) — `ProgramPanel` теперь тоже `ScrollViewer`, поэтому если его содержимое когда-нибудь станет выше доступной высоты, прокрутится только он, джойстики (в соседних Auto-колонках) не затронуты.
+
+Три модальных оверлея (`IsEditingKeyPoint`, `PendingConfirmation`, `IsLibraryOpen`) остаются прямыми детьми `RootPanel`, вне `ContentGrid` — их центрирование не зависит от прокрутки панели программы.
 
 ## Затронутые файлы
 
-- `ArctZ/Views/MainView.axaml` — именование `HeaderGrid`/`ContentGrid`/детей, `RowDefinitions`, стили `.narrow`, замена `StackPanel`→`WrapPanel` в двух местах, обёртка `ScrollViewer`.
-- `ArctZ/Views/MainView.axaml.cs` — обработчик `SizeChanged`, метод переключения классов `narrow` на `HeaderGrid`/`ContentGrid`.
+- `ArctZ/Views/MainView.axaml` — именование `HeaderGrid`/`ContentGrid`/детей, стили `.narrow`, замена `StackPanel`→`WrapPanel` в двух местах, `ProgramPanel` — `StackPanel`→`ScrollViewer`.
+- `ArctZ/Views/MainView.axaml.cs` — обработчик `SizeChanged`, метод переключения классов `narrow` на `HeaderGrid`/`ContentGrid`, переключение `RowDefinitions`/`ColumnDefinitions` (не стилизуется — см. выше).
 
 ## Не в скоупе
 
