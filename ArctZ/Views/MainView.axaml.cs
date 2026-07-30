@@ -2,7 +2,6 @@ using ArctZ.Components.VirtualJoystick;
 using ArctZ.Services.Program;
 using ArctZ.ViewModels;
 using Avalonia.Controls;
-using Avalonia.Interactivity;
 
 namespace ArctZ.Views
 {
@@ -26,22 +25,6 @@ namespace ArctZ.Views
         private void OnRightJoystickMove(object? sender, JoystickEventArgs e) => ViewModel?.OnRightJoystickMove(e);
 
         private void OnRightJoystickUp(object? sender, JoystickEventArgs e) => ViewModel?.OnRightJoystickUp(e);
-
-        private void OnAuthoringModeClicked(object? sender, RoutedEventArgs e)
-        {
-            if (ViewModel is { } vm)
-            {
-                vm.Mode = ProgramMode.Authoring;
-            }
-        }
-
-        private void OnPlaybackModeClicked(object? sender, RoutedEventArgs e)
-        {
-            if (ViewModel is { } vm)
-            {
-                vm.Mode = ProgramMode.Playback;
-            }
-        }
 
         private async void OnLibrarySelectionChanged(object? sender, SelectionChangedEventArgs e)
         {
