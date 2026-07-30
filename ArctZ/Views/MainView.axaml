@@ -68,6 +68,15 @@
             <Setter Property="BorderThickness" Value="3,0,0,0" />
         </Style>
 
+        <Style Selector="Grid#HeaderGrid > ContentControl#ConnectionStatus">
+            <Setter Property="Grid.Row" Value="0" />
+            <Setter Property="Grid.Column" Value="0" />
+        </Style>
+        <Style Selector="Grid#HeaderGrid > WrapPanel#PlaybackButtons">
+            <Setter Property="Grid.Row" Value="0" />
+            <Setter Property="Grid.Column" Value="1" />
+        </Style>
+
         <Style Selector="Grid#HeaderGrid.narrow > ContentControl#ConnectionStatus">
             <Setter Property="Grid.Row" Value="0" />
             <Setter Property="Grid.Column" Value="0" />
@@ -90,8 +99,8 @@
                     BorderThickness="0,0,0,1"
                     Padding="12,10">
                 <Grid x:Name="HeaderGrid" ColumnDefinitions="*,Auto">
-                    <ContentControl x:Name="ConnectionStatus" Grid.Row="0" Grid.Column="0" Content="{Binding Connection}" />
-                    <WrapPanel x:Name="PlaybackButtons" Grid.Row="0" Grid.Column="1" ItemSpacing="8" LineSpacing="8" VerticalAlignment="Center">
+                    <ContentControl x:Name="ConnectionStatus" Content="{Binding Connection}" />
+                    <WrapPanel x:Name="PlaybackButtons" ItemSpacing="8" LineSpacing="8" VerticalAlignment="Center">
                         <Button Classes="primary" Content="Play" Command="{Binding PlayCommand}" />
                         <Button Content="Пауза" Command="{Binding PauseCommand}" />
                         <Button Classes="danger" Content="Стоп" Command="{Binding StopCommand}" />

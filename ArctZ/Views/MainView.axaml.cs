@@ -2,7 +2,6 @@ using ArctZ.Components.VirtualJoystick;
 using ArctZ.Services.Program;
 using ArctZ.ViewModels;
 using Avalonia.Controls;
-using Avalonia.Layout;
 
 namespace ArctZ.Views
 {
