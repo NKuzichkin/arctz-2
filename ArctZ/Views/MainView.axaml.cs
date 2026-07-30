@@ -28,18 +28,30 @@ namespace ArctZ.Views
         private void OnSizeChanged(object? sender, SizeChangedEventArgs e)
         {
             var isNarrow = e.NewSize.Width < NarrowLayoutBreakpoint;
-            if (_isNarrow == isNarrow)
+            if (_isNarrow != isNarrow)
             {
-                return;
+                _isNarrow = isNarrow;
+
+                HeaderGrid.Classes.Set("narrow", isNarrow);
+                ContentGrid.Classes.Set("narrow", isNarrow);
+
+                HeaderGrid.RowDefinitions = new RowDefinitions(isNarrow ? "Auto,Auto" : "");
+                ContentGrid.ColumnDefinitions = new ColumnDefinitions(isNarrow ? "*,*" : "Auto,*,Auto");
+                ContentGrid.RowDefinitions = new RowDefinitions(isNarrow ? "*,Auto" : "");
+
+                if (!isNarrow)
+                {
+                    LeftJoystick.ClearValue(VirtualJoystick.RadiusProperty);
+                    RightJoystick.ClearValue(VirtualJoystick.RadiusProperty);
+                }
             }
-            _isNarrow = isNarrow;
 
-            HeaderGrid.Classes.Set("narrow", isNarrow);
-            ContentGrid.Classes.Set("narrow", isNarrow);
-
-            HeaderGrid.RowDefinitions = new RowDefinitions(isNarrow ? "Auto,Auto" : "");
-            ContentGrid.ColumnDefinitions = new ColumnDefinitions(isNarrow ? "*,Auto,Auto,*" : "Auto,*,Auto");
-            ContentGrid.RowDefinitions = new RowDefinitions(isNarrow ? "*,Auto" : "");
+            if (isNarrow)
+            {
+                var radius = ComputeNarrowJoystickRadius(e.NewSize.Width);
+                LeftJoystick.Radius = radius;
+                RightJoystick.Radius = radius;
+            }
         }
 
         internal static double ComputeNarrowJoystickRadius(double mainViewWidth)
