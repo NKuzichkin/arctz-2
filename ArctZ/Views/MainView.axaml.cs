@@ -2,17 +2,37 @@ using ArctZ.Components.VirtualJoystick;
 using ArctZ.Services.Program;
 using ArctZ.ViewModels;
 using Avalonia.Controls;
+using Avalonia.Layout;
 
 namespace ArctZ.Views
 {
     public partial class MainView : UserControl
     {
+        private const double NarrowLayoutBreakpoint = 700;
+
         public MainView()
         {
             InitializeComponent();
+            SizeChanged += OnSizeChanged;
         }
 
         private ProgramViewModel? ViewModel => DataContext as ProgramViewModel;
+
+        private void OnSizeChanged(object? sender, SizeChangedEventArgs e)
+        {
+            var isNarrow = e.NewSize.Width < NarrowLayoutBreakpoint;
+            HeaderGrid.Classes.Set("narrow", isNarrow);
+            ContentGrid.Classes.Set("narrow", isNarrow);
+
+            if (isNarrow)
+            {
+                HeaderGrid.RowDefinitions = new RowDefinitions("Auto,Auto");
+            }
+            else
+            {
+                HeaderGrid.RowDefinitions = new RowDefinitions("");
+            }
+        }
 
         private void OnLeftJoystickDown(object? sender, JoystickEventArgs e) => ViewModel?.OnLeftJoystickDown(e);
 

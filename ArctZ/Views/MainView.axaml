@@ -67,6 +67,19 @@
             <Setter Property="BorderBrush" Value="{StaticResource HudAccentBrush}" />
             <Setter Property="BorderThickness" Value="3,0,0,0" />
         </Style>
+
+        <Style Selector="Grid#HeaderGrid.narrow > ContentControl#ConnectionStatus">
+            <Setter Property="Grid.Row" Value="0" />
+            <Setter Property="Grid.Column" Value="0" />
+            <Setter Property="Grid.ColumnSpan" Value="2" />
+        </Style>
+        <Style Selector="Grid#HeaderGrid.narrow > WrapPanel#PlaybackButtons">
+            <Setter Property="Grid.Row" Value="1" />
+            <Setter Property="Grid.Column" Value="0" />
+            <Setter Property="Grid.ColumnSpan" Value="2" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="Margin" Value="0,8,0,0" />
+        </Style>
     </UserControl.Styles>
 
     <Grid>
