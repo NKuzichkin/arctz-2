@@ -9,7 +9,7 @@
         <conv:ConnectionStateToBrushConverter x:Key="StateToBrush" />
     </UserControl.Resources>
 
-    <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+    <WrapPanel ItemSpacing="10" LineSpacing="10" VerticalAlignment="Center">
         <HeaderedContainer Padding="10,6">
             <EdgePanel VerticalAlignment="Center">
                 <EdgePanel.StartContent>
@@ -23,5 +23,5 @@
         <Button Content="Homing" Command="{Binding HomeCommand}" />
         <Button Classes="danger" Content="Сброс аварии" Command="{Binding ResetAlarmCommand}" />
         <Button Content="Отключить" Command="{Binding DisconnectCommand}" />
-    </StackPanel>
+    </WrapPanel>
 </UserControl>

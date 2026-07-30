@@ -17,9 +17,17 @@ namespace ArctZ.Views
 
         private ProgramViewModel? ViewModel => DataContext as ProgramViewModel;
 
+        private bool? _isNarrow;
+
         private void OnSizeChanged(object? sender, SizeChangedEventArgs e)
         {
             var isNarrow = e.NewSize.Width < NarrowLayoutBreakpoint;
+            if (_isNarrow == isNarrow)
+            {
+                return;
+            }
+            _isNarrow = isNarrow;
+
             HeaderGrid.Classes.Set("narrow", isNarrow);
             ContentGrid.Classes.Set("narrow", isNarrow);
 

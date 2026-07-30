@@ -179,6 +179,14 @@ public class VirtualJoystick : TemplatedControl
     {
         base.OnPointerPressed(e);
 
+        // Prevent ancestor gesture recognizers (notably the ScrollViewer's
+        // ScrollGestureRecognizer wrapping the main content) from claiming
+        // this pointer once a drag exceeds their start-distance threshold.
+        // Without this, a vertical joystick drag can be hijacked mid-jog,
+        // triggering OnPointerCaptureLost and a spurious JoystickUp while
+        // the page scrolls instead.
+        e.PreventGestureRecognition();
+
         if (e.Pointer.Type == PointerType.Mouse && !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
             return;
 
