@@ -100,7 +100,11 @@ public class ProgramViewModelAuthoringTests
         vm.CaptureKeyPointCommand.Execute(null);
         vm.ProgramName = "Тест";
 
-        await vm.SaveProgramCommand.ExecuteAsync(null);
+        var saveTask = vm.SaveProgramCommand.ExecuteAsync(null);
+        Assert.NotNull(vm.PendingRename);
+        vm.ConfirmRenameCommand.Execute(null);
+        await saveTask;
+
         await vm.RefreshLibraryCommand.ExecuteAsync(null);
 
         Assert.Contains(vm.Library, s => s.Name == "Тест");
@@ -115,7 +119,11 @@ public class ProgramViewModelAuthoringTests
         vm.CaptureKeyPointCommand.Execute(null);
         vm.ProgramName = "Тест";
 
-        await vm.SaveProgramCommand.ExecuteAsync(null);
+        var saveTask = vm.SaveProgramCommand.ExecuteAsync(null);
+        Assert.NotNull(vm.PendingRename);
+        vm.ConfirmRenameCommand.Execute(null);
+        await saveTask;
+
         await vm.RefreshLibraryCommand.ExecuteAsync(null);
 
         Assert.True(vm.Library.Single(s => s.Name == "Тест").IsLoaded);
@@ -157,7 +165,11 @@ public class ProgramViewModelAuthoringTests
         transport.SimulateReceivedLine("<Idle|WPos:0,0,0,0|FS:0,0>");
         vm.CaptureKeyPointCommand.Execute(null);
         vm.ProgramName = "Тест";
-        await vm.SaveProgramCommand.ExecuteAsync(null);
+
+        var firstSaveTask = vm.SaveProgramCommand.ExecuteAsync(null);
+        Assert.NotNull(vm.PendingRename);
+        vm.ConfirmRenameCommand.Execute(null);
+        await firstSaveTask;
 
         var saveTask = vm.SaveProgramCommand.ExecuteAsync(null);
 
@@ -176,7 +188,11 @@ public class ProgramViewModelAuthoringTests
         transport.SimulateReceivedLine("<Idle|WPos:0,0,0,0|FS:0,0>");
         vm.CaptureKeyPointCommand.Execute(null);
         vm.ProgramName = "Тест";
-        await vm.SaveProgramCommand.ExecuteAsync(null);
+
+        var firstSaveTask = vm.SaveProgramCommand.ExecuteAsync(null);
+        Assert.NotNull(vm.PendingRename);
+        vm.ConfirmRenameCommand.Execute(null);
+        await firstSaveTask;
         var savedId = vm.ProgramId!.Value;
 
         transport.SimulateReceivedLine("<Idle|WPos:10,0,0,0|FS:0,0>");
@@ -200,6 +216,8 @@ public class ProgramViewModelAuthoringTests
         vm.ProgramName = "Existing";
 
         var saveTask = vm.SaveProgramCommand.ExecuteAsync(null);
+        Assert.NotNull(vm.PendingRename);
+        vm.ConfirmRenameCommand.Execute(null);
 
         Assert.NotNull(vm.PendingConfirmation);
         vm.ConfirmYesCommand.Execute(null);
@@ -217,11 +235,29 @@ public class ProgramViewModelAuthoringTests
         vm.ProgramName = "Existing";
 
         var saveTask = vm.SaveProgramCommand.ExecuteAsync(null);
+        Assert.NotNull(vm.PendingRename);
+        vm.ConfirmRenameCommand.Execute(null);
+
         Assert.NotNull(vm.PendingConfirmation);
         vm.ConfirmNoCommand.Execute(null);
         await saveTask;
 
         Assert.Null(vm.ProgramId);
+    }
+
+    [Fact]
+    public async Task SaveProgramAsync_NewProgram_CancellingRenameDialog_DoesNotSave()
+    {
+        var vm = CreateViewModel(out _, out var storage);
+        vm.ProgramName = "Тест";
+
+        var saveTask = vm.SaveProgramCommand.ExecuteAsync(null);
+        Assert.NotNull(vm.PendingRename);
+        vm.CancelRenameCommand.Execute(null);
+        await saveTask;
+
+        Assert.Null(vm.ProgramId);
+        Assert.Empty(await storage.ListAsync());
     }
 
     [Fact]

@@ -179,7 +179,17 @@ public partial class ProgramViewModel : ViewModelBase
     [RelayCommand]
     private async Task SaveProgramAsync()
     {
-        if (ProgramId is not null)
+        if (ProgramId is null)
+        {
+            var name = await RequestNameAsync(ProgramName);
+            if (name is null)
+            {
+                return;
+            }
+
+            ProgramName = name;
+        }
+        else
         {
             var confirmed = await ConfirmAsync(
                 $"Сохранить поверх ранее сохранённой программы «{ProgramName}»? Текущие данные на диске будут перезаписаны.");
