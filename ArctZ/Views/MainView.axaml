@@ -76,7 +76,7 @@
                     BorderBrush="{StaticResource HudBorderBrush}"
                     BorderThickness="0,0,0,1"
                     Padding="12,10">
-                <Grid x:Name="HeaderGrid" ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                <Grid x:Name="HeaderGrid" ColumnDefinitions="*,Auto">
                     <ContentControl x:Name="ConnectionStatus" Grid.Row="0" Grid.Column="0" Content="{Binding Connection}" />
                     <WrapPanel x:Name="PlaybackButtons" Grid.Row="0" Grid.Column="1" ItemSpacing="8" LineSpacing="8" VerticalAlignment="Center">
                         <Button Classes="primary" Content="Play" Command="{Binding PlayCommand}" />
@@ -98,7 +98,7 @@
                         Background="{StaticResource HudPanelBrush}"
                         BorderBrush="{StaticResource HudBorderBrush}"
                         BorderThickness="1">
-                    <Grid x:Name="ContentGrid" ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" Margin="20">
+                    <Grid x:Name="ContentGrid" ColumnDefinitions="Auto,*,Auto" Margin="20">
                         <js:VirtualJoystick x:Name="LeftJoystick" Grid.Column="0" Radius="80" Mode="Fixed" Shape="Circle"
                                              VerticalAlignment="Center" IsEnabled="{Binding !IsProgramLocked}"
                                              JoystickDown="OnLeftJoystickDown" JoystickMove="OnLeftJoystickMove" JoystickUp="OnLeftJoystickUp" />
