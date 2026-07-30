@@ -136,6 +136,46 @@ public partial class ProgramViewModel : ViewModelBase
         PendingConfirmation = null;
     }
 
+    [ObservableProperty]
+    private RenameProgramRequest? _pendingRename;
+
+    private Task<string?> RequestNameAsync(string initialName)
+    {
+        var completion = new TaskCompletionSource<string?>();
+        PendingRename = new RenameProgramRequest(initialName, completion);
+        return completion.Task;
+    }
+
+    [RelayCommand]
+    private void ConfirmRename()
+    {
+        var name = PendingRename?.Name.Trim();
+        if (string.IsNullOrEmpty(name))
+        {
+            return;
+        }
+
+        PendingRename?.Completion.TrySetResult(name);
+        PendingRename = null;
+    }
+
+    [RelayCommand]
+    private void CancelRename()
+    {
+        PendingRename?.Completion.TrySetResult(null);
+        PendingRename = null;
+    }
+
+    [RelayCommand]
+    private async Task RenameProgramAsync()
+    {
+        var name = await RequestNameAsync(ProgramName);
+        if (name is not null)
+        {
+            ProgramName = name;
+        }
+    }
+
     [RelayCommand]
     private async Task SaveProgramAsync()
     {

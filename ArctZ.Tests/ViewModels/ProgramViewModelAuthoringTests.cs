@@ -326,4 +326,38 @@ public class ProgramViewModelAuthoringTests
 
         Assert.Contains((byte)0x85, transport.SentRawBytes);
     }
+
+    [Fact]
+    public void RenameProgramAsync_Confirmed_UpdatesProgramName()
+    {
+        var vm = CreateViewModel(out _, out _);
+        vm.ProgramName = "Старое имя";
+
+        var renameTask = vm.RenameProgramCommand.ExecuteAsync(null);
+        Assert.NotNull(vm.PendingRename);
+        Assert.Equal("Старое имя", vm.PendingRename!.Name);
+
+        vm.PendingRename.Name = "Новое имя";
+        vm.ConfirmRenameCommand.Execute(null);
+
+        Assert.Null(vm.PendingRename);
+        Assert.Equal("Новое имя", vm.ProgramName);
+        Assert.True(renameTask.IsCompleted);
+    }
+
+    [Fact]
+    public void RenameProgramAsync_Cancelled_LeavesProgramNameUnchanged()
+    {
+        var vm = CreateViewModel(out _, out _);
+        vm.ProgramName = "Старое имя";
+
+        var renameTask = vm.RenameProgramCommand.ExecuteAsync(null);
+        Assert.NotNull(vm.PendingRename);
+
+        vm.CancelRenameCommand.Execute(null);
+
+        Assert.Null(vm.PendingRename);
+        Assert.Equal("Старое имя", vm.ProgramName);
+        Assert.True(renameTask.IsCompleted);
+    }
 }
