@@ -52,6 +52,9 @@ public partial class ProgramViewModel : ViewModelBase
 
     public ObservableCollection<ProgramLibraryItem> Library { get; } = new();
 
+    [ObservableProperty]
+    private bool _isLibraryOpen;
+
     public ProgramViewModel(ConnectionViewModel connection, IProgramStorage storage, ITrajectoryCompiler compiler)
     {
         Connection = connection;
@@ -68,6 +71,19 @@ public partial class ProgramViewModel : ViewModelBase
         {
             Library.Add(new ProgramLibraryItem(summary, summary.Id == ProgramId));
         }
+    }
+
+    [RelayCommand]
+    private async Task OpenLibraryAsync()
+    {
+        await RefreshLibraryAsync();
+        IsLibraryOpen = true;
+    }
+
+    [RelayCommand]
+    private void CloseLibrary()
+    {
+        IsLibraryOpen = false;
     }
 
     partial void OnProgramIdChanged(Guid? value)
@@ -102,6 +118,7 @@ public partial class ProgramViewModel : ViewModelBase
         }
 
         SelectedKeyPoint = null;
+        IsLibraryOpen = false;
     }
 
     [ObservableProperty]

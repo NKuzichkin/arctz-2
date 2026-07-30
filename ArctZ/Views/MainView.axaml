@@ -85,24 +85,6 @@
                 </Grid>
             </Border>
 
-            <Border DockPanel.Dock="Left" Classes="reveal-2" Width="220" Margin="12"
-                    Background="{StaticResource HudPanelBrush}"
-                    BorderBrush="{StaticResource HudBorderBrush}"
-                    BorderThickness="1">
-                <DockPanel>
-                    <TextBlock DockPanel.Dock="Top" Classes="section-heading" Text="БИБЛИОТЕКА" Margin="12,10,12,6" />
-                    <ListBox ItemsSource="{Binding Library}" SelectionChanged="OnLibrarySelectionChanged">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate x:DataType="vm:ProgramLibraryItem">
-                                <Border Classes.loaded-entry="{Binding IsLoaded}" Padding="8,4">
-                                    <TextBlock Text="{Binding Name}" />
-                                </Border>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-                </DockPanel>
-            </Border>
-
             <!-- A single Grid is the DockPanel's true last child so it receives the fill slot;
                  the Authoring/Playback panels sit stacked inside it, toggled by IsVisible. -->
             <Grid x:Name="RootPanel">
@@ -122,6 +104,7 @@
                                 <Button Classes="primary" Content="Захватить точку" Command="{Binding CaptureKeyPointCommand}" />
                                 <Button Content="Новая" Command="{Binding NewProgramCommand}" />
                                 <Button Content="Сохранить" Command="{Binding SaveProgramCommand}" />
+                                <Button Content="Библиотека" Command="{Binding OpenLibraryCommand}" />
                             </StackPanel>
                             <TextBlock Classes="section-heading" Text="ТОЧКИ" Margin="0,8,0,0" />
                             <ListBox x:Name="AuthoringKeyPointsList" ItemsSource="{Binding KeyPoints}" SelectedItem="{Binding SelectedKeyPoint}" Height="320">
@@ -253,10 +236,32 @@
                         <StackPanel Spacing="14">
                             <TextBlock Text="{Binding Message}" TextWrapping="Wrap" />
                             <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
-                                <Button Content="Нет" Command="{Binding ((vm:ProgramViewModel)DataContext).ConfirmNoCommand, ElementName=RootPanel}" />
+                <Button Content="Нет" Command="{Binding ((vm:ProgramViewModel)DataContext).ConfirmNoCommand, ElementName=RootPanel}" />
                                 <Button Classes="primary" Content="Да" Command="{Binding ((vm:ProgramViewModel)DataContext).ConfirmYesCommand, ElementName=RootPanel}" />
                             </StackPanel>
                         </StackPanel>
+                    </Border>
+                </Border>
+
+                <Border IsVisible="{Binding IsLibraryOpen}" Background="#CC0A0E12">
+                    <Border Width="320" MaxHeight="480" Background="{StaticResource HudPanelElevatedBrush}"
+                            BorderBrush="{StaticResource HudBorderStrongBrush}" BorderThickness="1"
+                            Padding="20" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <DockPanel>
+                            <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
+                                <TextBlock Grid.Column="0" Classes="section-heading" Text="БИБЛИОТЕКА" VerticalAlignment="Center" />
+                                <Button Grid.Column="1" Content="✕" Padding="8,2" Command="{Binding CloseLibraryCommand}" />
+                            </Grid>
+                            <ListBox ItemsSource="{Binding Library}" SelectionChanged="OnLibrarySelectionChanged">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:ProgramLibraryItem">
+                                        <Border Classes.loaded-entry="{Binding IsLoaded}" Padding="8,4">
+                                            <TextBlock Text="{Binding Name}" />
+                                        </Border>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </DockPanel>
                     </Border>
                 </Border>
             </Grid>
