@@ -5,12 +5,14 @@ namespace ArctZ.Tests.Views;
 public class MainViewNarrowJoystickRadiusTests
 {
     [Theory]
-    [InlineData(400, 74.5)]   // typical narrow phone width: (400-54)/2/2-12 = 74.5
-    [InlineData(320, 54.5)]   // very narrow: (320-54)/2/2-12 = 54.5
-    [InlineData(200, 50)]     // degenerate width: formula gives 24.5, floor clamps to 50
-    public void ComputeNarrowJoystickRadius_ReturnsExpectedRadius(double mainViewWidth, double expectedRadius)
+    [InlineData(400, 800, 74.5)]    // typical tall portrait: width-bound, height not limiting
+    [InlineData(320, 700, 54.5)]    // very narrow portrait: width-bound
+    [InlineData(200, 800, 50)]      // degenerate width: width formula floor-clamped to 50
+    [InlineData(667, 375, 50)]      // ordinary landscape phone: height ceiling floor-clamped to 50
+    [InlineData(690, 500, 87)]      // moderate landscape: height ceiling binds above the floor (87 < width-only 147)
+    public void ComputeNarrowJoystickRadius_ReturnsExpectedRadius(double mainViewWidth, double mainViewHeight, double expectedRadius)
     {
-        var radius = MainView.ComputeNarrowJoystickRadius(mainViewWidth);
+        var radius = MainView.ComputeNarrowJoystickRadius(mainViewWidth, mainViewHeight);
 
         Assert.Equal(expectedRadius, radius, precision: 3);
     }

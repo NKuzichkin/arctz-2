@@ -25,6 +25,21 @@ radius = Max(50, columnWidth / 2 - 12)
 
 Текущий guard в `OnSizeChanged` — `if (_isNarrow == isNarrow) return;` — пропускает пересчёт при ресайзах **внутри** одного режима (например, поворот телефона 375→414px не меняет `isNarrow`, но должен пересчитать радиус). Обработчик реструктурируется: переключение класса `narrow`/`ColumnDefinitions` по-прежнему происходит только при смене режима, а расчёт и применение `Radius` — на каждом срабатывании `SizeChanged`, пока `isNarrow == true`.
 
+Формула выше зависит только от ширины и не имеет верхнего предела — на узких **альбомных** экранах (например 667×375, всё ещё `isNarrow`, т.к. 667<700) радиус вырастал бы до ~141px. В узком режиме `ContentGrid.RowDefinitions="*,Auto"`: строка панели программы (`Row=0`) звёздочная и забирает всё оставшееся место, а строка джойстиков (`Row=1`) — `Auto`, получает ровно `2*radius` по высоте. Без верхнего предела по высоте это схлопывало звёздочную строку панели программы в 0 — панель визуально пропадала. Поэтому радиус дополнительно ограничивается сверху высотной составляющей:
+
+```
+MainViewChromeHeight = 166        // хром вокруг ContentGrid по вертикали (Border/BorderThickness/ContentGrid.Margin ≈ 66) + оценка высоты двухрядной узкой шапки (≈ 100)
+NarrowProgramPanelMinHeight = 160 // минимальная высота, которую нужно оставить панели программы
+
+contentGridHeight = НоваяВысотаMainView - MainViewChromeHeight
+joystickRowBudget = contentGridHeight - NarrowProgramPanelMinHeight
+heightRadius = Max(50, joystickRowBudget / 2)
+
+radius = Min(widthRadius, heightRadius)
+```
+
+Итоговый радиус — минимум из ширинной и высотной составляющих, каждая из которых по-прежнему не опускается ниже нижнего порога `50`.
+
 ## Затронутые файлы
 
 - `ArctZ/Views/MainView.axaml` — `ColumnDefinitions`/`ColumnSpan` narrow-стилей для джойстиков и `ProgramPanel`, убрать `Radius="55"` и `Margin` из narrow-стилей джойстиков.

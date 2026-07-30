@@ -25,7 +25,7 @@ Avalonia не имеет media queries. Переключение делаетс�
 Именуем детей: `LeftJoystick`, `ProgramPanel` (текущий средний `StackPanel`), `RightJoystick`.
 
 - **Широкий (по умолчанию, без класса `narrow`)** — как сейчас: `ColumnDefinitions="Auto,*,Auto"`; `LeftJoystick` → Column 0, `ProgramPanel` → Column 1 (`MaxWidth=360` как сейчас), `RightJoystick` → Column 2. Все — Row 0 (неявно).
-- **Узкий (`.narrow`)** — `ColumnDefinitions` (в `OnSizeChanged`) переключается на `*,Auto,Auto,*`; `Grid.Row/Column/ColumnSpan` per-child по-прежнему настраиваются через `Style Setter` в XAML:
+- **Узкий (`.narrow`)** — `ColumnDefinitions` (в `OnSizeChanged`) переключается на `*,Auto,Auto,*` (устарело — см. narrow-joystick-half-width-design.md, колонки теперь `*,*`); `Grid.Row/Column/ColumnSpan` per-child по-прежнему настраиваются через `Style Setter` в XAML:
   - `ProgramPanel`: `Grid.Row=0, Grid.Column=0, Grid.ColumnSpan=4`, `MaxWidth` снимается (`Infinity`) — панель растягивается на всю ширину экрана.
   - `LeftJoystick`: `Grid.Row=1, Grid.Column=1`, `Margin="0,0,20,0"`.
   - `RightJoystick`: `Grid.Row=1, Grid.Column=2`, `Margin="20,0,0,0"`.
@@ -44,7 +44,7 @@ Avalonia не имеет media queries. Переключение делаетс�
 Не зависит от breakpoint'а — работает одинаково на любой ширине:
 
 - Шапка: `StackPanel Orientation="Horizontal"` с Play/Пауза/Стоп + бейдж состояния → `WrapPanel` (см. выше, `x:Name="PlaybackButtons"`).
-- Панель программы: ряд «Захватить точку»/«Новая»/«Сохранить»/«Библиотека» → `WrapPanel`.
+- Панель программы (на момент написания этого раздела): ряд «Захватить точку»/«Новая»/«Сохранить»/«Библиотека» → `WrapPanel`. **Устарело:** этот ряд впоследствии заменён на `TextBlock` с именем программы + кнопку «⋮» с `MenuFlyout` («Переименовать»/«Новая»/«Сохранить»/«Библиотека»), а «Захватить точку» вынесена отдельной кнопкой ниже — см. `docs/superpowers/specs/2026-07-30-program-menu-and-rename-dialog-design.md`. `WrapPanel` в шапке (`PlaybackButtons`) этой заменой не затронут.
 
 Зазор задаётся свойствами самого `WrapPanel` (Avalonia 12.0.4 их поддерживает): `ItemSpacing="8"` — между кнопками в строке, `LineSpacing="8"` — между перенесёнными строками.
 

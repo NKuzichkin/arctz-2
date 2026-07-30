@@ -146,10 +146,12 @@
             <!-- A single Grid is the DockPanel's true last child so it receives the fill slot;
                  the program panel and its overlays sit stacked inside it, toggled by IsVisible. -->
             <Grid x:Name="RootPanel">
+                <!-- radius formula in MainView.axaml.cs depends on these margins — see ContentGridChromeWidth/MainViewChromeHeight -->
                 <Border Classes="reveal-3" Margin="0,12,12,12"
                         Background="{StaticResource HudPanelBrush}"
                         BorderBrush="{StaticResource HudBorderBrush}"
                         BorderThickness="1">
+                    <!-- radius formula in MainView.axaml.cs depends on this margin — see ContentGridChromeWidth/MainViewChromeHeight -->
                     <Grid x:Name="ContentGrid" ColumnDefinitions="Auto,*,Auto" Margin="20">
                         <js:VirtualJoystick x:Name="LeftJoystick" Mode="Fixed" Shape="Circle"
                                              VerticalAlignment="Center" IsEnabled="{Binding !IsProgramLocked}"

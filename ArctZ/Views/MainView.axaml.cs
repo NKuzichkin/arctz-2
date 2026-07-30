@@ -15,6 +15,12 @@ namespace ArctZ.Views
         private const double NarrowJoystickMinRadius = 50;
         private const double NarrowJoystickEdgeMargin = 12;
 
+        // Вертикальный «хром» вокруг ContentGrid без учёта шапки:
+        // Border(reveal-3).Margin(0,12,12,12→12+12=24 верт.) + BorderThickness(1+1=2) + ContentGrid.Margin(20+20=40 верт.) = 66.
+        // Плюс консервативная оценка высоты двухрядной узкой шапки (Padding 12,10 + строка статуса + строка кнопок + отступ 8px) ≈ 100.
+        private const double MainViewChromeHeight = 166;
+        private const double NarrowProgramPanelMinHeight = 160;
+
         public MainView()
         {
             InitializeComponent();
@@ -48,17 +54,23 @@ namespace ArctZ.Views
 
             if (isNarrow)
             {
-                var radius = ComputeNarrowJoystickRadius(e.NewSize.Width);
+                var radius = ComputeNarrowJoystickRadius(e.NewSize.Width, e.NewSize.Height);
                 LeftJoystick.Radius = radius;
                 RightJoystick.Radius = radius;
             }
         }
 
-        internal static double ComputeNarrowJoystickRadius(double mainViewWidth)
+        internal static double ComputeNarrowJoystickRadius(double mainViewWidth, double mainViewHeight)
         {
             var contentGridWidth = mainViewWidth - ContentGridChromeWidth;
             var columnWidth = contentGridWidth / 2;
-            return Math.Max(NarrowJoystickMinRadius, columnWidth / 2 - NarrowJoystickEdgeMargin);
+            var widthRadius = Math.Max(NarrowJoystickMinRadius, columnWidth / 2 - NarrowJoystickEdgeMargin);
+
+            var contentGridHeight = mainViewHeight - MainViewChromeHeight;
+            var joystickRowBudget = contentGridHeight - NarrowProgramPanelMinHeight;
+            var heightRadius = Math.Max(NarrowJoystickMinRadius, joystickRowBudget / 2);
+
+            return Math.Min(widthRadius, heightRadius);
         }
 
         private void OnLeftJoystickDown(object? sender, JoystickEventArgs e) => ViewModel?.OnLeftJoystickDown(e);
