@@ -25,15 +25,6 @@ public partial class ProgramViewModel : ViewModelBase
     public ConnectionViewModel Connection { get; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsAuthoring))]
-    [NotifyPropertyChangedFor(nameof(IsPlayback))]
-    private ProgramMode _mode = ProgramMode.Authoring;
-
-    public bool IsAuthoring => Mode == ProgramMode.Authoring;
-
-    public bool IsPlayback => Mode == ProgramMode.Playback;
-
-    [ObservableProperty]
     private Guid? _programId;
 
     [ObservableProperty]
