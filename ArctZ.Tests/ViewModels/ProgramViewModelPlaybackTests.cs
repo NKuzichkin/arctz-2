@@ -81,6 +81,7 @@ public class ProgramViewModelPlaybackTests
 
         Assert.Equal(PlaybackState.Faulted, vm.PlaybackState);
         Assert.Equal(0, vm.FaultedAtSegmentIndex);
+        Assert.False(vm.IsProgramLocked);
     }
 
     [Fact]

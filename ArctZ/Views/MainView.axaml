@@ -113,7 +113,7 @@
                                     <Button Content="Библиотека" Command="{Binding OpenLibraryCommand}" />
                                 </StackPanel>
                                 <TextBlock Classes="section-heading" Text="ТОЧКИ" Margin="0,8,0,0" />
-                                <ListBox x:Name="AuthoringKeyPointsList" ItemsSource="{Binding KeyPoints}" SelectedItem="{Binding SelectedKeyPoint}" Height="320">
+                                <ListBox x:Name="KeyPointsList" ItemsSource="{Binding KeyPoints}" SelectedItem="{Binding SelectedKeyPoint}" Height="320">
                                     <ListBox.Styles>
                                         <Style Selector="ListBoxItem">
                                             <Setter Property="Padding" Value="0" />
@@ -138,13 +138,13 @@
                                                         <Button.Flyout>
                                                             <MenuFlyout>
                                                                 <MenuItem Header="Изменить" CommandParameter="{Binding}"
-                                                                          Command="{Binding ((vm:ProgramViewModel)DataContext).EditKeyPointCommand, ElementName=AuthoringKeyPointsList}" />
+                                                                          Command="{Binding ((vm:ProgramViewModel)DataContext).EditKeyPointCommand, ElementName=KeyPointsList}" />
                                                                 <MenuItem Header="На точку" CommandParameter="{Binding}"
-                                                                          Command="{Binding ((vm:ProgramViewModel)DataContext).MoveMachineToKeyPointCommand, ElementName=AuthoringKeyPointsList}" />
+                                                                          Command="{Binding ((vm:ProgramViewModel)DataContext).MoveMachineToKeyPointCommand, ElementName=KeyPointsList}" />
                                                                 <MenuItem Header="Из машины" CommandParameter="{Binding}"
-                                                                          Command="{Binding ((vm:ProgramViewModel)DataContext).FillKeyPointFromCurrentPositionCommand, ElementName=AuthoringKeyPointsList}" />
+                                                                          Command="{Binding ((vm:ProgramViewModel)DataContext).FillKeyPointFromCurrentPositionCommand, ElementName=KeyPointsList}" />
                                                                 <MenuItem Header="Удалить" CommandParameter="{Binding}"
-                                                                          Command="{Binding ((vm:ProgramViewModel)DataContext).RemoveKeyPointCommand, ElementName=AuthoringKeyPointsList}" />
+                                                                          Command="{Binding ((vm:ProgramViewModel)DataContext).RemoveKeyPointCommand, ElementName=KeyPointsList}" />
                                                             </MenuFlyout>
                                                         </Button.Flyout>
                                                     </Button>

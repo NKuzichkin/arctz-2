@@ -346,6 +346,18 @@ public partial class ProgramViewModel : ViewModelBase
 
     public bool IsProgramLocked => PlaybackState is PlaybackState.Running or PlaybackState.Paused;
 
+    partial void OnPlaybackStateChanged(PlaybackState value)
+    {
+        if (IsProgramLocked && (_leftActive || _rightActive))
+        {
+            _leftActive = false;
+            _rightActive = false;
+            _leftInput = default;
+            _rightInput = default;
+            Connection.Session?.EndJog();
+        }
+    }
+
     [ObservableProperty]
     private int? _currentSegmentIndex;
 

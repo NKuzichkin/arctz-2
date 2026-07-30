@@ -30,31 +30,6 @@
     <Setter Property="MinHeight" Value="40" />
   </Style>
 
-  <!-- Mode toggle (Программирование / Выполнение): a segmented HUD pill rather than a
-       stock checkbox-like ToggleButton, since this is the primary mode switch a user
-       reaches for constantly. -->
-  <Style Selector="ToggleButton.mode">
-    <Setter Property="Background" Value="{StaticResource HudPanelBrush}" />
-    <Setter Property="BorderBrush" Value="{StaticResource HudBorderBrush}" />
-    <Setter Property="Foreground" Value="{StaticResource HudTextSecondaryBrush}" />
-    <Setter Property="Padding" Value="20,10" />
-    <Setter Property="FontSize" Value="{StaticResource HudFontSizeLabel}" />
-    <Setter Property="Transitions">
-      <Transitions>
-        <BrushTransition Property="Background" Duration="0:0:0.15" />
-        <BrushTransition Property="BorderBrush" Duration="0:0:0.15" />
-      </Transitions>
-    </Setter>
-  </Style>
-  <Style Selector="ToggleButton.mode:checked">
-    <Setter Property="Background" Value="{StaticResource HudAccentDimBrush}" />
-    <Setter Property="BorderBrush" Value="{StaticResource HudAccentBrush}" />
-    <Setter Property="Foreground" Value="{StaticResource HudAccentBrightBrush}" />
-  </Style>
-  <Style Selector="ToggleButton.mode:pointerover /template/ ContentPresenter">
-    <Setter Property="BorderBrush" Value="{StaticResource HudAccentDimBrush}" />
-  </Style>
-
   <!-- Primary action (Play, Захватить точку, ...): the one button per panel that should
        read as "the thing to press", picked out with the accent instead of flat graphite. -->
   <Style Selector="Button.primary">
