@@ -89,6 +89,33 @@
             <Setter Property="HorizontalAlignment" Value="Left" />
             <Setter Property="Margin" Value="0,8,0,0" />
         </Style>
+
+        <Style Selector="Grid#ContentGrid > js|VirtualJoystick#LeftJoystick">
+            <Setter Property="Grid.Column" Value="0" />
+        </Style>
+        <Style Selector="Grid#ContentGrid > StackPanel#ProgramPanel">
+            <Setter Property="Grid.Column" Value="1" />
+            <Setter Property="MaxWidth" Value="360" />
+        </Style>
+        <Style Selector="Grid#ContentGrid > js|VirtualJoystick#RightJoystick">
+            <Setter Property="Grid.Column" Value="2" />
+        </Style>
+        <Style Selector="Grid#ContentGrid.narrow > StackPanel#ProgramPanel">
+            <Setter Property="Grid.Row" Value="0" />
+            <Setter Property="Grid.Column" Value="0" />
+            <Setter Property="Grid.ColumnSpan" Value="4" />
+            <Setter Property="MaxWidth" Value="Infinity" />
+        </Style>
+        <Style Selector="Grid#ContentGrid.narrow > js|VirtualJoystick#LeftJoystick">
+            <Setter Property="Grid.Row" Value="1" />
+            <Setter Property="Grid.Column" Value="1" />
+            <Setter Property="Margin" Value="0,0,20,0" />
+        </Style>
+        <Style Selector="Grid#ContentGrid.narrow > js|VirtualJoystick#RightJoystick">
+            <Setter Property="Grid.Row" Value="1" />
+            <Setter Property="Grid.Column" Value="2" />
+            <Setter Property="Margin" Value="20,0,0,0" />
+        </Style>
     </UserControl.Styles>
 
     <Grid>
@@ -121,11 +148,11 @@
                         BorderBrush="{StaticResource HudBorderBrush}"
                         BorderThickness="1">
                     <Grid x:Name="ContentGrid" ColumnDefinitions="Auto,*,Auto" Margin="20">
-                        <js:VirtualJoystick x:Name="LeftJoystick" Grid.Column="0" Radius="80" Mode="Fixed" Shape="Circle"
+                        <js:VirtualJoystick x:Name="LeftJoystick" Radius="80" Mode="Fixed" Shape="Circle"
                                              VerticalAlignment="Center" IsEnabled="{Binding !IsProgramLocked}"
                                              JoystickDown="OnLeftJoystickDown" JoystickMove="OnLeftJoystickMove" JoystickUp="OnLeftJoystickUp" />
 
-                        <StackPanel x:Name="ProgramPanel" Grid.Column="1" Spacing="10" Margin="24,0" VerticalAlignment="Center" MaxWidth="360">
+                        <StackPanel x:Name="ProgramPanel" Spacing="10" Margin="24,0" VerticalAlignment="Center">
                             <StackPanel Spacing="10" IsEnabled="{Binding !IsProgramLocked}">
                                 <TextBlock Classes="section-heading" Text="ПРОГРАММА" />
                                 <TextBox Text="{Binding ProgramName}" PlaceholderText="Имя программы" />
@@ -194,7 +221,7 @@
                             </Border>
                         </StackPanel>
 
-                        <js:VirtualJoystick x:Name="RightJoystick" Grid.Column="2" Radius="80" Mode="Fixed" Shape="Circle"
+                        <js:VirtualJoystick x:Name="RightJoystick" Radius="80" Mode="Fixed" Shape="Circle"
                                              VerticalAlignment="Center" IsEnabled="{Binding !IsProgramLocked}"
                                              JoystickDown="OnRightJoystickDown" JoystickMove="OnRightJoystickMove" JoystickUp="OnRightJoystickUp" />
                     </Grid>
