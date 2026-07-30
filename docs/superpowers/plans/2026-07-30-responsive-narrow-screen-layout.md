@@ -51,7 +51,7 @@
 Заменить на:
 
 ```xml
-                <Grid x:Name="HeaderGrid" ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                <Grid x:Name="HeaderGrid" ColumnDefinitions="*,Auto">
                     <ContentControl x:Name="ConnectionStatus" Grid.Row="0" Grid.Column="0" Content="{Binding Connection}" />
                     <WrapPanel x:Name="PlaybackButtons" Grid.Row="0" Grid.Column="1" ItemSpacing="8" LineSpacing="8" VerticalAlignment="Center">
                         <Button Classes="primary" Content="Play" Command="{Binding PlayCommand}" />
@@ -90,7 +90,7 @@
 Заменить на:
 
 ```xml
-                    <Grid x:Name="ContentGrid" ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" Margin="20">
+                    <Grid x:Name="ContentGrid" ColumnDefinitions="Auto,*,Auto" Margin="20">
                         <js:VirtualJoystick x:Name="LeftJoystick" Grid.Column="0" Radius="80" Mode="Fixed" Shape="Circle"
                                              VerticalAlignment="Center" IsEnabled="{Binding !IsProgramLocked}"
                                              JoystickDown="OnLeftJoystickDown" JoystickMove="OnLeftJoystickMove" JoystickUp="OnLeftJoystickUp" />
@@ -246,6 +246,9 @@ namespace ArctZ.Views
 В `ArctZ/Views/MainView.axaml`, внутри `<UserControl.Styles>`, сразу после стиля `Border.loaded-entry` (последний существующий стиль, перед закрывающим `</UserControl.Styles>`), добавить:
 
 ```xml
+        <Style Selector="Grid#HeaderGrid.narrow">
+            <Setter Property="RowDefinitions" Value="Auto,Auto" />
+        </Style>
         <Style Selector="Grid#HeaderGrid.narrow > ContentControl#ConnectionStatus">
             <Setter Property="Grid.Row" Value="0" />
             <Setter Property="Grid.Column" Value="0" />
@@ -259,6 +262,8 @@ namespace ArctZ.Views
             <Setter Property="Margin" Value="0,8,0,0" />
         </Style>
 ```
+
+`RowDefinitions="Auto,Auto"` намеренно задаётся только здесь, внутри `.narrow` — а не статически в Task 1 (пересмотрено по итогам ревью Task 1: статичный `RowDefinitions` на широком экране ломает вертикальное центрирование контента, потому что Auto-строки без звёздочной строки не растягиваются на всё доступное пространство — лишняя высота просто остаётся неиспользованной. `HeaderGrid` не наблюдал этот эффект визуально, т.к. его `Border` и так сжат по содержимому, но принцип применяется одинаково к обоим гридам ради согласованности и на случай будущих изменений хедера).
 
 - [ ] **Step 3: Собрать**
 
@@ -298,6 +303,7 @@ git commit -m "feat: switch header to two-row layout below 700px width"
 ```xml
         <Style Selector="Grid#ContentGrid.narrow">
             <Setter Property="ColumnDefinitions" Value="*,Auto,Auto,*" />
+            <Setter Property="RowDefinitions" Value="Auto,Auto" />
         </Style>
         <Style Selector="Grid#ContentGrid.narrow > StackPanel#ProgramPanel">
             <Setter Property="Grid.Row" Value="0" />

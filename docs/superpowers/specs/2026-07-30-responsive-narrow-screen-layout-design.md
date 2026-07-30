@@ -18,7 +18,7 @@ Avalonia не имеет media queries. Переключение делаетс�
 
 ## `ContentGrid` (джойстики + панель программы)
 
-Именуем текущий `Grid ColumnDefinitions="Auto,*,Auto" Margin="20"` внутри `Border.reveal-3` как `x:Name="ContentGrid"`, добавляем `RowDefinitions="Auto,Auto"` (всегда — во widescreen-режиме вторая строка просто пустая, `Auto` даёт ей нулевую высоту).
+Именуем текущий `Grid ColumnDefinitions="Auto,*,Auto" Margin="20"` внутри `Border.reveal-3` как `x:Name="ContentGrid"`. `RowDefinitions="Auto,Auto"` задаётся **только** в стиле `.narrow` (не статически) — Grid без явных `RowDefinitions` использует один неявный ряд, растягивающийся на всю доступную высоту, что и держит текущее вертикальное центрирование джойстиков/панели на широком экране; явные Auto-строки без звёздочной строки такого растяжения не дают (лишняя высота осталась бы неиспользованной), поэтому переключение строк должно быть частью узкой раскладки, а не постоянным.
 
 Именуем детей: `LeftJoystick`, `ProgramPanel` (текущий средний `StackPanel`), `RightJoystick`.
 
@@ -32,7 +32,7 @@ Avalonia не имеет media queries. Переключение делаетс�
 
 ## `HeaderGrid` (шапка: статус + Play/Пауза/Стоп)
 
-Именуем текущий `Grid ColumnDefinitions="*,Auto"` в шапке как `x:Name="HeaderGrid"`, добавляем `RowDefinitions="Auto,Auto"`. Именуем `ContentControl` (статус подключения) как `ConnectionStatus`, `StackPanel` с кнопками заменяется на `WrapPanel x:Name="PlaybackButtons"`.
+Именуем текущий `Grid ColumnDefinitions="*,Auto"` в шапке как `x:Name="HeaderGrid"`. Так же, как у `ContentGrid`, `RowDefinitions="Auto,Auto"` задаётся только в стиле `.narrow` (см. выше про растяжение неявного ряда) — здесь на практике безразлично, поскольку шапка и так сжата по высоте содержимого, но правило применяется единообразно к обоим гридам. Именуем `ContentControl` (статус подключения) как `ConnectionStatus`, `StackPanel` с кнопками заменяется на `WrapPanel x:Name="PlaybackButtons"`.
 
 - **Широкий**: как сейчас — `ConnectionStatus` Column 0, `PlaybackButtons` Column 1, обе Row 0.
 - **Узкий (`.narrow`)**: `ConnectionStatus` → `Grid.Row=0, Grid.Column=0, Grid.ColumnSpan=2`; `PlaybackButtons` → `Grid.Row=1, Grid.Column=0, Grid.ColumnSpan=2`, `HorizontalAlignment=Left`, `Margin="0,8,0,0"`. Статус — сверху на всю ширину, кнопки — снизу.
