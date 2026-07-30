@@ -92,6 +92,7 @@
 
         <Style Selector="Grid#ContentGrid > js|VirtualJoystick#LeftJoystick">
             <Setter Property="Grid.Column" Value="0" />
+            <Setter Property="Radius" Value="80" />
         </Style>
         <Style Selector="Grid#ContentGrid > StackPanel#ProgramPanel">
             <Setter Property="Grid.Column" Value="1" />
@@ -99,6 +100,7 @@
         </Style>
         <Style Selector="Grid#ContentGrid > js|VirtualJoystick#RightJoystick">
             <Setter Property="Grid.Column" Value="2" />
+            <Setter Property="Radius" Value="80" />
         </Style>
         <Style Selector="Grid#ContentGrid.narrow > StackPanel#ProgramPanel">
             <Setter Property="Grid.Row" Value="0" />
@@ -110,11 +112,13 @@
             <Setter Property="Grid.Row" Value="1" />
             <Setter Property="Grid.Column" Value="1" />
             <Setter Property="Margin" Value="0,0,20,0" />
+            <Setter Property="Radius" Value="55" />
         </Style>
         <Style Selector="Grid#ContentGrid.narrow > js|VirtualJoystick#RightJoystick">
             <Setter Property="Grid.Row" Value="1" />
             <Setter Property="Grid.Column" Value="2" />
             <Setter Property="Margin" Value="20,0,0,0" />
+            <Setter Property="Radius" Value="55" />
         </Style>
     </UserControl.Styles>
 
@@ -148,7 +152,7 @@
                         BorderBrush="{StaticResource HudBorderBrush}"
                         BorderThickness="1">
                     <Grid x:Name="ContentGrid" ColumnDefinitions="Auto,*,Auto" Margin="20">
-                        <js:VirtualJoystick x:Name="LeftJoystick" Radius="80" Mode="Fixed" Shape="Circle"
+                        <js:VirtualJoystick x:Name="LeftJoystick" Mode="Fixed" Shape="Circle"
                                              VerticalAlignment="Center" IsEnabled="{Binding !IsProgramLocked}"
                                              JoystickDown="OnLeftJoystickDown" JoystickMove="OnLeftJoystickMove" JoystickUp="OnLeftJoystickUp" />
 
@@ -221,7 +225,7 @@
                             </Border>
                         </StackPanel>
 
-                        <js:VirtualJoystick x:Name="RightJoystick" Radius="80" Mode="Fixed" Shape="Circle"
+                        <js:VirtualJoystick x:Name="RightJoystick" Mode="Fixed" Shape="Circle"
                                              VerticalAlignment="Center" IsEnabled="{Binding !IsProgramLocked}"
                                              JoystickDown="OnRightJoystickDown" JoystickMove="OnRightJoystickMove" JoystickUp="OnRightJoystickUp" />
                     </Grid>
