@@ -14,6 +14,7 @@
 - Класс переключения раскладки называется `narrow`, применяется к `Grid#HeaderGrid` и `Grid#ContentGrid`.
 - Зазор в `WrapPanel` — `ItemSpacing="8"` (между кнопками в строке), `LineSpacing="8"` (между перенесёнными строками).
 - Зазор между джойстиками в узкой раскладке — `Margin="0,0,20,0"` (левый) / `Margin="20,0,0,0"` (правый), итого 40px между ними.
+- `Grid.RowDefinitions`/`Grid.ColumnDefinitions` — не `AvaloniaProperty` (обычные CLR-свойства), через `Style Setter` не задаются — переключаются в code-behind (`OnSizeChanged`), не в XAML-стилях. Обнаружено при реализации Task 2 (ошибка компилятора Avalonia), задним числом исправлено и в Task 1/2 (см. историю коммитов).
 - `ArctZ.Tests` не содержит View-тестов (см. CLAUDE.md) — проверка каждой задачи через `dotnet build ArctZ.Desktop/ArctZ.Desktop.csproj` и визуально через `dotnet run --project ArctZ.Browser/ArctZ.Browser.csproj` + Playwright (ресайз вьюпорта, скриншоты).
 - Спека: `docs/superpowers/specs/2026-07-30-responsive-narrow-screen-layout-design.md`.
 
@@ -185,7 +186,9 @@ git commit -m "refactor: name layout grid elements, use WrapPanel for button row
 - Consumes: `HeaderGrid`, `ConnectionStatus`, `PlaybackButtons` (из Task 1).
 - Produces: класс `narrow` на `HeaderGrid`/`ContentGrid`, переключаемый по `SizeChanged` — Task 3 полагается на то, что `ContentGrid` уже получает класс `narrow` тем же методом.
 
-- [ ] **Step 1: Добавить обработчик SizeChanged и переключение класса narrow**
+- [ ] **Step 1: Добавить обработчик SizeChanged, переключение класса narrow и RowDefinitions**
+
+`Grid.RowDefinitions`/`Grid.ColumnDefinitions` — обычные CLR-свойства на `Avalonia.Controls.Grid`, а не зарегистрированные `AvaloniaProperty` (нет полей `RowDefinitionsProperty`/`ColumnDefinitionsProperty` — подтверждено ошибкой компилятора Avalonia "Unable to find RowDefinitionsProperty field on type Avalonia.Controls.Grid" и бинарной проверкой `Avalonia.Controls.dll`). Значит, задать их через `Setter` в `Style` **нельзя** — это ограничение Avalonia, не решение на усмотрение реализатора. Переключение `RowDefinitions` делается прямо в code-behind, в том же `OnSizeChanged`, что и переключение класса `narrow`. (`Grid.Row`/`Grid.Column`/`Grid.ColumnSpan`, `Margin`, `MaxWidth`, `HorizontalAlignment` — это обычные attached/styled `AvaloniaProperty`, их через `Style Setter` менять можно, и Task 2/3 продолжают делать это в XAML.)
 
 В `ArctZ/Views/MainView.axaml.cs` (текущее содержимое — только конструктор и обработчики джойстика/библиотеки) изменить класс так:
 
@@ -214,6 +217,8 @@ namespace ArctZ.Views
             var isNarrow = e.NewSize.Width < NarrowLayoutBreakpoint;
             HeaderGrid.Classes.Set("narrow", isNarrow);
             ContentGrid.Classes.Set("narrow", isNarrow);
+
+            HeaderGrid.RowDefinitions = new RowDefinitions(isNarrow ? "Auto,Auto" : "");
         }
 
         private void OnLeftJoystickDown(object? sender, JoystickEventArgs e) => ViewModel?.OnLeftJoystickDown(e);
@@ -246,9 +251,6 @@ namespace ArctZ.Views
 В `ArctZ/Views/MainView.axaml`, внутри `<UserControl.Styles>`, сразу после стиля `Border.loaded-entry` (последний существующий стиль, перед закрывающим `</UserControl.Styles>`), добавить:
 
 ```xml
-        <Style Selector="Grid#HeaderGrid.narrow">
-            <Setter Property="RowDefinitions" Value="Auto,Auto" />
-        </Style>
         <Style Selector="Grid#HeaderGrid.narrow > ContentControl#ConnectionStatus">
             <Setter Property="Grid.Row" Value="0" />
             <Setter Property="Grid.Column" Value="0" />
@@ -263,7 +265,7 @@ namespace ArctZ.Views
         </Style>
 ```
 
-`RowDefinitions="Auto,Auto"` намеренно задаётся только здесь, внутри `.narrow` — а не статически в Task 1 (пересмотрено по итогам ревью Task 1: статичный `RowDefinitions` на широком экране ломает вертикальное центрирование контента, потому что Auto-строки без звёздочной строки не растягиваются на всё доступное пространство — лишняя высота просто остаётся неиспользованной. `HeaderGrid` не наблюдал этот эффект визуально, т.к. его `Border` и так сжат по содержимому, но принцип применяется одинаково к обоим гридам ради согласованности и на случай будущих изменений хедера).
+`RowDefinitions="Auto,Auto"` уже переключается в Step 1 (`OnSizeChanged`, code-behind) — здесь только per-child `Grid.Row/Column/ColumnSpan`, `HorizontalAlignment`, `Margin`, которые (в отличие от `RowDefinitions`) являются обычными `AvaloniaProperty` и настраиваются через `Style Setter` штатно. Задание строк только в `.narrow`-состоянии (а не статически в Task 1) остаётся в силе: пересмотрено по итогам ревью Task 1 — статичный `RowDefinitions` на широком экране ломает вертикальное центрирование контента, потому что Auto-строки без звёздочной строки не растягиваются на всё доступное пространство.
 
 - [ ] **Step 3: Собрать**
 
@@ -292,19 +294,48 @@ git commit -m "feat: switch header to two-row layout below 700px width"
 
 **Files:**
 - Modify: `ArctZ/Views/MainView.axaml`
+- Modify: `ArctZ/Views/MainView.axaml.cs`
 
 **Interfaces:**
-- Consumes: `ContentGrid`, `ProgramPanel`, `LeftJoystick`, `RightJoystick` (Task 1), класс `narrow` переключаемый `OnSizeChanged` (Task 2).
+- Consumes: `ContentGrid`, `ProgramPanel`, `LeftJoystick`, `RightJoystick` (Task 1), класс `narrow` и метод `OnSizeChanged` (Task 2 — уже устанавливает `HeaderGrid.RowDefinitions` там же, этот шаг добавляет в тот же метод переключение `ContentGrid.ColumnDefinitions`/`RowDefinitions`).
 
-- [ ] **Step 1: Добавить узкие стили для ContentGrid**
+- [ ] **Step 1: Переключать ColumnDefinitions/RowDefinitions у ContentGrid в OnSizeChanged**
+
+Как и `HeaderGrid.RowDefinitions` в Task 2, `ContentGrid.ColumnDefinitions`/`RowDefinitions` — обычные CLR-свойства, не `AvaloniaProperty`, поэтому через `Style Setter` их менять нельзя (та же причина, что и в Task 2 Step 1). Переключаются в code-behind, в том же `OnSizeChanged`.
+
+В `ArctZ/Views/MainView.axaml.cs` найти (текущее состояние после Task 2):
+
+```csharp
+        private void OnSizeChanged(object? sender, SizeChangedEventArgs e)
+        {
+            var isNarrow = e.NewSize.Width < NarrowLayoutBreakpoint;
+            HeaderGrid.Classes.Set("narrow", isNarrow);
+            ContentGrid.Classes.Set("narrow", isNarrow);
+
+            HeaderGrid.RowDefinitions = new RowDefinitions(isNarrow ? "Auto,Auto" : "");
+        }
+```
+
+Заменить на:
+
+```csharp
+        private void OnSizeChanged(object? sender, SizeChangedEventArgs e)
+        {
+            var isNarrow = e.NewSize.Width < NarrowLayoutBreakpoint;
+            HeaderGrid.Classes.Set("narrow", isNarrow);
+            ContentGrid.Classes.Set("narrow", isNarrow);
+
+            HeaderGrid.RowDefinitions = new RowDefinitions(isNarrow ? "Auto,Auto" : "");
+            ContentGrid.ColumnDefinitions = new ColumnDefinitions(isNarrow ? "*,Auto,Auto,*" : "Auto,*,Auto");
+            ContentGrid.RowDefinitions = new RowDefinitions(isNarrow ? "Auto,Auto" : "");
+        }
+```
+
+- [ ] **Step 2: Добавить узкие стили для ContentGrid**
 
 В `ArctZ/Views/MainView.axaml`, в `<UserControl.Styles>`, сразу после стилей `HeaderGrid.narrow` (добавленных в Task 2), добавить:
 
 ```xml
-        <Style Selector="Grid#ContentGrid.narrow">
-            <Setter Property="ColumnDefinitions" Value="*,Auto,Auto,*" />
-            <Setter Property="RowDefinitions" Value="Auto,Auto" />
-        </Style>
         <Style Selector="Grid#ContentGrid.narrow > StackPanel#ProgramPanel">
             <Setter Property="Grid.Row" Value="0" />
             <Setter Property="Grid.Column" Value="0" />
@@ -323,14 +354,14 @@ git commit -m "feat: switch header to two-row layout below 700px width"
         </Style>
 ```
 
-(`js|VirtualJoystick` использует уже объявленный в корне файла `xmlns:js="using:ArctZ.Components.VirtualJoystick"`.)
+(`js|VirtualJoystick` использует уже объявленный в корне файла `xmlns:js="using:ArctZ.Components.VirtualJoystick"`. `ColumnDefinitions`/`RowDefinitions` здесь больше не переопределяются стилем — они уже переключены в Step 1, в `OnSizeChanged`; эти три стиля отвечают только за `Grid.Row/Column/ColumnSpan/Margin/MaxWidth` — обычные `AvaloniaProperty`, `Style Setter` для них работает штатно.)
 
-- [ ] **Step 2: Собрать**
+- [ ] **Step 3: Собрать**
 
 Run: `dotnet build ArctZ.Desktop/ArctZ.Desktop.csproj`
 Expected: `Build succeeded`, 0 ошибок.
 
-- [ ] **Step 3: Визуально проверить в браузерной сборке**
+- [ ] **Step 4: Визуально проверить в браузерной сборке**
 
 Через Playwright (сервер из Task 3 Step 4 всё ещё поднят, либо перезапустить `dotnet run --project ArctZ.Browser/ArctZ.Browser.csproj`):
 - `browser_resize` на 1000x700 → `browser_take_screenshot`: раскладка идентична исходной — джойстики по краям, панель (≤360px) по центру, всё в один ряд.
@@ -339,10 +370,10 @@ Expected: `Build succeeded`, 0 ошибок.
 
 Expected: во всех трёх случаях нет наложения элементов и обрезанного текста; переход происходит ровно на границе 700px.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add ArctZ/Views/MainView.axaml
+git add ArctZ/Views/MainView.axaml ArctZ/Views/MainView.axaml.cs
 git commit -m "feat: move joysticks below the program panel on narrow screens"
 ```
 

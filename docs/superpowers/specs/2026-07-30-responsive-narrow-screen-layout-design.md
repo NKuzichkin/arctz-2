@@ -12,18 +12,20 @@
 
 ## Механизм переключения раскладки
 
-Avalonia не имеет media queries. Переключение делается кодом в `MainView.axaml.cs`: подписка на `SizeChanged`, при `NewSize.Width < 700` на двух именованных `Grid` (`HeaderGrid`, `ContentGrid`) выставляется класс `narrow`, иначе снимается. Всё остальное — декларативные `Style Selector="Grid#X.narrow > Тип#Имя"`, переопределяющие присоединённые свойства (`Grid.Row/Column/ColumnSpan`, `Margin`, `MaxWidth`) у конкретных именованных детей. Порог: **700px** ширины `MainView`. Дерево элементов не перестраивается, ViewModel не участвует — чисто вью-слой.
+Avalonia не имеет media queries. Переключение делается кодом в `MainView.axaml.cs`: подписка на `SizeChanged`, при `NewSize.Width < 700` на двух именованных `Grid` (`HeaderGrid`, `ContentGrid`) выставляется класс `narrow`, иначе снимается. Большая часть остального — декларативные `Style Selector="Grid#X.narrow > Тип#Имя"`, переопределяющие присоединённые свойства (`Grid.Row/Column/ColumnSpan`, `Margin`, `MaxWidth`) у конкретных именованных детей. Порог: **700px** ширины `MainView`. Дерево элементов не перестраивается, ViewModel не участвует — чисто вью-слой.
+
+**Уточнение (обнаружено при реализации Task 2):** `Grid.RowDefinitions`/`Grid.ColumnDefinitions` — обычные CLR-свойства на `Avalonia.Controls.Grid`, а не зарегистрированные `AvaloniaProperty` (нет полей `RowDefinitionsProperty`/`ColumnDefinitionsProperty`; подтверждено ошибкой компилятора Avalonia "Unable to find RowDefinitionsProperty field on type Avalonia.Controls.Grid"). `Style Setter` их менять не может — это ограничение платформы. Поэтому сами `RowDefinitions`/`ColumnDefinitions` переключаются в том же `OnSizeChanged` в code-behind, а через `Style Setter` в XAML настраиваются только per-child `Grid.Row/Column/ColumnSpan`, `Margin`, `MaxWidth`, `HorizontalAlignment` — они действительно являются `AvaloniaProperty` и стилизуются штатно.
 
 Инициализация: обработчик `SizeChanged` также вызывается при первом лэйауте (переход от `Size.Empty` к фактическому размеру), так что дополнительного вызова при загрузке не требуется — но на всякий случай состояние синхронизируется и в конструкторе после `InitializeComponent()`, если `Bounds.Width > 0` уже известна на момент конструктора (защита от edge-case, когда контрол переиспользуется/переприкрепляется).
 
 ## `ContentGrid` (джойстики + панель программы)
 
-Именуем текущий `Grid ColumnDefinitions="Auto,*,Auto" Margin="20"` внутри `Border.reveal-3` как `x:Name="ContentGrid"`. `RowDefinitions="Auto,Auto"` задаётся **только** в стиле `.narrow` (не статически) — Grid без явных `RowDefinitions` использует один неявный ряд, растягивающийся на всю доступную высоту, что и держит текущее вертикальное центрирование джойстиков/панели на широком экране; явные Auto-строки без звёздочной строки такого растяжения не дают (лишняя высота осталась бы неиспользованной), поэтому переключение строк должно быть частью узкой раскладки, а не постоянным.
+Именуем текущий `Grid ColumnDefinitions="Auto,*,Auto" Margin="20"` внутри `Border.reveal-3` как `x:Name="ContentGrid"`. `RowDefinitions="Auto,Auto"` и `ColumnDefinitions` переключаются в `OnSizeChanged` (code-behind, не через `Style Setter` — см. уточнение выше) **только когда `isNarrow == true`**; на широком `ColumnDefinitions` возвращается к `"Auto,*,Auto"`, а `RowDefinitions` — к пустому значению (один неявный ряд). Neявный ряд без явных `RowDefinitions` растягивается на всю доступную высоту, что и держит текущее вертикальное центрирование джойстиков/панели на широком экране; явные Auto-строки без звёздочной строки такого растяжения не дают (лишняя высота осталась бы неиспользованной), поэтому переключение строк должно быть частью узкой раскладки, а не постоянным.
 
 Именуем детей: `LeftJoystick`, `ProgramPanel` (текущий средний `StackPanel`), `RightJoystick`.
 
 - **Широкий (по умолчанию, без класса `narrow`)** — как сейчас: `ColumnDefinitions="Auto,*,Auto"`; `LeftJoystick` → Column 0, `ProgramPanel` → Column 1 (`MaxWidth=360` как сейчас), `RightJoystick` → Column 2. Все — Row 0 (неявно).
-- **Узкий (`.narrow`)** — `ColumnDefinitions` переопределяется на `*,Auto,Auto,*`:
+- **Узкий (`.narrow`)** — `ColumnDefinitions` (в `OnSizeChanged`) переключается на `*,Auto,Auto,*`; `Grid.Row/Column/ColumnSpan` per-child по-прежнему настраиваются через `Style Setter` в XAML:
   - `ProgramPanel`: `Grid.Row=0, Grid.Column=0, Grid.ColumnSpan=4`, `MaxWidth` снимается (`Infinity`) — панель растягивается на всю ширину экрана.
   - `LeftJoystick`: `Grid.Row=1, Grid.Column=1`, `Margin="0,0,20,0"`.
   - `RightJoystick`: `Grid.Row=1, Grid.Column=2`, `Margin="20,0,0,0"`.
@@ -32,7 +34,7 @@ Avalonia не имеет media queries. Переключение делаетс�
 
 ## `HeaderGrid` (шапка: статус + Play/Пауза/Стоп)
 
-Именуем текущий `Grid ColumnDefinitions="*,Auto"` в шапке как `x:Name="HeaderGrid"`. Так же, как у `ContentGrid`, `RowDefinitions="Auto,Auto"` задаётся только в стиле `.narrow` (см. выше про растяжение неявного ряда) — здесь на практике безразлично, поскольку шапка и так сжата по высоте содержимого, но правило применяется единообразно к обоим гридам. Именуем `ContentControl` (статус подключения) как `ConnectionStatus`, `StackPanel` с кнопками заменяется на `WrapPanel x:Name="PlaybackButtons"`.
+Именуем текущий `Grid ColumnDefinitions="*,Auto"` в шапке как `x:Name="HeaderGrid"`. Так же, как у `ContentGrid`, `RowDefinitions="Auto,Auto"` переключается в `OnSizeChanged` только при `isNarrow == true` (см. выше про растяжение неявного ряда и про то, что `RowDefinitions` не стилизуется) — здесь на практике безразлично, поскольку шапка и так сжата по высоте содержимого, но правило применяется единообразно к обоим гридам. Именуем `ContentControl` (статус подключения) как `ConnectionStatus`, `StackPanel` с кнопками заменяется на `WrapPanel x:Name="PlaybackButtons"`.
 
 - **Широкий**: как сейчас — `ConnectionStatus` Column 0, `PlaybackButtons` Column 1, обе Row 0.
 - **Узкий (`.narrow`)**: `ConnectionStatus` → `Grid.Row=0, Grid.Column=0, Grid.ColumnSpan=2`; `PlaybackButtons` → `Grid.Row=1, Grid.Column=0, Grid.ColumnSpan=2`, `HorizontalAlignment=Left`, `Margin="0,8,0,0"`. Статус — сверху на всю ширину, кнопки — снизу.
