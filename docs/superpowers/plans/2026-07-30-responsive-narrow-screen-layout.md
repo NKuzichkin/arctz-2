@@ -246,11 +246,37 @@ namespace ArctZ.Views
 
 (Единственные изменения относительно текущего файла: добавлена константа `NarrowLayoutBreakpoint`, `SizeChanged += OnSizeChanged;` в конструкторе, и новый метод `OnSizeChanged`.)
 
-- [ ] **Step 2: Добавить узкие стили для HeaderGrid**
+- [ ] **Step 2: Убрать локальные Grid.Row/Grid.Column у ConnectionStatus/PlaybackButtons; добавить безусловные и узкие стили для HeaderGrid**
 
-В `ArctZ/Views/MainView.axaml`, внутри `<UserControl.Styles>`, сразу после стиля `Border.loaded-entry` (последний существующий стиль, перед закрывающим `</UserControl.Styles>`), добавить:
+**Важно (обнаружено ревью Task 2):** в Avalonia значение свойства, заданное напрямую в XAML («local value»), всегда побеждает `Style Setter` на то же свойство — даже если селектор стиля совпадает по классу (`LocalValue` выше `Style` в порядке приоритета: `Animation > Local value > Style trigger > Template > Style > Inherited > Default` — из официальной документации Avalonia, страница «Style precedence»). `ConnectionStatus`/`PlaybackButtons` уже имеют `Grid.Row="0" Grid.Column="0"`/`"1"` как локальные атрибуты (из Task 1) — значит, стиль `.narrow`, пытающийся переопределить эти же свойства, молча игнорируется в узком режиме. Правило Avalonia для конфликта между двумя *стилями* другое: при равном приоритете побеждает **стиль, объявленный позже** — этим и пользуемся: убираем локальные атрибуты и переносим оба состояния (широкое и узкое) в стили, узкий — после безусловного.
+
+В `ArctZ/Views/MainView.axaml` найти:
 
 ```xml
+                <Grid x:Name="HeaderGrid" ColumnDefinitions="*,Auto">
+                    <ContentControl x:Name="ConnectionStatus" Grid.Row="0" Grid.Column="0" Content="{Binding Connection}" />
+                    <WrapPanel x:Name="PlaybackButtons" Grid.Row="0" Grid.Column="1" ItemSpacing="8" LineSpacing="8" VerticalAlignment="Center">
+```
+
+Заменить на (убраны `Grid.Row`/`Grid.Column` — они переезжают в стили ниже):
+
+```xml
+                <Grid x:Name="HeaderGrid" ColumnDefinitions="*,Auto">
+                    <ContentControl x:Name="ConnectionStatus" Content="{Binding Connection}" />
+                    <WrapPanel x:Name="PlaybackButtons" ItemSpacing="8" LineSpacing="8" VerticalAlignment="Center">
+```
+
+Затем, внутри `<UserControl.Styles>`, сразу после стиля `Border.loaded-entry` (последний существующий стиль, перед закрывающим `</UserControl.Styles>`), добавить (в этом порядке — безусловные стили ПЕРЕД `.narrow`-стилями, иначе правило «побеждает объявленный позже» сработает в обратную сторону):
+
+```xml
+        <Style Selector="Grid#HeaderGrid > ContentControl#ConnectionStatus">
+            <Setter Property="Grid.Row" Value="0" />
+            <Setter Property="Grid.Column" Value="0" />
+        </Style>
+        <Style Selector="Grid#HeaderGrid > WrapPanel#PlaybackButtons">
+            <Setter Property="Grid.Row" Value="0" />
+            <Setter Property="Grid.Column" Value="1" />
+        </Style>
         <Style Selector="Grid#HeaderGrid.narrow > ContentControl#ConnectionStatus">
             <Setter Property="Grid.Row" Value="0" />
             <Setter Property="Grid.Column" Value="0" />
@@ -265,7 +291,7 @@ namespace ArctZ.Views
         </Style>
 ```
 
-`RowDefinitions="Auto,Auto"` уже переключается в Step 1 (`OnSizeChanged`, code-behind) — здесь только per-child `Grid.Row/Column/ColumnSpan`, `HorizontalAlignment`, `Margin`, которые (в отличие от `RowDefinitions`) являются обычными `AvaloniaProperty` и настраиваются через `Style Setter` штатно. Задание строк только в `.narrow`-состоянии (а не статически в Task 1) остаётся в силе: пересмотрено по итогам ревью Task 1 — статичный `RowDefinitions` на широком экране ломает вертикальное центрирование контента, потому что Auto-строки без звёздочной строки не растягиваются на всё доступное пространство.
+`RowDefinitions="Auto,Auto"` уже переключается в Step 1 (`OnSizeChanged`, code-behind) — `Grid.Row/Column/ColumnSpan`, `HorizontalAlignment`, `Margin` (в отличие от `RowDefinitions`) являются обычными `AvaloniaProperty` и настраиваются через `Style Setter` штатно, при условии что на элементе нет конкурирующего локального значения того же свойства (см. предупреждение выше).
 
 - [ ] **Step 3: Собрать**
 
@@ -331,11 +357,59 @@ git commit -m "feat: switch header to two-row layout below 700px width"
         }
 ```
 
-- [ ] **Step 2: Добавить узкие стили для ContentGrid**
+- [ ] **Step 2: Убрать локальные Grid.Column/MaxWidth у LeftJoystick/ProgramPanel/RightJoystick; добавить безусловные и узкие стили для ContentGrid**
 
-В `ArctZ/Views/MainView.axaml`, в `<UserControl.Styles>`, сразу после стилей `HeaderGrid.narrow` (добавленных в Task 2), добавить:
+**Важно (то же ограничение, что заставило исправить Task 2):** в Avalonia локальное значение свойства в XAML всегда побеждает `Style Setter` на то же свойство. `LeftJoystick`/`ProgramPanel`/`RightJoystick` уже имеют `Grid.Column="0"/"1"/"2"` как локальные атрибуты (из Task 1), а `ProgramPanel` — ещё и `MaxWidth="360"` локально. Стили `.narrow` ниже пытаются переопределить именно эти свойства — значит, локальные атрибуты нужно убрать и перенести оба состояния (широкое и узкое) в стили, узкое — после безусловного (при конфликте между двумя стилями побеждает объявленный позже — see Task 2 Step 2 для разбора точного правила приоритета).
+
+В `ArctZ/Views/MainView.axaml` найти:
 
 ```xml
+                        <js:VirtualJoystick x:Name="LeftJoystick" Grid.Column="0" Radius="80" Mode="Fixed" Shape="Circle"
+                                             VerticalAlignment="Center" IsEnabled="{Binding !IsProgramLocked}"
+                                             JoystickDown="OnLeftJoystickDown" JoystickMove="OnLeftJoystickMove" JoystickUp="OnLeftJoystickUp" />
+
+                        <StackPanel x:Name="ProgramPanel" Grid.Column="1" Spacing="10" Margin="24,0" VerticalAlignment="Center" MaxWidth="360">
+```
+
+Заменить на (убраны `Grid.Column` на обоих элементах и `MaxWidth` на `ProgramPanel` — переезжают в стили ниже; `Margin="24,0"` на `ProgramPanel` остаётся локальным, стили его не трогают):
+
+```xml
+                        <js:VirtualJoystick x:Name="LeftJoystick" Radius="80" Mode="Fixed" Shape="Circle"
+                                             VerticalAlignment="Center" IsEnabled="{Binding !IsProgramLocked}"
+                                             JoystickDown="OnLeftJoystickDown" JoystickMove="OnLeftJoystickMove" JoystickUp="OnLeftJoystickUp" />
+
+                        <StackPanel x:Name="ProgramPanel" Spacing="10" Margin="24,0" VerticalAlignment="Center">
+```
+
+И найти:
+
+```xml
+                        <js:VirtualJoystick x:Name="RightJoystick" Grid.Column="2" Radius="80" Mode="Fixed" Shape="Circle"
+                                             VerticalAlignment="Center" IsEnabled="{Binding !IsProgramLocked}"
+                                             JoystickDown="OnRightJoystickDown" JoystickMove="OnRightJoystickMove" JoystickUp="OnRightJoystickUp" />
+```
+
+Заменить на:
+
+```xml
+                        <js:VirtualJoystick x:Name="RightJoystick" Radius="80" Mode="Fixed" Shape="Circle"
+                                             VerticalAlignment="Center" IsEnabled="{Binding !IsProgramLocked}"
+                                             JoystickDown="OnRightJoystickDown" JoystickMove="OnRightJoystickMove" JoystickUp="OnRightJoystickUp" />
+```
+
+Затем, в `<UserControl.Styles>`, сразу после стилей `HeaderGrid.narrow` (добавленных в Task 2), добавить (безусловные стили ПЕРЕД `.narrow`-стилями):
+
+```xml
+        <Style Selector="Grid#ContentGrid > js|VirtualJoystick#LeftJoystick">
+            <Setter Property="Grid.Column" Value="0" />
+        </Style>
+        <Style Selector="Grid#ContentGrid > StackPanel#ProgramPanel">
+            <Setter Property="Grid.Column" Value="1" />
+            <Setter Property="MaxWidth" Value="360" />
+        </Style>
+        <Style Selector="Grid#ContentGrid > js|VirtualJoystick#RightJoystick">
+            <Setter Property="Grid.Column" Value="2" />
+        </Style>
         <Style Selector="Grid#ContentGrid.narrow > StackPanel#ProgramPanel">
             <Setter Property="Grid.Row" Value="0" />
             <Setter Property="Grid.Column" Value="0" />
