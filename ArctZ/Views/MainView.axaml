@@ -76,9 +76,9 @@
                     BorderBrush="{StaticResource HudBorderBrush}"
                     BorderThickness="0,0,0,1"
                     Padding="12,10">
-                <Grid ColumnDefinitions="*,Auto">
-                    <ContentControl Grid.Column="0" Content="{Binding Connection}" />
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <Grid x:Name="HeaderGrid" ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                    <ContentControl x:Name="ConnectionStatus" Grid.Row="0" Grid.Column="0" Content="{Binding Connection}" />
+                    <WrapPanel x:Name="PlaybackButtons" Grid.Row="0" Grid.Column="1" ItemSpacing="8" LineSpacing="8" VerticalAlignment="Center">
                         <Button Classes="primary" Content="Play" Command="{Binding PlayCommand}" />
                         <Button Content="Пауза" Command="{Binding PauseCommand}" />
                         <Button Classes="danger" Content="Стоп" Command="{Binding StopCommand}" />
@@ -86,32 +86,33 @@
                                 BorderThickness="1" Padding="10,6" Margin="8,0,0,0">
                             <TextBlock Classes="telemetry" FontSize="14" Text="{Binding PlaybackState}" />
                         </Border>
-                    </StackPanel>
+                    </WrapPanel>
                 </Grid>
             </Border>
 
             <!-- A single Grid is the DockPanel's true last child so it receives the fill slot;
                  the program panel and its overlays sit stacked inside it, toggled by IsVisible. -->
             <Grid x:Name="RootPanel">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <Border Classes="reveal-3" Margin="0,12,12,12"
                         Background="{StaticResource HudPanelBrush}"
                         BorderBrush="{StaticResource HudBorderBrush}"
                         BorderThickness="1">
-                    <Grid ColumnDefinitions="Auto,*,Auto" Margin="20">
-                        <js:VirtualJoystick Grid.Column="0" Radius="80" Mode="Fixed" Shape="Circle"
+                    <Grid x:Name="ContentGrid" ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" Margin="20">
+                        <js:VirtualJoystick x:Name="LeftJoystick" Grid.Column="0" Radius="80" Mode="Fixed" Shape="Circle"
                                              VerticalAlignment="Center" IsEnabled="{Binding !IsProgramLocked}"
                                              JoystickDown="OnLeftJoystickDown" JoystickMove="OnLeftJoystickMove" JoystickUp="OnLeftJoystickUp" />
 
-                        <StackPanel Grid.Column="1" Spacing="10" Margin="24,0" VerticalAlignment="Center" MaxWidth="360">
+                        <StackPanel x:Name="ProgramPanel" Grid.Column="1" Spacing="10" Margin="24,0" VerticalAlignment="Center" MaxWidth="360">
                             <StackPanel Spacing="10" IsEnabled="{Binding !IsProgramLocked}">
                                 <TextBlock Classes="section-heading" Text="ПРОГРАММА" />
                                 <TextBox Text="{Binding ProgramName}" PlaceholderText="Имя программы" />
-                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                <WrapPanel ItemSpacing="8" LineSpacing="8">
                                     <Button Classes="primary" Content="Захватить точку" Command="{Binding CaptureKeyPointCommand}" />
                                     <Button Content="Новая" Command="{Binding NewProgramCommand}" />
                                     <Button Content="Сохранить" Command="{Binding SaveProgramCommand}" />
                                     <Button Content="Библиотека" Command="{Binding OpenLibraryCommand}" />
-                                </StackPanel>
+                                </WrapPanel>
                                 <TextBlock Classes="section-heading" Text="ТОЧКИ" Margin="0,8,0,0" />
                                 <ListBox x:Name="KeyPointsList" ItemsSource="{Binding KeyPoints}" SelectedItem="{Binding SelectedKeyPoint}" Height="320">
                                     <ListBox.Styles>
@@ -171,11 +172,12 @@
                             </Border>
                         </StackPanel>
 
-                        <js:VirtualJoystick Grid.Column="2" Radius="80" Mode="Fixed" Shape="Circle"
+                        <js:VirtualJoystick x:Name="RightJoystick" Grid.Column="2" Radius="80" Mode="Fixed" Shape="Circle"
                                              VerticalAlignment="Center" IsEnabled="{Binding !IsProgramLocked}"
                                              JoystickDown="OnRightJoystickDown" JoystickMove="OnRightJoystickMove" JoystickUp="OnRightJoystickUp" />
                     </Grid>
                 </Border>
+                </ScrollViewer>
 
                 <Border IsVisible="{Binding IsEditingKeyPoint}" Background="#CC0A0E12">
                     <Border x:DataType="vm:KeyPointEditorViewModel" DataContext="{Binding KeyPointEditor}"
