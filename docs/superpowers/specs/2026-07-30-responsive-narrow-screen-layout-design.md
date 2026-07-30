@@ -1,0 +1,64 @@
+# Адаптивная раскладка MainView для узких экранов — дизайн
+
+Дата: 2026-07-30
+
+## Проблема
+
+`MainView.axaml` сейчас рассчитан только на широкие экраны: центральный `Grid ColumnDefinitions="Auto,*,Auto"` держит левый джойстик, панель программы (`MaxWidth=360`) и правый джойстик в один горизонтальный ряд, а шапка — статус подключения и кнопки Play/Пауза/Стоп — тоже в один ряд (`*,Auto`). На узких экранах (смартфон, ~360–430px) это не помещается: джойстики схлопываются или обрезаются, кнопки программы («Захватить точку»/«Новая»/«Сохранить»/«Библиотека») уже сейчас потенциально не влезают в `MaxWidth=360` даже на широком экране.
+
+Нужно:
+1. На узком экране джойстики уходят под панель программы (панель — сверху на всю ширину, оба джойстика — рядом в одну строку под ней, ближе к центру). На широком — раскладка не меняется.
+2. Обе кнопочные панели (шапка Play/Пауза/Стоп и ряд кнопок программы) выравниваются и адаптируются под узкий экран, не ломая широкий.
+
+## Механизм переключения раскладки
+
+Avalonia не имеет media queries. Переключение делается кодом в `MainView.axaml.cs`: подписка на `SizeChanged`, при `NewSize.Width < 700` на двух именованных `Grid` (`HeaderGrid`, `ContentGrid`) выставляется класс `narrow`, иначе снимается. Всё остальное — декларативные `Style Selector="Grid#X.narrow > Тип#Имя"`, переопределяющие присоединённые свойства (`Grid.Row/Column/ColumnSpan`, `Margin`, `MaxWidth`) у конкретных именованных детей. Порог: **700px** ширины `MainView`. Дерево элементов не перестраивается, ViewModel не участвует — чисто вью-слой.
+
+Инициализация: обработчик `SizeChanged` также вызывается при первом лэйауте (переход от `Size.Empty` к фактическому размеру), так что дополнительного вызова при загрузке не требуется — но на всякий случай состояние синхронизируется и в конструкторе после `InitializeComponent()`, если `Bounds.Width > 0` уже известна на момент конструктора (защита от edge-case, когда контрол переиспользуется/переприкрепляется).
+
+## `ContentGrid` (джойстики + панель программы)
+
+Именуем текущий `Grid ColumnDefinitions="Auto,*,Auto" Margin="20"` внутри `Border.reveal-3` как `x:Name="ContentGrid"`, добавляем `RowDefinitions="Auto,Auto"` (всегда — во widescreen-режиме вторая строка просто пустая, `Auto` даёт ей нулевую высоту).
+
+Именуем детей: `LeftJoystick`, `ProgramPanel` (текущий средний `StackPanel`), `RightJoystick`.
+
+- **Широкий (по умолчанию, без класса `narrow`)** — как сейчас: `ColumnDefinitions="Auto,*,Auto"`; `LeftJoystick` → Column 0, `ProgramPanel` → Column 1 (`MaxWidth=360` как сейчас), `RightJoystick` → Column 2. Все — Row 0 (неявно).
+- **Узкий (`.narrow`)** — `ColumnDefinitions` переопределяется на `*,Auto,Auto,*`:
+  - `ProgramPanel`: `Grid.Row=0, Grid.Column=0, Grid.ColumnSpan=4`, `MaxWidth` снимается (`Infinity`) — панель растягивается на всю ширину экрана.
+  - `LeftJoystick`: `Grid.Row=1, Grid.Column=1`, `Margin="0,0,20,0"`.
+  - `RightJoystick`: `Grid.Row=1, Grid.Column=2`, `Margin="20,0,0,0"`.
+
+  Крайние `*`-колонки (0 и 3) — гибкие распорки: пара джойстиков (обе `Auto`-колонки) всегда держится вместе по центру строки и не расползается к краям экрана независимо от того, 380px это экран или 690px.
+
+## `HeaderGrid` (шапка: статус + Play/Пауза/Стоп)
+
+Именуем текущий `Grid ColumnDefinitions="*,Auto"` в шапке как `x:Name="HeaderGrid"`, добавляем `RowDefinitions="Auto,Auto"`. Именуем `ContentControl` (статус подключения) как `ConnectionStatus`, `StackPanel` с кнопками заменяется на `WrapPanel x:Name="PlaybackButtons"`.
+
+- **Широкий**: как сейчас — `ConnectionStatus` Column 0, `PlaybackButtons` Column 1, обе Row 0.
+- **Узкий (`.narrow`)**: `ConnectionStatus` → `Grid.Row=0, Grid.Column=0, Grid.ColumnSpan=2`; `PlaybackButtons` → `Grid.Row=1, Grid.Column=0, Grid.ColumnSpan=2`, `HorizontalAlignment=Left`, `Margin="0,8,0,0"`. Статус — сверху на всю ширину, кнопки — снизу.
+
+## Кнопочные панели: `WrapPanel` вместо `StackPanel Orientation="Horizontal"`
+
+Не зависит от breakpoint'а — работает одинаково на любой ширине:
+
+- Шапка: `StackPanel Orientation="Horizontal"` с Play/Пауза/Стоп + бейдж состояния → `WrapPanel` (см. выше, `x:Name="PlaybackButtons"`).
+- Панель программы: ряд «Захватить точку»/«Новая»/«Сохранить»/«Библиотека» → `WrapPanel`.
+
+Зазор задаётся свойствами самого `WrapPanel` (Avalonia 12.0.4 их поддерживает): `ItemSpacing="8"` — между кнопками в строке, `LineSpacing="8"` — между перенесёнными строками.
+
+## Прокрутка
+
+`Border.reveal-3` (обёртка `ContentGrid`) оборачивается в `ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"`. На широком экране контент по-прежнему помещается — скролл не активируется, `Border` растягивается на весь `ScrollViewer` как раньше (стандартное поведение `ScrollViewer` — растягивать контент под viewport, если он меньше). На узком, когда панель + строка джойстиков суммарно выше экрана, появляется вертикальный скролл.
+
+Три модальных оверлея (`IsEditingKeyPoint`, `PendingConfirmation`, `IsLibraryOpen`) остаются **вне** `ScrollViewer`, прямыми детьми `RootPanel` — иначе их `HorizontalAlignment/VerticalAlignment=Center` центрировались бы относительно прокручиваемого контента, а не видимой области, и модалка могла бы уехать за пределы экрана при прокрутке.
+
+## Затронутые файлы
+
+- `ArctZ/Views/MainView.axaml` — именование `HeaderGrid`/`ContentGrid`/детей, `RowDefinitions`, стили `.narrow`, замена `StackPanel`→`WrapPanel` в двух местах, обёртка `ScrollViewer`.
+- `ArctZ/Views/MainView.axaml.cs` — обработчик `SizeChanged`, метод переключения классов `narrow` на `HeaderGrid`/`ContentGrid`.
+
+## Не в скоупе
+
+- Адаптация модальных оверлеев (редактор точки, подтверждение, библиотека программ) под узкий экран — не запрошено, они и так по центру с фиксированной шириной ≤360px, что помещается на любом смартфоне.
+- Адаптация `ConnectionView` (модалка подключения) — отдельный компонент, не упомянут в задаче.
+- Тесты — в решении нет тестового покрытия UI-層 (`ArctZ.Tests` не содержит View-тестов); проверка через `dotnet build` и визуально через `ArctZ.Browser` + Playwright (ресайз вьюпорта, скриншоты обеих раскладок).
