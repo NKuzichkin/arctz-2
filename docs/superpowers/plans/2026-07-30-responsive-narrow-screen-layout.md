@@ -402,6 +402,7 @@ git commit -m "feat: switch header to two-row layout below 700px width"
 ```xml
         <Style Selector="Grid#ContentGrid > js|VirtualJoystick#LeftJoystick">
             <Setter Property="Grid.Column" Value="0" />
+            <Setter Property="Radius" Value="80" />
         </Style>
         <Style Selector="Grid#ContentGrid > StackPanel#ProgramPanel">
             <Setter Property="Grid.Column" Value="1" />
@@ -409,6 +410,7 @@ git commit -m "feat: switch header to two-row layout below 700px width"
         </Style>
         <Style Selector="Grid#ContentGrid > js|VirtualJoystick#RightJoystick">
             <Setter Property="Grid.Column" Value="2" />
+            <Setter Property="Radius" Value="80" />
         </Style>
         <Style Selector="Grid#ContentGrid.narrow > StackPanel#ProgramPanel">
             <Setter Property="Grid.Row" Value="0" />
@@ -420,15 +422,19 @@ git commit -m "feat: switch header to two-row layout below 700px width"
             <Setter Property="Grid.Row" Value="1" />
             <Setter Property="Grid.Column" Value="1" />
             <Setter Property="Margin" Value="0,0,20,0" />
+            <Setter Property="Radius" Value="55" />
         </Style>
         <Style Selector="Grid#ContentGrid.narrow > js|VirtualJoystick#RightJoystick">
             <Setter Property="Grid.Row" Value="1" />
             <Setter Property="Grid.Column" Value="2" />
             <Setter Property="Margin" Value="20,0,0,0" />
+            <Setter Property="Radius" Value="55" />
         </Style>
 ```
 
-(`js|VirtualJoystick` использует уже объявленный в корне файла `xmlns:js="using:ArctZ.Components.VirtualJoystick"`. `ColumnDefinitions`/`RowDefinitions` здесь больше не переопределяются стилем — они уже переключены в Step 1, в `OnSizeChanged`; эти три стиля отвечают только за `Grid.Row/Column/ColumnSpan/Margin/MaxWidth` — обычные `AvaloniaProperty`, `Style Setter` для них работает штатно.)
+(`js|VirtualJoystick` использует уже объявленный в корне файла `xmlns:js="using:ArctZ.Components.VirtualJoystick"`. `ColumnDefinitions`/`RowDefinitions` здесь больше не переопределяются стилем — они уже переключены в Step 1, в `OnSizeChanged`; эти стили отвечают только за `Grid.Row/Column/ColumnSpan/Margin/MaxWidth/Radius` — обычные `AvaloniaProperty`, `Style Setter` для них работает штатно.
+
+`Radius` тоже нужно убрать как локальный XAML-атрибут с обоих `VirtualJoystick` — иначе тот же конфликт «локальное значение бьёт стиль», уже дважды сломавший Task 2/3. **Пересмотрено по итогам Task 4 (расчёт при финальной проверке):** при `Radius=80` (диаметр 160px) два джойстика + отступ между ними (40px) + поля `ContentGrid`/`Border` (52px) требуют ≈412px минимальной ширины — больше типичной ширины телефона (360–430px), а `HorizontalScrollBarVisibility="Disabled"` не даёт докрутить вбок, то есть джойстики бы обрезались. Поэтому в узком режиме `Radius` уменьшается до `55` (диаметр 110px, минимальная требуемая ширина ≈312px) — умещается на реальных телефонах и уместнее по размеру для маленького экрана.)
 
 - [ ] **Step 3: Собрать**
 
@@ -472,6 +478,19 @@ Expected: оба — `Build succeeded`, 0 ошибок.
 - Открыть библиотеку программ (`Библиотека`) при ширине 380px — `browser_take_screenshot`: модальное окно центрировано в видимой области, а не уезжает вслед за прокруткой контента.
 
 Expected: во всех сценариях — корректная раскладка, доступность всех элементов управления, модалка остаётся по центру экрана.
+
+**Фактический результат (2026-07-30):** `dotnet run --project ArctZ.Browser` стабильно (3 попытки) падал с ошибкой генерации XAML ("InitializeComponent не существует") — детерминированная проблема окружения при команде `run` для WASM-головы (`dotnet build` того же проекта при этом собирается чисто), не связанная с изменениями этого плана. Прямая проверка Desktop-сборки через GUI-автоматизацию также не использовалась (см. память `feedback_gui_automation_shared_desktop` — окно VS Code перекрывает окно ArctZ на этой машине). Вместо живого рендеринга проведена тщательная ручная проверка вёрстки на всех четырёх контрольных ширинах по актуальному состоянию `MainView.axaml`/`.cs` (Grid columns/rows, порядок стилей, точные размеры). Эта проверка нашла реальный дефект (см. ниже) — расчёт подтверждён количественно, не только "на глаз".
+
+- [ ] **Step 2a: Найденный и исправленный дефект — переполнение по ширине джойстиков на узких экранах**
+
+При `Radius=80` (диаметр 160px) два джойстика + отступ между ними (`Margin="0,0,20,0"`/`"20,0,0,0"` = 40px) + поля `ContentGrid Margin="20"` (40px) + поле `Border.reveal-3 Margin="0,12,12,12"` (12px справа) = **минимум ≈412px** ширины, чтобы не обрезаться. Это больше типичной ширины смартфона (360–430px), а `ScrollViewer.HorizontalScrollBarVisibility="Disabled"` не даёт прокрутить вбок — джойстики бы обрезались молча.
+
+Исправление: `Radius` уменьшается до `55` (диаметр 110px, минимум ≈312px) в узком режиме через `Style Setter` — `Radius` является `AvaloniaProperty` (`RadiusProperty` зарегистрирован в `VirtualJoystick.cs`), поэтому стилизуется штатно, но по той же причине, что и `Grid.Column` в Task 3 Step 2, локальный атрибут `Radius="80"` с обоих `VirtualJoystick`-элементов нужно убрать и перенести в безусловный (`80`) + `.narrow` (`55`) стили — иначе локальное значение снова перебьёт стиль.
+
+```bash
+git add ArctZ/Views/MainView.axaml
+git commit -m "fix: shrink joystick radius on narrow screens to avoid horizontal overflow"
+```
 
 - [ ] **Step 3: Зафиксировать любые найденные точечные исправления**
 
