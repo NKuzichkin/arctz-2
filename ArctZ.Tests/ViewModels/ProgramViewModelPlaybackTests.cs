@@ -109,6 +109,28 @@ public class ProgramViewModelPlaybackTests
     }
 
     [Fact]
+    public async Task IsProgramLocked_TrueWhileRunningOrPaused_FalseOnceStopped()
+    {
+        var vm = CreateViewModel(out var transport);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+
+        Assert.False(vm.IsProgramLocked);
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+        Assert.True(vm.IsProgramLocked);
+
+        await vm.PauseCommand.ExecuteAsync(null);
+        Assert.True(vm.IsProgramLocked);
+
+        await vm.StopCommand.ExecuteAsync(null);
+        Assert.False(vm.IsProgramLocked);
+
+        transport.SimulateReceivedLine("ok"); // resolves the command already in flight so playTask completes
+        await playTask;
+    }
+
+    [Fact]
     public async Task Stop_DiscardsQueuedButUnsentSteps_SoTheyAreNeverResentAfterTheInFlightAck()
     {
         var vm = CreateViewModel(out var transport);

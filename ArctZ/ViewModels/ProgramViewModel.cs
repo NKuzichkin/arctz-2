@@ -350,7 +350,10 @@ public partial class ProgramViewModel : ViewModelBase
     [NotifyCanExecuteChangedFor(nameof(PlayCommand))]
     [NotifyCanExecuteChangedFor(nameof(PauseCommand))]
     [NotifyCanExecuteChangedFor(nameof(StopCommand))]
+    [NotifyPropertyChangedFor(nameof(IsProgramLocked))]
     private PlaybackState _playbackState = PlaybackState.Idle;
+
+    public bool IsProgramLocked => PlaybackState is PlaybackState.Running or PlaybackState.Paused;
 
     [ObservableProperty]
     private int? _currentSegmentIndex;
