@@ -138,14 +138,19 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
             ? _createDemoTransport()
             : _realTransport;
 
-        _sentGCodeSubscription?.Dispose();
+        if (_sentGCodeSubscription is not null)
+        {
+            Disposables.Remove(_sentGCodeSubscription);
+        }
+
         var loggingTransport = new LoggingDeviceTransport(innerTransport);
         SentGCodeLines.Clear();
         _sentGCodeSubscription = Observable.FromEvent<string>(
                 h => loggingTransport.LineSent += h,
                 h => loggingTransport.LineSent -= h)
             .ObserveOn(RxSchedulers.MainThreadScheduler)
-            .Subscribe(AppendSentGCodeLine);
+            .Subscribe(AppendSentGCodeLine)
+            .DisposeWith(Disposables);
 
         var session = _sessionFactory.Create(loggingTransport);
         Session = session;
@@ -172,6 +177,12 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
         {
             await Session.DisconnectAsync();
             Session = null;
+        }
+
+        if (_sentGCodeSubscription is not null)
+        {
+            Disposables.Remove(_sentGCodeSubscription);
+            _sentGCodeSubscription = null;
         }
     }
 
