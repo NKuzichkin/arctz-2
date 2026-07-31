@@ -46,9 +46,10 @@ namespace ArctZ.Views
         private void OnSentGCodeLinesChanged(object? sender, NotifyCollectionChangedEventArgs e)
         {
             if (e.Action == NotifyCollectionChangedAction.Add &&
+                GCodeLogList.IsEffectivelyVisible &&
                 sender is ObservableCollection<string> { Count: > 0 } lines)
             {
-                GCodeLogList.ScrollIntoView(lines[^1]);
+                GCodeLogList.ScrollIntoView(lines.Count - 1);
             }
         }
 

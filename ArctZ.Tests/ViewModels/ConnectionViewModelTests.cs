@@ -229,6 +229,20 @@ public class ConnectionViewModelTests
     }
 
     [Fact]
+    public async Task DisconnectCommand_StopsAppendingToSentGCodeLines()
+    {
+        var realTransport = new FakeDeviceTransport();
+        var vm = CreateVm(realTransport);
+        await vm.ConnectCommand.Execute();
+        var session = vm.Session!;
+
+        await vm.DisconnectCommand.Execute();
+        _ = session.SendGCodeAsync("G1 X1");
+
+        Assert.Empty(vm.SentGCodeLines);
+    }
+
+    [Fact]
     public void ToggleGCodeLogCommand_TogglesIsGCodeLogOpen()
     {
         var vm = CreateVm(new FakeDeviceTransport());

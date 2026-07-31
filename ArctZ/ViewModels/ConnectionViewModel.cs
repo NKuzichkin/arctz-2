@@ -188,11 +188,12 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
 
     private void AppendSentGCodeLine(string line)
     {
-        SentGCodeLines.Add(line);
-        if (SentGCodeLines.Count > MaxSentGCodeLines)
+        if (SentGCodeLines.Count >= MaxSentGCodeLines)
         {
             SentGCodeLines.RemoveAt(0);
         }
+
+        SentGCodeLines.Add(line);
     }
 
     private Task HomeAsync() => Session?.HomeAsync() ?? Task.CompletedTask;

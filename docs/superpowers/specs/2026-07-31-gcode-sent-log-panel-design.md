@@ -59,17 +59,23 @@ public sealed class LoggingDeviceTransport : IDeviceTransport
 - Новое поле `private IDisposable? _sentGCodeSubscription;`.
 - В `ConnectAsync`, там же, где сейчас выбирается `transport` (строка `var transport = SelectedEndpoint.Kind == ConnectionEndpointKind.Demo ? _createDemoTransport() : _realTransport;`):
   ```csharp
-  _sentGCodeSubscription?.Dispose();
+  if (_sentGCodeSubscription is not null)
+  {
+      Disposables.Remove(_sentGCodeSubscription);
+  }
+
   var loggingTransport = new LoggingDeviceTransport(transport);
   SentGCodeLines.Clear();
   _sentGCodeSubscription = Observable.FromEvent<string>(
           h => loggingTransport.LineSent += h,
           h => loggingTransport.LineSent -= h)
       .ObserveOn(RxSchedulers.MainThreadScheduler)
-      .Subscribe(AppendSentGCodeLine);
+      .Subscribe(AppendSentGCodeLine)
+      .DisposeWith(Disposables);
 
   var session = _sessionFactory.Create(loggingTransport);
   ```
+  `Disposables.Remove(...)` both removes the previous subscription from the composite and disposes it, so a stale subscription is never left registered on `Disposables`. The new subscription is chained with `.DisposeWith(Disposables)` so it is torn down automatically if the view model itself is disposed. `DisconnectAsync` performs the same `Disposables.Remove(_sentGCodeSubscription)` (then sets the field to `null`) so a manual disconnect stops appending too.
   (`loggingTransport`, не `transport`, передаётся дальше в `_sessionFactory.Create(...)`.)
 - `AppendSentGCodeLine(string line)`:
   ```csharp
@@ -151,7 +157,7 @@ private void OnSentGCodeLinesChanged(object? sender, NotifyCollectionChangedEven
 
 ## Обработка ошибок / граничные случаи
 
-- Провал `ConnectAsync` (см. `catch` блок, который делает `session.DisconnectAsync()` и обнуляет `Session`) не требует отдельной очистки лога/подписки: `SentGCodeLines` уже очищен в начале попытки, `_sentGCodeSubscription` будет корректно заменена (со `.Dispose()` старой) на следующей попытке подключения.
+- Провал `ConnectAsync` (см. `catch` блок, который делает `session.DisconnectAsync()` и обнуляет `Session`) не требует отдельной очистки лога/подписки: `SentGCodeLines` уже очищен в начале попытки, `_sentGCodeSubscription` будет корректно заменена (со снятием старой через `Disposables.Remove(...)`) на следующей попытке подключения.
 - Оверлей лога и модалка подключения (`IsConnectionModalVisible`) не конфликтуют: модалка рисуется поверх всего `Grid` (включая `RootPanel`), поэтому пока модалка видна, оверлей лога всё равно доступен только после подключения — кнопка в шапке физически недоступна, пока модалка блокирует экран (`DockPanel IsEnabled="{Binding !Connection.IsConnectionModalVisible}"`).
 
 ## Тесты
