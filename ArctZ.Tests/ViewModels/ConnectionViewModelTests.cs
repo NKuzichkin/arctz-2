@@ -183,4 +183,61 @@ public class ConnectionViewModelTests
 
         Assert.Equal(ConnectionState.Connected, vm.ConnectionState);
     }
+
+    [Fact]
+    public async Task SendGCode_AfterConnect_AppendsLineToSentGCodeLines()
+    {
+        var realTransport = new FakeDeviceTransport();
+        var vm = CreateVm(realTransport);
+        await vm.ConnectCommand.Execute();
+
+        _ = vm.Session!.SendGCodeAsync("G1 X10 Y20 F500");
+
+        Assert.Equal(new[] { "G1 X10 Y20 F500" }, vm.SentGCodeLines);
+    }
+
+    [Fact]
+    public async Task ConnectCommand_Reconnecting_ClearsPreviousSentGCodeLines()
+    {
+        var realTransport = new FakeDeviceTransport();
+        var vm = CreateVm(realTransport);
+        await vm.ConnectCommand.Execute();
+        _ = vm.Session!.SendGCodeAsync("G1 X10");
+        Assert.Single(vm.SentGCodeLines);
+
+        await vm.ConnectCommand.Execute();
+
+        Assert.Empty(vm.SentGCodeLines);
+    }
+
+    [Fact]
+    public async Task SendGCode_Over200Lines_DropsOldestNotNewest()
+    {
+        var realTransport = new FakeDeviceTransport();
+        var vm = CreateVm(realTransport);
+        await vm.ConnectCommand.Execute();
+
+        for (var i = 0; i < 205; i++)
+        {
+            _ = vm.Session!.SendGCodeAsync($"G1 X{i}");
+            realTransport.SimulateReceivedLine("ok");
+        }
+
+        Assert.Equal(200, vm.SentGCodeLines.Count);
+        Assert.Equal("G1 X5", vm.SentGCodeLines[0]);
+        Assert.Equal("G1 X204", vm.SentGCodeLines[^1]);
+    }
+
+    [Fact]
+    public void ToggleGCodeLogCommand_TogglesIsGCodeLogOpen()
+    {
+        var vm = CreateVm(new FakeDeviceTransport());
+        Assert.False(vm.IsGCodeLogOpen);
+
+        vm.ToggleGCodeLogCommand.Execute(null);
+        Assert.True(vm.IsGCodeLogOpen);
+
+        vm.ToggleGCodeLogCommand.Execute(null);
+        Assert.False(vm.IsGCodeLogOpen);
+    }
 }

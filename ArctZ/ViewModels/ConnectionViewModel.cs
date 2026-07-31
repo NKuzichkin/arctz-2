@@ -16,6 +16,8 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
     private readonly IDeviceTransport _realTransport;
     private readonly Func<IDeviceTransport> _createDemoTransport;
     private readonly IDeviceSessionFactory _sessionFactory;
+    private IDisposable? _sentGCodeSubscription;
+    private const int MaxSentGCodeLines = 200;
 
     [Reactive] private IDeviceSession? session;
 
@@ -28,6 +30,8 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
     [Reactive] private ConnectionState connectionState = ConnectionState.Disconnected;
 
     [Reactive] private ConnectionEndpoint? selectedEndpoint;
+
+    [Reactive] private bool isGCodeLogOpen;
 
     public bool IsConnectionModalVisible => Session is null || ConnectionState != ConnectionState.Connected;
 
@@ -46,10 +50,13 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
         new ConnectionEndpoint("demo", "Демо", ConnectionEndpointKind.Demo),
     };
 
+    public ObservableCollection<string> SentGCodeLines { get; } = new();
+
     public IEnhancedCommand<Unit> ConnectCommand { get; }
     public IEnhancedCommand<Unit> DisconnectCommand { get; }
     public IEnhancedCommand<Unit> HomeCommand { get; }
     public IEnhancedCommand<Unit> ResetAlarmCommand { get; }
+    public IEnhancedCommand<Unit> ToggleGCodeLogCommand { get; }
 
     public ConnectionViewModel(
         IDeviceTransport realTransport,
@@ -77,6 +84,8 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
             .Enhance(text: "Homing", name: "HomeCommand"));
         ResetAlarmCommand = Track(ReactiveCommand.CreateFromTask(ResetAlarmAsync)
             .Enhance(text: "Сброс аварии", name: "ResetAlarmCommand"));
+        ToggleGCodeLogCommand = Track(ReactiveCommand.Create(() => { IsGCodeLogOpen = !IsGCodeLogOpen; })
+            .Enhance(text: "Лог G-code", name: "ToggleGCodeLogCommand"));
 
         // Immediately mirror a newly-assigned session's state, then keep mirroring it
         // as ConnectionStateChanged fires later (on a background thread for the
@@ -125,11 +134,20 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
             Session = null;
         }
 
-        var transport = SelectedEndpoint.Kind == ConnectionEndpointKind.Demo
+        var innerTransport = SelectedEndpoint.Kind == ConnectionEndpointKind.Demo
             ? _createDemoTransport()
             : _realTransport;
 
-        var session = _sessionFactory.Create(transport);
+        _sentGCodeSubscription?.Dispose();
+        var loggingTransport = new LoggingDeviceTransport(innerTransport);
+        SentGCodeLines.Clear();
+        _sentGCodeSubscription = Observable.FromEvent<string>(
+                h => loggingTransport.LineSent += h,
+                h => loggingTransport.LineSent -= h)
+            .ObserveOn(RxSchedulers.MainThreadScheduler)
+            .Subscribe(AppendSentGCodeLine);
+
+        var session = _sessionFactory.Create(loggingTransport);
         Session = session;
 
         try
@@ -154,6 +172,15 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
         {
             await Session.DisconnectAsync();
             Session = null;
+        }
+    }
+
+    private void AppendSentGCodeLine(string line)
+    {
+        SentGCodeLines.Add(line);
+        if (SentGCodeLines.Count > MaxSentGCodeLines)
+        {
+            SentGCodeLines.RemoveAt(0);
         }
     }
 
