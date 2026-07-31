@@ -1,4 +1,6 @@
 using System;
+using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using ArctZ.Components.VirtualJoystick;
 using ArctZ.Services.Program;
 using ArctZ.ViewModels;
@@ -25,11 +27,30 @@ namespace ArctZ.Views
         {
             InitializeComponent();
             SizeChanged += OnSizeChanged;
+            DataContextChanged += OnDataContextChanged;
         }
 
         private ProgramViewModel? ViewModel => DataContext as ProgramViewModel;
 
         private bool? _isNarrow;
+
+        private void OnDataContextChanged(object? sender, EventArgs e)
+        {
+            if (DataContext is ProgramViewModel vm)
+            {
+                vm.Connection.SentGCodeLines.CollectionChanged -= OnSentGCodeLinesChanged;
+                vm.Connection.SentGCodeLines.CollectionChanged += OnSentGCodeLinesChanged;
+            }
+        }
+
+        private void OnSentGCodeLinesChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        {
+            if (e.Action == NotifyCollectionChangedAction.Add &&
+                sender is ObservableCollection<string> { Count: > 0 } lines)
+            {
+                GCodeLogList.ScrollIntoView(lines[^1]);
+            }
+        }
 
         private void OnSizeChanged(object? sender, SizeChangedEventArgs e)
         {
