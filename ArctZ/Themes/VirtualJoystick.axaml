@@ -14,7 +14,7 @@
           <Grid Name="PART_Visuals">
             <!-- Ambient glow: a soft blurred halo behind the pad, the one indulgent
                  effect on an otherwise flat instrument-panel surface. -->
-            <Ellipse Fill="{StaticResource HudAccentDimBrush}" Opacity="0.4" IsHitTestVisible="False">
+            <Ellipse x:Name="PART_Glow" Fill="{StaticResource HudAccentDimBrush}" Opacity="0.4" IsHitTestVisible="False">
               <Ellipse.Effect>
                 <BlurEffect Radius="20" />
               </Ellipse.Effect>
@@ -23,8 +23,8 @@
             <Ellipse Name="PART_Base" StrokeThickness="1.5">
               <Ellipse.Fill>
                 <RadialGradientBrush Center="50%,42%" GradientOrigin="50%,42%" RadiusX="70%" RadiusY="70%">
-                  <GradientStop Color="#171F27" Offset="0" />
-                  <GradientStop Color="#0C1116" Offset="1" />
+                  <GradientStop Color="{StaticResource HudPanelElevatedColor}" Offset="0" />
+                  <GradientStop Color="{StaticResource HudBackgroundDeepColor}" Offset="1" />
                 </RadialGradientBrush>
               </Ellipse.Fill>
               <Ellipse.Stroke>
@@ -64,15 +64,15 @@
                      VerticalAlignment="Center">
               <Ellipse.Fill>
                 <RadialGradientBrush Center="35%,28%" GradientOrigin="35%,28%" RadiusX="75%" RadiusY="75%">
-                  <GradientStop Color="#2A3840" Offset="0" />
-                  <GradientStop Color="#171F27" Offset="1" />
+                  <GradientStop Color="{StaticResource HudBorderStrongColor}" Offset="0" />
+                  <GradientStop Color="{StaticResource HudPanelElevatedColor}" Offset="1" />
                 </RadialGradientBrush>
               </Ellipse.Fill>
               <Ellipse.Stroke>
                 <SolidColorBrush Color="{StaticResource HudAccentColor}" Opacity="0.75" />
               </Ellipse.Stroke>
               <Ellipse.Effect>
-                <DropShadowEffect Color="#3DDBD9" BlurRadius="10" Opacity="0.35" OffsetX="0" OffsetY="0" />
+                <DropShadowEffect Color="{StaticResource HudAccentColor}" BlurRadius="10" Opacity="0.35" OffsetX="0" OffsetY="0" />
               </Ellipse.Effect>
               <Ellipse.Transitions>
                 <Transitions>
@@ -94,7 +94,7 @@
 
   <Style Selector="local|VirtualJoystick:active /template/ Ellipse#PART_Knob">
     <Setter Property="Effect">
-      <DropShadowEffect Color="#3DDBD9" BlurRadius="22" Opacity="0.85" OffsetX="0" OffsetY="0" />
+      <DropShadowEffect Color="{StaticResource HudAccentColor}" BlurRadius="22" Opacity="0.85" OffsetX="0" OffsetY="0" />
     </Setter>
   </Style>
 
