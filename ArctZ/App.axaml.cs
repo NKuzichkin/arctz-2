@@ -16,6 +16,8 @@ namespace ArctZ
     {
         public static IServiceProvider? Services { get; set; }
 
+        public static bool PrintMode { get; set; }
+
         [System.Runtime.CompilerServices.ModuleInitializer]
         internal static void RegisterViews()
         {
@@ -25,6 +27,12 @@ namespace ArctZ
         public override void Initialize()
         {
             AvaloniaXamlLoader.Load(this);
+
+            if (PrintMode)
+            {
+                RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Light;
+                PrintTheme.Apply(Resources);
+            }
         }
 
         public override void OnFrameworkInitializationCompleted()
@@ -38,6 +46,11 @@ namespace ArctZ
                 {
                     DataContext = viewModel
                 };
+
+                if (PrintMode)
+                {
+                    desktop.MainWindow.Classes.Add("print");
+                }
             }
             else if (ApplicationLifetime is IActivityApplicationLifetime singleViewFactoryApplicationLifetime)
             {
