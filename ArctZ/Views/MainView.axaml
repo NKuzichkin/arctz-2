@@ -191,7 +191,7 @@
                     </Grid>
                 </Border>
 
-                <Border IsVisible="{Binding IsEditingKeyPoint}" Background="#CC0A0E12">
+                <Border IsVisible="{Binding IsEditingKeyPoint}" Background="{StaticResource HudScrimBrush}">
                     <Border x:DataType="vm:KeyPointEditorViewModel" DataContext="{Binding KeyPointEditor}"
                             Width="320" Background="{StaticResource HudPanelElevatedBrush}"
                             BorderBrush="{StaticResource HudBorderStrongBrush}" BorderThickness="1"
@@ -219,7 +219,7 @@
                     </Border>
                 </Border>
 
-                <Border IsVisible="{Binding PendingRename, Converter={x:Static ObjectConverters.IsNotNull}}" Background="#CC0A0E12">
+                <Border IsVisible="{Binding PendingRename, Converter={x:Static ObjectConverters.IsNotNull}}" Background="{StaticResource HudScrimBrush}">
                     <Border x:DataType="vm:RenameProgramRequest" DataContext="{Binding PendingRename}"
                             Width="320" Background="{StaticResource HudPanelElevatedBrush}"
                             BorderBrush="{StaticResource HudBorderStrongBrush}" BorderThickness="1"
@@ -235,7 +235,7 @@
                     </Border>
                 </Border>
 
-                <Border IsVisible="{Binding PendingConfirmation, Converter={x:Static ObjectConverters.IsNotNull}}" Background="#CC0A0E12">
+                <Border IsVisible="{Binding PendingConfirmation, Converter={x:Static ObjectConverters.IsNotNull}}" Background="{StaticResource HudScrimBrush}">
                     <Border x:DataType="vm:ConfirmationRequest" DataContext="{Binding PendingConfirmation}"
                             Width="360" Background="{StaticResource HudPanelElevatedBrush}"
                             BorderBrush="{StaticResource HudBorderStrongBrush}" BorderThickness="1"
@@ -250,7 +250,7 @@
                     </Border>
                 </Border>
 
-                <Border IsVisible="{Binding IsLibraryOpen}" Background="#CC0A0E12">
+                <Border IsVisible="{Binding IsLibraryOpen}" Background="{StaticResource HudScrimBrush}">
                     <Border Width="320" MaxHeight="480" Background="{StaticResource HudPanelElevatedBrush}"
                             BorderBrush="{StaticResource HudBorderStrongBrush}" BorderThickness="1"
                             Padding="20" HorizontalAlignment="Center" VerticalAlignment="Center">
@@ -297,7 +297,7 @@
             </Grid>
         </DockPanel>
 
-        <Border IsVisible="{Binding Connection.IsConnectionModalVisible}" Background="#CC0A0E12">
+        <Border IsVisible="{Binding Connection.IsConnectionModalVisible}" Background="{StaticResource HudScrimBrush}">
             <Border x:DataType="vm:ConnectionViewModel" DataContext="{Binding Connection}"
                     Width="360" Background="{StaticResource HudPanelElevatedBrush}"
                     BorderBrush="{StaticResource HudBorderStrongBrush}" BorderThickness="1"

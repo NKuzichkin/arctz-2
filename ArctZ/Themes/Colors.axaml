@@ -5,6 +5,9 @@
        amber reserved exclusively for Alarm/Fault so it never competes with the accent. -->
 
   <Color x:Key="HudBackgroundColor">#0A0E12</Color>
+  <!-- Slightly lighter than HudBackgroundColor: used only as the inner gradient
+       stop on VirtualJoystick's base pad, not a general-purpose background. -->
+  <Color x:Key="HudBackgroundDeepColor">#0C1116</Color>
   <Color x:Key="HudPanelColor">#12181F</Color>
   <Color x:Key="HudPanelElevatedColor">#171F27</Color>
   <Color x:Key="HudBorderColor">#1E2830</Color>
@@ -35,6 +38,10 @@
 
   <SolidColorBrush x:Key="HudTextPrimaryBrush" Color="{StaticResource HudTextPrimaryColor}" />
   <SolidColorBrush x:Key="HudTextSecondaryBrush" Color="{StaticResource HudTextSecondaryColor}" />
+
+  <!-- Dark translucent scrim behind modal overlays (key point editor, rename,
+       confirmation, library, connection modal). -->
+  <SolidColorBrush x:Key="HudScrimBrush" Color="#CC0A0E12" />
 
   <!-- Typography: JetBrains Mono for telemetry/numeric readouts, Manrope for interface text.
        Both are variable fonts (wght axis) embedded from Assets/Fonts, Cyrillic-complete. -->
