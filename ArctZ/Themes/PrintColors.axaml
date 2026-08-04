@@ -1,0 +1,47 @@
+<!-- ArctZ/Themes/PrintColors.axaml -->
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!-- Monochrome palette for the print theme (theme=print): black borders/text/accent on white,
+       grey reserved for hover/pressed/disabled/secondary-text states. Redefines
+       every Hud*Color/Hud*Brush key from Colors.axaml directly — including the
+       Brush keys, not just their underlying Color keys — so this file is
+       self-contained and doesn't depend on Colors.axaml's own brushes
+       re-resolving their nested StaticResource after this dictionary merges. -->
+
+  <Color x:Key="HudBackgroundColor">#FFFFFF</Color>
+  <Color x:Key="HudPanelColor">#FFFFFF</Color>
+  <Color x:Key="HudPanelElevatedColor">#FFFFFF</Color>
+  <Color x:Key="HudBackgroundDeepColor">#FFFFFF</Color>
+  <Color x:Key="HudBorderColor">#000000</Color>
+  <Color x:Key="HudBorderStrongColor">#000000</Color>
+
+  <Color x:Key="HudAccentColor">#000000</Color>
+  <Color x:Key="HudAccentDimColor">#CCCCCC</Color>
+  <Color x:Key="HudAccentBrightColor">#000000</Color>
+
+  <Color x:Key="HudWarningColor">#000000</Color>
+  <Color x:Key="HudWarningDimColor">#CCCCCC</Color>
+
+  <Color x:Key="HudTextPrimaryColor">#000000</Color>
+  <Color x:Key="HudTextSecondaryColor">#666666</Color>
+
+  <SolidColorBrush x:Key="HudBackgroundBrush" Color="#FFFFFF" />
+  <SolidColorBrush x:Key="HudPanelBrush" Color="#FFFFFF" />
+  <SolidColorBrush x:Key="HudPanelElevatedBrush" Color="#FFFFFF" />
+  <SolidColorBrush x:Key="HudBorderBrush" Color="#000000" />
+  <SolidColorBrush x:Key="HudBorderStrongBrush" Color="#000000" />
+
+  <SolidColorBrush x:Key="HudAccentBrush" Color="#000000" />
+  <SolidColorBrush x:Key="HudAccentDimBrush" Color="#CCCCCC" />
+  <SolidColorBrush x:Key="HudAccentBrightBrush" Color="#000000" />
+
+  <SolidColorBrush x:Key="HudWarningBrush" Color="#000000" />
+  <SolidColorBrush x:Key="HudWarningDimBrush" Color="#CCCCCC" />
+
+  <SolidColorBrush x:Key="HudTextPrimaryBrush" Color="#000000" />
+  <SolidColorBrush x:Key="HudTextSecondaryBrush" Color="#666666" />
+
+  <SolidColorBrush x:Key="HudScrimBrush" Color="#B3FFFFFF" />
+
+</ResourceDictionary>
