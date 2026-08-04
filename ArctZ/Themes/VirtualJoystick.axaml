@@ -2,6 +2,11 @@
          xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
          xmlns:local="using:ArctZ.Components.VirtualJoystick">
 
+  <!-- The Hud*Brush/Hud*Color references below use DynamicResource, not StaticResource:
+       this file's Styles (including the template's inline content) are loaded once via
+       AvaloniaXamlLoader.Load, before App.axaml.cs conditionally merges the print-theme
+       palette (theme=print), a StaticResource here would permanently bake in the dark
+       HUD color regardless of that flag. -->
   <Style Selector="local|VirtualJoystick">
     <Setter Property="Template">
       <ControlTemplate>
@@ -14,7 +19,7 @@
           <Grid Name="PART_Visuals">
             <!-- Ambient glow: a soft blurred halo behind the pad, the one indulgent
                  effect on an otherwise flat instrument-panel surface. -->
-            <Ellipse x:Name="PART_Glow" Fill="{StaticResource HudAccentDimBrush}" Opacity="0.4" IsHitTestVisible="False">
+            <Ellipse x:Name="PART_Glow" Fill="{DynamicResource HudAccentDimBrush}" Opacity="0.4" IsHitTestVisible="False">
               <Ellipse.Effect>
                 <BlurEffect Radius="20" />
               </Ellipse.Effect>
@@ -23,12 +28,12 @@
             <Ellipse Name="PART_Base" StrokeThickness="1.5">
               <Ellipse.Fill>
                 <RadialGradientBrush Center="50%,42%" GradientOrigin="50%,42%" RadiusX="70%" RadiusY="70%">
-                  <GradientStop Color="{StaticResource HudPanelElevatedColor}" Offset="0" />
-                  <GradientStop Color="{StaticResource HudBackgroundDeepColor}" Offset="1" />
+                  <GradientStop Color="{DynamicResource HudPanelElevatedColor}" Offset="0" />
+                  <GradientStop Color="{DynamicResource HudBackgroundDeepColor}" Offset="1" />
                 </RadialGradientBrush>
               </Ellipse.Fill>
               <Ellipse.Stroke>
-                <SolidColorBrush Color="{StaticResource HudAccentColor}" Opacity="0.3" />
+                <SolidColorBrush Color="{DynamicResource HudAccentColor}" Opacity="0.3" />
               </Ellipse.Stroke>
             </Ellipse>
 
@@ -42,20 +47,20 @@
                      VerticalAlignment="Center"
                      IsHitTestVisible="False">
               <Ellipse.Stroke>
-                <SolidColorBrush Color="{StaticResource HudAccentColor}" Opacity="0.35" />
+                <SolidColorBrush Color="{DynamicResource HudAccentColor}" Opacity="0.35" />
               </Ellipse.Stroke>
             </Ellipse>
 
             <!-- Cardinal ticks give the pad a compass-like reading, reinforcing the
                  8-direction discretization VirtualJoystick already computes. -->
             <Rectangle Width="2" Height="8" HorizontalAlignment="Center" VerticalAlignment="Top"
-                       Margin="0,2,0,0" Fill="{StaticResource HudAccentDimBrush}" IsHitTestVisible="False" />
+                       Margin="0,2,0,0" Fill="{DynamicResource HudAccentDimBrush}" IsHitTestVisible="False" />
             <Rectangle Width="2" Height="8" HorizontalAlignment="Center" VerticalAlignment="Bottom"
-                       Margin="0,0,0,2" Fill="{StaticResource HudAccentDimBrush}" IsHitTestVisible="False" />
+                       Margin="0,0,0,2" Fill="{DynamicResource HudAccentDimBrush}" IsHitTestVisible="False" />
             <Rectangle Width="8" Height="2" HorizontalAlignment="Left" VerticalAlignment="Center"
-                       Margin="2,0,0,0" Fill="{StaticResource HudAccentDimBrush}" IsHitTestVisible="False" />
+                       Margin="2,0,0,0" Fill="{DynamicResource HudAccentDimBrush}" IsHitTestVisible="False" />
             <Rectangle Width="8" Height="2" HorizontalAlignment="Right" VerticalAlignment="Center"
-                       Margin="0,0,2,0" Fill="{StaticResource HudAccentDimBrush}" IsHitTestVisible="False" />
+                       Margin="0,0,2,0" Fill="{DynamicResource HudAccentDimBrush}" IsHitTestVisible="False" />
 
             <Ellipse Name="PART_Knob"
                      Width="50" Height="50"
@@ -64,15 +69,15 @@
                      VerticalAlignment="Center">
               <Ellipse.Fill>
                 <RadialGradientBrush Center="35%,28%" GradientOrigin="35%,28%" RadiusX="75%" RadiusY="75%">
-                  <GradientStop Color="{StaticResource HudBorderStrongColor}" Offset="0" />
-                  <GradientStop Color="{StaticResource HudPanelElevatedColor}" Offset="1" />
+                  <GradientStop Color="{DynamicResource HudBorderStrongColor}" Offset="0" />
+                  <GradientStop Color="{DynamicResource HudPanelElevatedColor}" Offset="1" />
                 </RadialGradientBrush>
               </Ellipse.Fill>
               <Ellipse.Stroke>
-                <SolidColorBrush Color="{StaticResource HudAccentColor}" Opacity="0.75" />
+                <SolidColorBrush Color="{DynamicResource HudAccentColor}" Opacity="0.75" />
               </Ellipse.Stroke>
               <Ellipse.Effect>
-                <DropShadowEffect Color="{StaticResource HudAccentColor}" BlurRadius="10" Opacity="0.35" OffsetX="0" OffsetY="0" />
+                <DropShadowEffect Color="{DynamicResource HudAccentColor}" BlurRadius="10" Opacity="0.35" OffsetX="0" OffsetY="0" />
               </Ellipse.Effect>
               <Ellipse.Transitions>
                 <Transitions>
@@ -88,13 +93,13 @@
 
   <Style Selector="local|VirtualJoystick:active /template/ Ellipse#PART_Base">
     <Setter Property="Stroke">
-      <SolidColorBrush Color="{StaticResource HudAccentColor}" Opacity="0.55" />
+      <SolidColorBrush Color="{DynamicResource HudAccentColor}" Opacity="0.55" />
     </Setter>
   </Style>
 
   <Style Selector="local|VirtualJoystick:active /template/ Ellipse#PART_Knob">
     <Setter Property="Effect">
-      <DropShadowEffect Color="{StaticResource HudAccentColor}" BlurRadius="22" Opacity="0.85" OffsetX="0" OffsetY="0" />
+      <DropShadowEffect Color="{DynamicResource HudAccentColor}" BlurRadius="22" Opacity="0.85" OffsetX="0" OffsetY="0" />
     </Setter>
   </Style>
 
@@ -111,16 +116,16 @@
 
   <Style Selector="Window.print local|VirtualJoystick /template/ Ellipse#PART_Base">
     <Setter Property="Effect" Value="{x:Null}" />
-    <Setter Property="Stroke" Value="{StaticResource HudBorderStrongBrush}" />
+    <Setter Property="Stroke" Value="{DynamicResource HudBorderStrongBrush}" />
   </Style>
 
   <Style Selector="Window.print local|VirtualJoystick /template/ Ellipse#PART_Knob">
     <Setter Property="Effect" Value="{x:Null}" />
-    <Setter Property="Stroke" Value="{StaticResource HudBorderStrongBrush}" />
+    <Setter Property="Stroke" Value="{DynamicResource HudBorderStrongBrush}" />
   </Style>
 
   <Style Selector="Window.print local|VirtualJoystick:active /template/ Ellipse#PART_Base">
-    <Setter Property="Stroke" Value="{StaticResource HudBorderStrongBrush}" />
+    <Setter Property="Stroke" Value="{DynamicResource HudBorderStrongBrush}" />
   </Style>
 
   <Style Selector="Window.print local|VirtualJoystick:active /template/ Ellipse#PART_Knob">

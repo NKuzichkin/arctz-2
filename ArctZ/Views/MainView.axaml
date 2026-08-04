@@ -54,17 +54,26 @@
             </Style.Animations>
         </Style>
 
+        <!-- Foreground/Background/BorderBrush below use DynamicResource, not StaticResource:
+             Setter values in ANY Styles collection (this UserControl's own, or
+             Application-level) resolve once when this control's XAML is populated —
+             the same reason ArctZ/Themes/HudControls.axaml and VirtualJoystick.axaml use
+             DynamicResource for their Hud*-referencing Setters. A StaticResource Setter
+             here would permanently bake in the dark HUD color regardless of the
+             theme=print flag, even though direct element attributes elsewhere in this
+             file (e.g. this UserControl's own Background/Foreground above) resolve
+             correctly with StaticResource since those aren't Setters. -->
         <Style Selector="TextBlock.section-heading">
             <Setter Property="FontFamily" Value="{StaticResource HudFontBody}" />
             <Setter Property="FontSize" Value="{StaticResource HudFontSizeSmall}" />
             <Setter Property="FontWeight" Value="Medium" />
-            <Setter Property="Foreground" Value="{StaticResource HudTextSecondaryBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource HudTextSecondaryBrush}" />
             <Setter Property="LetterSpacing" Value="1.5" />
         </Style>
 
         <Style Selector="Border.loaded-entry">
-            <Setter Property="Background" Value="{StaticResource HudAccentDimBrush}" />
-            <Setter Property="BorderBrush" Value="{StaticResource HudAccentBrush}" />
+            <Setter Property="Background" Value="{DynamicResource HudAccentDimBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource HudAccentBrush}" />
             <Setter Property="BorderThickness" Value="3,0,0,0" />
         </Style>
 
