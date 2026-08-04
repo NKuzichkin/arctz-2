@@ -68,68 +68,16 @@
             <Setter Property="BorderThickness" Value="3,0,0,0" />
         </Style>
 
-        <Style Selector="Grid#HeaderGrid > ContentControl#ConnectionStatus">
-            <Setter Property="Grid.Row" Value="0" />
-            <Setter Property="Grid.Column" Value="0" />
-        </Style>
-        <Style Selector="Grid#HeaderGrid > WrapPanel#PlaybackButtons">
-            <Setter Property="Grid.Row" Value="0" />
-            <Setter Property="Grid.Column" Value="1" />
-        </Style>
-
-        <Style Selector="Grid#HeaderGrid.narrow > ContentControl#ConnectionStatus">
-            <Setter Property="Grid.Row" Value="0" />
-            <Setter Property="Grid.Column" Value="0" />
-            <Setter Property="Grid.ColumnSpan" Value="2" />
-        </Style>
-        <Style Selector="Grid#HeaderGrid.narrow > WrapPanel#PlaybackButtons">
-            <Setter Property="Grid.Row" Value="1" />
-            <Setter Property="Grid.Column" Value="0" />
-            <Setter Property="Grid.ColumnSpan" Value="2" />
-            <Setter Property="HorizontalAlignment" Value="Left" />
-            <Setter Property="Margin" Value="0,8,0,0" />
-        </Style>
-
-        <Style Selector="Grid#ContentGrid > js|VirtualJoystick#LeftJoystick">
-            <Setter Property="Grid.Column" Value="0" />
-            <Setter Property="Radius" Value="80" />
-        </Style>
-        <Style Selector="Grid#ContentGrid > ScrollViewer#ProgramPanel">
-            <Setter Property="Grid.Column" Value="1" />
-            <Setter Property="MaxWidth" Value="360" />
-            <Setter Property="Margin" Value="24,0" />
-        </Style>
-        <Style Selector="Grid#ContentGrid > js|VirtualJoystick#RightJoystick">
-            <Setter Property="Grid.Column" Value="2" />
-            <Setter Property="Radius" Value="80" />
-        </Style>
-        <Style Selector="Grid#ContentGrid.narrow > ScrollViewer#ProgramPanel">
-            <Setter Property="Grid.Row" Value="0" />
-            <Setter Property="Grid.Column" Value="0" />
-            <Setter Property="Grid.ColumnSpan" Value="2" />
-            <Setter Property="MaxWidth" Value="Infinity" />
-            <Setter Property="Margin" Value="0,0,0,12" />
-        </Style>
-        <Style Selector="Grid#ContentGrid.narrow > js|VirtualJoystick#LeftJoystick">
-            <Setter Property="Grid.Row" Value="1" />
-            <Setter Property="Grid.Column" Value="0" />
-            <Setter Property="HorizontalAlignment" Value="Center" />
-        </Style>
-        <Style Selector="Grid#ContentGrid.narrow > js|VirtualJoystick#RightJoystick">
-            <Setter Property="Grid.Row" Value="1" />
-            <Setter Property="Grid.Column" Value="1" />
-            <Setter Property="HorizontalAlignment" Value="Center" />
-        </Style>
     </UserControl.Styles>
 
     <Grid>
         <DockPanel IsEnabled="{Binding !Connection.IsConnectionModalVisible}">
-            <Border DockPanel.Dock="Top" Classes="reveal-1"
+            <Border x:Name="HeaderBorder" DockPanel.Dock="Top" Classes="reveal-1"
                     Background="{StaticResource HudPanelBrush}"
                     BorderBrush="{StaticResource HudBorderBrush}"
                     BorderThickness="0,0,0,1"
                     Padding="12,10">
-                <Grid x:Name="HeaderGrid" ColumnDefinitions="*,Auto">
+                <WrapPanel x:Name="HeaderPanel" ItemSpacing="12" LineSpacing="8">
                     <ContentControl x:Name="ConnectionStatus" Content="{Binding Connection}" />
                     <WrapPanel x:Name="PlaybackButtons" ItemSpacing="8" LineSpacing="8" VerticalAlignment="Center">
                         <Button Classes="primary" Content="Пуск" Command="{Binding PlayCommand}" />
@@ -141,25 +89,20 @@
                         </Border>
                         <Button Content="Лог G-code" Command="{Binding Connection.ToggleGCodeLogCommand}" />
                     </WrapPanel>
-                </Grid>
+                </WrapPanel>
             </Border>
 
             <!-- A single Grid is the DockPanel's true last child so it receives the fill slot;
                  the program panel and its overlays sit stacked inside it, toggled by IsVisible. -->
             <Grid x:Name="RootPanel">
-                <!-- radius formula in MainView.axaml.cs depends on these margins — see ContentGridChromeWidth/MainViewChromeHeight -->
+                <!-- radius formula in MainView.axaml.cs (ComputeJoystickRadius) depends on these margins —
+                     see ContentGridChromeWidth/ContentBorderVerticalChrome/ContentGridVerticalMargin/JoystickBarTopMargin -->
                 <Border Classes="reveal-3" Margin="0,12,12,12"
                         Background="{StaticResource HudPanelBrush}"
                         BorderBrush="{StaticResource HudBorderBrush}"
                         BorderThickness="1">
-                    <!-- radius formula in MainView.axaml.cs depends on this margin — see ContentGridChromeWidth/MainViewChromeHeight -->
-                    <Grid x:Name="ContentGrid" ColumnDefinitions="Auto,*,Auto" Margin="20">
-                        <js:VirtualJoystick x:Name="LeftJoystick" Mode="Fixed" Shape="Circle"
-                                             VerticalAlignment="Center" IsEnabled="{Binding !IsProgramLocked}"
-                                             ToolTip.Tip="Левый джойстик: подъём и поворот стрелы (X · Y)"
-                                             JoystickDown="OnLeftJoystickDown" JoystickMove="OnLeftJoystickMove" JoystickUp="OnLeftJoystickUp" />
-
-                        <ScrollViewer x:Name="ProgramPanel" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <Grid x:Name="ContentGrid" RowDefinitions="*,Auto" Margin="20">
+                        <ScrollViewer x:Name="ProgramPanel" Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                         <StackPanel Spacing="10">
                             <StackPanel Spacing="10" IsEnabled="{Binding !IsProgramLocked}">
                                 <TextBlock Classes="section-heading" Text="ПРОГРАММА" />
@@ -235,10 +178,16 @@
                         </StackPanel>
                         </ScrollViewer>
 
-                        <js:VirtualJoystick x:Name="RightJoystick" Mode="Fixed" Shape="Circle"
-                                             VerticalAlignment="Center" IsEnabled="{Binding !IsProgramLocked}"
-                                             ToolTip.Tip="Правый джойстик: пан и наклон камеры (Z · A)"
-                                             JoystickDown="OnRightJoystickDown" JoystickMove="OnRightJoystickMove" JoystickUp="OnRightJoystickUp" />
+                        <Grid x:Name="JoystickBar" Grid.Row="1" ColumnDefinitions="Auto,*,Auto" Margin="0,12,0,0">
+                            <js:VirtualJoystick x:Name="LeftJoystick" Grid.Column="0" Mode="Fixed" Shape="Circle"
+                                                 VerticalAlignment="Center" IsEnabled="{Binding !IsProgramLocked}"
+                                                 ToolTip.Tip="Левый джойстик: подъём и поворот стрелы (X · Y)"
+                                                 JoystickDown="OnLeftJoystickDown" JoystickMove="OnLeftJoystickMove" JoystickUp="OnLeftJoystickUp" />
+                            <js:VirtualJoystick x:Name="RightJoystick" Grid.Column="2" Mode="Fixed" Shape="Circle"
+                                                 VerticalAlignment="Center" IsEnabled="{Binding !IsProgramLocked}"
+                                                 ToolTip.Tip="Правый джойстик: пан и наклон камеры (Z · A)"
+                                                 JoystickDown="OnRightJoystickDown" JoystickMove="OnRightJoystickMove" JoystickUp="OnRightJoystickUp" />
+                        </Grid>
                     </Grid>
                 </Border>
 
