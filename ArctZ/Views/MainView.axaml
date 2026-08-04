@@ -87,19 +87,28 @@
                     BorderBrush="{StaticResource HudBorderBrush}"
                     BorderThickness="0,0,0,1"
                     Padding="12,10">
-                <WrapPanel x:Name="HeaderPanel" ItemSpacing="12" LineSpacing="8">
-                    <ContentControl x:Name="ConnectionStatus" Content="{Binding Connection}" />
-                    <WrapPanel x:Name="PlaybackButtons" ItemSpacing="8" LineSpacing="8" VerticalAlignment="Center">
-                        <Button Classes="primary" Content="Пуск" Command="{Binding PlayCommand}" />
-                        <Button Content="Пауза" Command="{Binding PauseCommand}" />
-                        <Button Classes="danger" Content="Стоп" Command="{Binding StopCommand}" />
-                        <Border Background="{StaticResource HudPanelElevatedBrush}" BorderBrush="{StaticResource HudBorderStrongBrush}"
-                                BorderThickness="1" Padding="10,6" Margin="8,0,0,0">
+                <StackPanel x:Name="HeaderPanel" Spacing="8">
+                    <Grid x:Name="HeaderStatusRow" ColumnDefinitions="*,Auto">
+                        <ContentControl x:Name="ConnectionStatus" Grid.Column="0" Content="{Binding Connection}" />
+                        <Border Grid.Column="1" Background="{StaticResource HudPanelElevatedBrush}" BorderBrush="{StaticResource HudBorderStrongBrush}"
+                                BorderThickness="1" Padding="10,6" Margin="8,0,0,0" VerticalAlignment="Center">
                             <TextBlock Classes="telemetry" FontSize="14" Text="{Binding PlaybackStateLabel}" />
                         </Border>
-                        <Button Content="Лог G-code" Command="{Binding Connection.ToggleGCodeLogCommand}" />
-                    </WrapPanel>
-                </WrapPanel>
+                    </Grid>
+                    <ScrollViewer x:Name="HeaderActionsScroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                        <StackPanel x:Name="HeaderActions" Orientation="Horizontal" Spacing="8">
+                            <Button Classes="header-action" Content="Homing" Command="{Binding Connection.HomeCommand}" />
+                            <Button Classes="danger header-action" Content="Сброс аварии" Command="{Binding Connection.ResetAlarmCommand}" />
+                            <Button Classes="header-action" Content="Отключить" Command="{Binding Connection.DisconnectCommand}" />
+                            <Border Classes="header-divider" />
+                            <Button Classes="primary header-action" Content="Пуск" Command="{Binding PlayCommand}" />
+                            <Button Classes="header-action" Content="Пауза" Command="{Binding PauseCommand}" />
+                            <Button Classes="danger header-action" Content="Стоп" Command="{Binding StopCommand}" />
+                            <Border Classes="header-divider" />
+                            <Button Classes="header-action" Content="Лог G-code" Command="{Binding Connection.ToggleGCodeLogCommand}" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </StackPanel>
             </Border>
 
             <!-- A single Grid is the DockPanel's true last child so it receives the fill slot;

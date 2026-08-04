@@ -33,8 +33,5 @@
             <TextBlock Foreground="{StaticResource HudWarningBrush}" Text="{Binding ErrorMessage}" />
         </Border>
 
-        <Button Content="Homing" Command="{Binding HomeCommand}" />
-        <Button Classes="danger" Content="Сброс аварии" Command="{Binding ResetAlarmCommand}" />
-        <Button Content="Отключить" Command="{Binding DisconnectCommand}" />
     </WrapPanel>
 </UserControl>
