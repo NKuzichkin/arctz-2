@@ -11,6 +11,9 @@ namespace ArctZ
     /// variants — App.axaml declares those as direct child keys of the root
     /// resource dictionary, which take priority over anything added later via
     /// MergedDictionaries, so they can only be overridden by reassigning them.
+    /// The palette is restricted to black, white, and the two approved greys
+    /// (#CCCCCC, #666666); Light1/Light2 collapse to #CCCCCC and Light3 uses
+    /// the darker #666666 so it still reads as distinct.
     /// </summary>
     public static class PrintTheme
     {
@@ -22,8 +25,8 @@ namespace ArctZ
             });
 
             resources["SystemAccentColor"] = Colors.Black;
-            resources["SystemAccentColorLight1"] = Color.Parse("#333333");
-            resources["SystemAccentColorLight2"] = Color.Parse("#4D4D4D");
+            resources["SystemAccentColorLight1"] = Color.Parse("#CCCCCC");
+            resources["SystemAccentColorLight2"] = Color.Parse("#CCCCCC");
             resources["SystemAccentColorLight3"] = Color.Parse("#666666");
             resources["SystemAccentColorDark1"] = Colors.Black;
             resources["SystemAccentColorDark2"] = Colors.Black;
