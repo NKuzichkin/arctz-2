@@ -23,6 +23,16 @@ namespace ArctZ.Views
         private const double MainViewChromeHeight = 166;
         private const double NarrowProgramPanelMinHeight = 160;
 
+        // Новая геометрия для единой (не breakpoint-based) раскладки — см. ComputeJoystickRadius.
+        private const double MinRadius = 50;
+        private const double MaxRadius = 110;
+        private const double CenterGap = 24;
+        private const double ContentBorderVerticalChrome = 26;
+        private const double ContentGridVerticalMargin = 40;
+        private const double JoystickBarTopMargin = 12;
+        private const double ProgramPanelMinHeight = 160;
+        private const double HeaderFallbackHeight = 44;
+
         public MainView()
         {
             InitializeComponent();
@@ -93,6 +103,21 @@ namespace ArctZ.Views
             var heightRadius = Math.Max(NarrowJoystickMinRadius, joystickRowBudget / 2);
 
             return Math.Min(widthRadius, heightRadius);
+        }
+
+        internal static double ComputeJoystickRadius(double mainViewWidth, double mainViewHeight, double headerHeight)
+        {
+            var effectiveHeaderHeight = headerHeight > 0 ? headerHeight : HeaderFallbackHeight;
+
+            var contentGridWidth = mainViewWidth - ContentGridChromeWidth;
+            var widthRadius = (contentGridWidth - CenterGap) / 4;
+
+            var contentGridHeight = mainViewHeight - effectiveHeaderHeight - ContentBorderVerticalChrome
+                - ContentGridVerticalMargin - JoystickBarTopMargin;
+            var joystickRowBudget = contentGridHeight - ProgramPanelMinHeight;
+            var heightRadius = joystickRowBudget / 2;
+
+            return Math.Clamp(Math.Min(widthRadius, heightRadius), MinRadius, MaxRadius);
         }
 
         private void OnLeftJoystickDown(object? sender, JoystickEventArgs e) => ViewModel?.OnLeftJoystickDown(e);
