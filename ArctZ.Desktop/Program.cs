@@ -16,6 +16,8 @@ namespace ArctZ.Desktop
         [STAThread]
         public static void Main(string[] args)
         {
+            App.PrintMode = PrintThemeOptions.IsPrintMode(args);
+
             var services = new ServiceCollection();
             services.AddArctZCore();
             services.AddSingleton<IDeviceTransport, DesktopSerialTransport>();
