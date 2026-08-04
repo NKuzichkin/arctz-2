@@ -20,6 +20,19 @@
             </EdgePanel>
         </HeaderedContainer>
 
+        <Border Background="{StaticResource HudPanelElevatedBrush}" BorderBrush="{StaticResource HudBorderStrongBrush}"
+                BorderThickness="1" Padding="10,6" IsVisible="{Binding !IsConnectionModalVisible}">
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <TextBlock Classes="telemetry" FontSize="13" Text="{Binding MachineStateLabel}" />
+                <TextBlock Classes="telemetry" FontSize="13" Text="{Binding PositionLabel}" />
+            </StackPanel>
+        </Border>
+
+        <Border IsVisible="{Binding HasError}" Background="{StaticResource HudWarningDimBrush}"
+                BorderBrush="{StaticResource HudWarningBrush}" BorderThickness="1" Padding="10,6">
+            <TextBlock Foreground="{StaticResource HudWarningBrush}" Text="{Binding ErrorMessage}" />
+        </Border>
+
         <Button Content="Homing" Command="{Binding HomeCommand}" />
         <Button Classes="danger" Content="Сброс аварии" Command="{Binding ResetAlarmCommand}" />
         <Button Content="Отключить" Command="{Binding DisconnectCommand}" />

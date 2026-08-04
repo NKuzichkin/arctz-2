@@ -52,6 +52,14 @@ public partial class ProgramViewModel : ViewModelBase
         _storage = storage;
         _compiler = compiler;
         Connection.PropertyChanged += OnConnectionPropertyChanged;
+
+        // Add/Remove/Move/Reset all need to re-evaluate whether a given point
+        // is still first/last, which MoveKeyPointUp/Down's CanExecute depends on.
+        KeyPoints.CollectionChanged += (_, _) =>
+        {
+            MoveKeyPointUpCommand.NotifyCanExecuteChanged();
+            MoveKeyPointDownCommand.NotifyCanExecuteChanged();
+        };
     }
 
     [RelayCommand]
@@ -218,7 +226,9 @@ public partial class ProgramViewModel : ViewModelBase
         await RefreshLibraryAsync();
     }
 
-    [RelayCommand]
+    private bool HasKnownPose() => Connection.Session?.DeviceStatus?.WPos is not null;
+
+    [RelayCommand(CanExecute = nameof(HasKnownPose))]
     private void CaptureKeyPoint()
     {
         var pose = Connection.Session?.DeviceStatus?.WPos;
@@ -240,8 +250,14 @@ public partial class ProgramViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void RemoveKeyPoint(KeyPoint keyPoint)
+    private async Task RemoveKeyPointAsync(KeyPoint keyPoint)
     {
+        var confirmed = await ConfirmAsync($"Удалить точку «{keyPoint.Label}»? Действие нельзя отменить.");
+        if (!confirmed)
+        {
+            return;
+        }
+
         var index = KeyPoints.IndexOf(keyPoint);
         if (index < 0)
         {
@@ -255,6 +271,36 @@ public partial class ProgramViewModel : ViewModelBase
         {
             SelectedKeyPoint = null;
         }
+    }
+
+    private bool CanMoveKeyPointUp(KeyPoint? keyPoint) => keyPoint is not null && KeyPoints.IndexOf(keyPoint) > 0;
+
+    [RelayCommand(CanExecute = nameof(CanMoveKeyPointUp))]
+    private void MoveKeyPointUp(KeyPoint keyPoint)
+    {
+        var index = KeyPoints.IndexOf(keyPoint);
+        if (index <= 0)
+        {
+            return;
+        }
+
+        KeyPoints.Move(index, index - 1);
+        RenumberKeyPoints();
+    }
+
+    private bool CanMoveKeyPointDown(KeyPoint? keyPoint) => keyPoint is not null && KeyPoints.IndexOf(keyPoint) < KeyPoints.Count - 1;
+
+    [RelayCommand(CanExecute = nameof(CanMoveKeyPointDown))]
+    private void MoveKeyPointDown(KeyPoint keyPoint)
+    {
+        var index = KeyPoints.IndexOf(keyPoint);
+        if (index < 0 || index >= KeyPoints.Count - 1)
+        {
+            return;
+        }
+
+        KeyPoints.Move(index, index + 1);
+        RenumberKeyPoints();
     }
 
     private void RenumberKeyPoints()
@@ -281,7 +327,9 @@ public partial class ProgramViewModel : ViewModelBase
         KeyPointEditor = null;
     }
 
-    [RelayCommand]
+    private bool HasKnownPoseForKeyPoint(KeyPoint? _) => HasKnownPose();
+
+    [RelayCommand(CanExecute = nameof(HasKnownPoseForKeyPoint))]
     private void FillKeyPointFromCurrentPosition(KeyPoint keyPoint)
     {
         var pose = Connection.Session?.DeviceStatus?.WPos;
@@ -299,7 +347,9 @@ public partial class ProgramViewModel : ViewModelBase
         KeyPoints[index] = keyPoint with { Pose = pose.Value };
     }
 
-    [RelayCommand]
+    private bool IsConnected(KeyPoint? _) => Connection.Session is not null;
+
+    [RelayCommand(CanExecute = nameof(IsConnected))]
     private async Task MoveMachineToKeyPointAsync(KeyPoint keyPoint)
     {
         var session = Connection.Session;
@@ -392,12 +442,26 @@ public partial class ProgramViewModel : ViewModelBase
     [NotifyCanExecuteChangedFor(nameof(PauseCommand))]
     [NotifyCanExecuteChangedFor(nameof(StopCommand))]
     [NotifyPropertyChangedFor(nameof(IsProgramLocked))]
+    [NotifyPropertyChangedFor(nameof(PlaybackStateLabel))]
     private PlaybackState _playbackState = PlaybackState.Idle;
 
     public bool IsProgramLocked => PlaybackState is PlaybackState.Running or PlaybackState.Paused;
 
+    public string PlaybackStateLabel => PlaybackState switch
+    {
+        PlaybackState.Idle => "Ожидание",
+        PlaybackState.Running => "Выполняется",
+        PlaybackState.Paused => "Пауза",
+        PlaybackState.Completed => "Завершено",
+        PlaybackState.Faulted => "Ошибка",
+        PlaybackState.Stopped => "Остановлено",
+        _ => "—",
+    };
+
     partial void OnPlaybackStateChanged(PlaybackState value)
     {
+        Connection.IsPlaybackLocked = IsProgramLocked;
+
         if (IsProgramLocked && (_leftActive || _rightActive))
         {
             _leftActive = false;
@@ -409,18 +473,44 @@ public partial class ProgramViewModel : ViewModelBase
     }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SegmentProgressLabel))]
     private int? _currentSegmentIndex;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SegmentProgressLabel))]
     private double _segmentProgress;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SegmentProgressLabel))]
+    private int _totalSegments;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(FaultedMessage))]
     private int? _faultedAtSegmentIndex;
+
+    // PlayAsync only resumes from a mid-program pause (PlaybackState.Paused);
+    // from Faulted it recompiles and redispatches the whole program from the
+    // first key point, so the recovery message needs to say that explicitly
+    // rather than leave "what does Play do now" to the operator to guess.
+    public string? FaultedMessage => FaultedAtSegmentIndex is { } index
+        ? $"Ошибка на сегменте {index + 1} из {TotalSegments}. «Пуск» запустит программу заново с начала."
+        : null;
+
+    public string SegmentProgressLabel => CurrentSegmentIndex is { } index && TotalSegments > 0
+        ? $"{index + 1} из {TotalSegments}  ({SegmentProgress:P0})"
+        : "—";
 
     private IDeviceSession? _subscribedSession;
 
     private void OnConnectionPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(ConnectionViewModel.DeviceStatus))
+        {
+            CaptureKeyPointCommand.NotifyCanExecuteChanged();
+            FillKeyPointFromCurrentPositionCommand.NotifyCanExecuteChanged();
+            return;
+        }
+
         if (e.PropertyName != nameof(ConnectionViewModel.Session))
         {
             return;
@@ -437,6 +527,10 @@ public partial class ProgramViewModel : ViewModelBase
         {
             _subscribedSession.ConnectionStateChanged += OnSessionConnectionStateChanged;
         }
+
+        CaptureKeyPointCommand.NotifyCanExecuteChanged();
+        FillKeyPointFromCurrentPositionCommand.NotifyCanExecuteChanged();
+        MoveMachineToKeyPointCommand.NotifyCanExecuteChanged();
     }
 
     private void OnSessionConnectionStateChanged()
@@ -511,6 +605,7 @@ public partial class ProgramViewModel : ViewModelBase
         CurrentSegmentIndex = null;
         SegmentProgress = 0;
         FaultedAtSegmentIndex = null;
+        TotalSegments = Math.Max(0, KeyPoints.Count - 1);
 
         var dispatched = new (CompiledStep Step, Task<CommandResult> Completion)[steps.Count];
         for (var i = 0; i < steps.Count; i++)

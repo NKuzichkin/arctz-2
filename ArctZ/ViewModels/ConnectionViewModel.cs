@@ -33,6 +33,30 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
 
     [Reactive] private bool isGCodeLogOpen;
 
+    // Set by ProgramViewModel to mirror its IsProgramLocked. Homing/Disconnect
+    // move or tear down the link out from under an in-flight program dispatch
+    // loop (ProgramViewModel.PlayAsync captures Connection.Session per step),
+    // so they must be unavailable while a program is Running/Paused.
+    [Reactive] private bool isPlaybackLocked;
+
+    // Mirrors Session.DeviceStatus the same way ConnectionState mirrors
+    // Session.ConnectionState — see the comment above for why a direct
+    // "Session.DeviceStatus" binding wouldn't update live.
+    [Reactive] private DeviceStatus? deviceStatus;
+
+    // LastError mirrors Session.LastError (set right before ConnectionStateChanged
+    // fires — see DeviceSession.OnTransportDisconnected — so it rides the same
+    // subscription). LastAlarmCode has no session-side property to mirror; it's
+    // set purely from the AlarmTriggered event and cleared on reset/reconnect.
+    [Reactive] private string? lastError;
+    [Reactive] private int? lastAlarmCode;
+
+    public bool HasError => !string.IsNullOrEmpty(LastError) || LastAlarmCode is not null;
+
+    public string? ErrorMessage => LastAlarmCode is { } code
+        ? $"Авария FluidNC: код {code}"
+        : LastError;
+
     public bool IsConnectionModalVisible => Session is null || ConnectionState != ConnectionState.Connected;
 
     public string ConnectionStateLabel => ConnectionState switch
@@ -43,6 +67,21 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
         ConnectionState.Reconnecting => "Переподключение…",
         _ => "—",
     };
+
+    public string MachineStateLabel => DeviceStatus?.State switch
+    {
+        MachineState.Idle => "Простой",
+        MachineState.Run => "Выполнение",
+        MachineState.Jog => "Джог",
+        MachineState.Hold => "Удержание",
+        MachineState.Home => "Homing",
+        MachineState.Alarm => "АВАРИЯ",
+        _ => "—",
+    };
+
+    public string PositionLabel => DeviceStatus is { } status
+        ? $"X {status.WPos.X:0.00}  Y {status.WPos.Y:0.00}  Z {status.WPos.Z:0.00}  A {status.WPos.A:0.00}"
+        : "—";
 
     public ObservableCollection<ConnectionEndpoint> AvailableEndpoints { get; } = new()
     {
@@ -74,13 +113,15 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
             (endpoint, state) => endpoint is not null &&
                 state is not (ConnectionState.Connecting or ConnectionState.Reconnecting));
 
+        var notPlaybackLocked = this.WhenAnyValue(x => x.IsPlaybackLocked, locked => !locked);
+
         // Track() subscribes ThrownExceptions (an unobserved command fault would otherwise crash
         // the process — see ReactiveViewModelBase.Track) and registers the command for disposal.
         ConnectCommand = Track(ReactiveCommand.CreateFromTask(ConnectAsync, canConnect)
             .Enhance(text: "Подключить", name: "ConnectCommand"));
-        DisconnectCommand = Track(ReactiveCommand.CreateFromTask(DisconnectAsync)
+        DisconnectCommand = Track(ReactiveCommand.CreateFromTask(DisconnectAsync, notPlaybackLocked)
             .Enhance(text: "Отключить", name: "DisconnectCommand"));
-        HomeCommand = Track(ReactiveCommand.CreateFromTask(HomeAsync)
+        HomeCommand = Track(ReactiveCommand.CreateFromTask(HomeAsync, notPlaybackLocked)
             .Enhance(text: "Homing", name: "HomeCommand"));
         ResetAlarmCommand = Track(ReactiveCommand.CreateFromTask(ResetAlarmAsync)
             .Enhance(text: "Сброс аварии", name: "ResetAlarmCommand"));
@@ -94,24 +135,63 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
         // Session changes to a new value or null, replacing the old
         // OnSessionChanged-based subscribe/unsubscribe dance.
         this.WhenAnyValue(x => x.Session)
-            .Do(s => ConnectionState = s?.ConnectionState ?? ConnectionState.Disconnected)
+            .Do(s =>
+            {
+                ConnectionState = s?.ConnectionState ?? ConnectionState.Disconnected;
+                LastError = s?.LastError;
+                LastAlarmCode = null;
+            })
             .Select(s => s is null
                 ? Observable.Empty<Unit>()
                 : Observable.FromEvent(h => s.ConnectionStateChanged += h, h => s.ConnectionStateChanged -= h)
                     .ObserveOn(RxSchedulers.MainThreadScheduler))
             .Switch()
-            .Subscribe(_ => ConnectionState = Session?.ConnectionState ?? ConnectionState.Disconnected)
+            .Subscribe(_ =>
+            {
+                ConnectionState = Session?.ConnectionState ?? ConnectionState.Disconnected;
+                LastError = Session?.LastError;
+            })
+            .DisposeWith(Disposables);
+
+        this.WhenAnyValue(x => x.Session)
+            .Select(s => s is null
+                ? Observable.Empty<int>()
+                : Observable.FromEvent<Action<int>, int>(
+                        onNext => code => onNext(code),
+                        h => s.AlarmTriggered += h,
+                        h => s.AlarmTriggered -= h)
+                    .ObserveOn(RxSchedulers.MainThreadScheduler))
+            .Switch()
+            .Subscribe(code => LastAlarmCode = code)
+            .DisposeWith(Disposables);
+
+        // Same mirroring for DeviceStatus (position/machine state), driven by
+        // DeviceStatusChanged instead — fires on every status report, so this
+        // is what keeps the coordinate/state readout in the header live.
+        this.WhenAnyValue(x => x.Session)
+            .Do(s => DeviceStatus = s?.DeviceStatus)
+            .Select(s => s is null
+                ? Observable.Empty<Unit>()
+                : Observable.FromEvent(h => s.DeviceStatusChanged += h, h => s.DeviceStatusChanged -= h)
+                    .ObserveOn(RxSchedulers.MainThreadScheduler))
+            .Switch()
+            .Subscribe(_ => DeviceStatus = Session?.DeviceStatus)
             .DisposeWith(Disposables);
 
         // IsConnectionModalVisible/ConnectionStateLabel are plain computed
         // properties (no ObservableAsPropertyHelper) — re-raise their
         // INotifyPropertyChanged notifications whenever a dependency changes,
         // same intent as CommunityToolkit's [NotifyPropertyChangedFor] before.
-        this.WhenAnyValue(x => x.Session, x => x.ConnectionState, (s, cs) => (s, cs))
+        this.WhenAnyValue(x => x.Session, x => x.ConnectionState, x => x.DeviceStatus, x => x.LastError, x => x.LastAlarmCode,
+                (s, cs, ds, le, ac) => (s, cs, ds, le, ac))
             .Subscribe(_ =>
             {
                 this.RaisePropertyChanged(nameof(IsConnectionModalVisible));
                 this.RaisePropertyChanged(nameof(ConnectionStateLabel));
+                this.RaisePropertyChanged(nameof(MachineStateLabel));
+                this.RaisePropertyChanged(nameof(PositionLabel));
+                this.RaisePropertyChanged(nameof(HasError));
+                this.RaisePropertyChanged(nameof(ErrorMessage));
             })
             .DisposeWith(Disposables);
     }
@@ -198,5 +278,15 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
 
     private Task HomeAsync() => Session?.HomeAsync() ?? Task.CompletedTask;
 
-    private Task ResetAlarmAsync() => Session?.ResetAlarmAsync() ?? Task.CompletedTask;
+    private async Task ResetAlarmAsync()
+    {
+        if (Session is null)
+        {
+            return;
+        }
+
+        await Session.ResetAlarmAsync();
+        LastAlarmCode = null;
+        LastError = null;
+    }
 }

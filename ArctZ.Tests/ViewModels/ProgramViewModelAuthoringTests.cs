@@ -83,7 +83,10 @@ public class ProgramViewModelAuthoringTests
         }
 
         var middle = vm.KeyPoints[1];
-        vm.RemoveKeyPointCommand.Execute(middle);
+        var removeTask = vm.RemoveKeyPointCommand.ExecuteAsync(middle);
+        Assert.NotNull(vm.PendingConfirmation);
+        vm.ConfirmYesCommand.Execute(null);
+        await removeTask;
 
         Assert.Equal(2, vm.KeyPoints.Count);
         Assert.DoesNotContain(middle, vm.KeyPoints);

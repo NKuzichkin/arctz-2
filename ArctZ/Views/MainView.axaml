@@ -132,12 +132,12 @@
                 <Grid x:Name="HeaderGrid" ColumnDefinitions="*,Auto">
                     <ContentControl x:Name="ConnectionStatus" Content="{Binding Connection}" />
                     <WrapPanel x:Name="PlaybackButtons" ItemSpacing="8" LineSpacing="8" VerticalAlignment="Center">
-                        <Button Classes="primary" Content="Play" Command="{Binding PlayCommand}" />
+                        <Button Classes="primary" Content="Пуск" Command="{Binding PlayCommand}" />
                         <Button Content="Пауза" Command="{Binding PauseCommand}" />
                         <Button Classes="danger" Content="Стоп" Command="{Binding StopCommand}" />
                         <Border Background="{StaticResource HudPanelElevatedBrush}" BorderBrush="{StaticResource HudBorderStrongBrush}"
                                 BorderThickness="1" Padding="10,6" Margin="8,0,0,0">
-                            <TextBlock Classes="telemetry" FontSize="14" Text="{Binding PlaybackState}" />
+                            <TextBlock Classes="telemetry" FontSize="14" Text="{Binding PlaybackStateLabel}" />
                         </Border>
                         <Button Content="Лог G-code" Command="{Binding Connection.ToggleGCodeLogCommand}" />
                     </WrapPanel>
@@ -156,12 +156,15 @@
                     <Grid x:Name="ContentGrid" ColumnDefinitions="Auto,*,Auto" Margin="20">
                         <js:VirtualJoystick x:Name="LeftJoystick" Mode="Fixed" Shape="Circle"
                                              VerticalAlignment="Center" IsEnabled="{Binding !IsProgramLocked}"
+                                             ToolTip.Tip="Левый джойстик: подъём и поворот стрелы (X · Y)"
                                              JoystickDown="OnLeftJoystickDown" JoystickMove="OnLeftJoystickMove" JoystickUp="OnLeftJoystickUp" />
 
                         <ScrollViewer x:Name="ProgramPanel" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                         <StackPanel Spacing="10">
                             <StackPanel Spacing="10" IsEnabled="{Binding !IsProgramLocked}">
                                 <TextBlock Classes="section-heading" Text="ПРОГРАММА" />
+                                <TextBlock Opacity="0.6" FontSize="12" TextWrapping="Wrap"
+                                           Text="Левый джойстик — подъём/поворот стрелы (X·Y). Правый — пан/наклон камеры (Z·A)." />
                                 <Grid ColumnDefinitions="*,Auto">
                                     <TextBlock Grid.Column="0" Classes="telemetry" FontSize="16" VerticalAlignment="Center"
                                                TextTrimming="CharacterEllipsis" Text="{Binding ProgramName}" />
@@ -176,54 +179,49 @@
                                         </Button.Flyout>
                                     </Button>
                                 </Grid>
-                                <Button Classes="primary" Content="Захватить точку" Command="{Binding CaptureKeyPointCommand}" HorizontalAlignment="Left" />
+                                <Button Classes="primary" Content="Захватить точку" Command="{Binding CaptureKeyPointCommand}" HorizontalAlignment="Left"
+                                        ToolTip.Tip="Нужно подключение к станку и известная текущая позиция" />
                                 <TextBlock Classes="section-heading" Text="ТОЧКИ" Margin="0,8,0,0" />
-                                <ListBox x:Name="KeyPointsList" ItemsSource="{Binding KeyPoints}" SelectedItem="{Binding SelectedKeyPoint}" Height="320">
-                                    <ListBox.Styles>
-                                        <Style Selector="ListBoxItem">
-                                            <Setter Property="Padding" Value="0" />
-                                            <Setter Property="BorderThickness" Value="0" />
-                                            <Setter Property="Margin" Value="0,0,0,8" />
-                                        </Style>
-                                        <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
-                                            <Setter Property="BorderThickness" Value="0" />
-                                        </Style>
-                                    </ListBox.Styles>
-                                    <ListBox.ItemTemplate>
+                                <ItemsControl x:Name="KeyPointsList" ItemsSource="{Binding KeyPoints}"
+                                              ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel ItemSpacing="8" LineSpacing="8" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="program:KeyPoint">
-                                            <Border Background="{StaticResource HudPanelElevatedBrush}"
+                                            <Button Background="{StaticResource HudPanelElevatedBrush}"
                                                     BorderBrush="{StaticResource HudBorderBrush}" BorderThickness="1"
-                                                    Padding="14,12">
-                                                <Grid ColumnDefinitions="*,Auto">
-                                                    <StackPanel Grid.Column="0" Spacing="4">
-                                                        <TextBlock Classes="telemetry" FontSize="16" Text="{Binding Label}" />
-                                                        <TextBlock Classes="telemetry" FontSize="13" Opacity="0.7" Text="{Binding Pose}" />
-                                                    </StackPanel>
-                                                    <Button Grid.Column="1" Content="⋮" Padding="8,2" VerticalAlignment="Center">
-                                                        <Button.Flyout>
-                                                            <MenuFlyout>
-                                                                <MenuItem Header="Изменить" CommandParameter="{Binding}"
-                                                                          Command="{Binding ((vm:ProgramViewModel)DataContext).EditKeyPointCommand, ElementName=KeyPointsList}" />
-                                                                <MenuItem Header="На точку" CommandParameter="{Binding}"
-                                                                          Command="{Binding ((vm:ProgramViewModel)DataContext).MoveMachineToKeyPointCommand, ElementName=KeyPointsList}" />
-                                                                <MenuItem Header="Из машины" CommandParameter="{Binding}"
-                                                                          Command="{Binding ((vm:ProgramViewModel)DataContext).FillKeyPointFromCurrentPositionCommand, ElementName=KeyPointsList}" />
-                                                                <MenuItem Header="Удалить" CommandParameter="{Binding}"
-                                                                          Command="{Binding ((vm:ProgramViewModel)DataContext).RemoveKeyPointCommand, ElementName=KeyPointsList}" />
-                                                            </MenuFlyout>
-                                                        </Button.Flyout>
-                                                    </Button>
-                                                </Grid>
-                                            </Border>
+                                                    Padding="14,12" HorizontalContentAlignment="Left">
+                                                <Button.Flyout>
+                                                    <MenuFlyout>
+                                                        <MenuItem Header="На точку" CommandParameter="{Binding}"
+                                                                  ToolTip.Tip="Отправить станок к этой точке"
+                                                                  Command="{Binding ((vm:ProgramViewModel)DataContext).MoveMachineToKeyPointCommand, ElementName=KeyPointsList}" />
+                                                        <MenuItem Header="Изменить" CommandParameter="{Binding}"
+                                                                  Command="{Binding ((vm:ProgramViewModel)DataContext).EditKeyPointCommand, ElementName=KeyPointsList}" />
+                                                        <MenuItem Header="Из машины" CommandParameter="{Binding}"
+                                                                  Command="{Binding ((vm:ProgramViewModel)DataContext).FillKeyPointFromCurrentPositionCommand, ElementName=KeyPointsList}" />
+                                                        <MenuItem Header="Переместить вверх" CommandParameter="{Binding}"
+                                                                  Command="{Binding ((vm:ProgramViewModel)DataContext).MoveKeyPointUpCommand, ElementName=KeyPointsList}" />
+                                                        <MenuItem Header="Переместить вниз" CommandParameter="{Binding}"
+                                                                  Command="{Binding ((vm:ProgramViewModel)DataContext).MoveKeyPointDownCommand, ElementName=KeyPointsList}" />
+                                                        <MenuItem Header="Удалить" CommandParameter="{Binding}"
+                                                                  Command="{Binding ((vm:ProgramViewModel)DataContext).RemoveKeyPointCommand, ElementName=KeyPointsList}" />
+                                                    </MenuFlyout>
+                                                </Button.Flyout>
+                                                <TextBlock Classes="telemetry" FontSize="16" Text="{Binding Label}" />
+                                            </Button>
                                         </DataTemplate>
-                                    </ListBox.ItemTemplate>
-                                </ListBox>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
                             </StackPanel>
 
                             <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" Margin="0,12,0,0"
                                   IsVisible="{Binding IsProgramLocked}">
                                 <TextBlock Grid.Row="0" Grid.Column="0" Classes="section-heading" Text="СЕГМЕНТ" VerticalAlignment="Center" Margin="0,0,12,0" />
-                                <TextBlock Grid.Row="0" Grid.Column="1" Classes="telemetry" FontSize="16" Text="{Binding CurrentSegmentIndex}" />
+                                <TextBlock Grid.Row="0" Grid.Column="1" Classes="telemetry" FontSize="16" Text="{Binding SegmentProgressLabel}" />
                                 <ProgressBar Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,8,0,0"
                                              Minimum="0" Maximum="1" Value="{Binding SegmentProgress}" />
                             </Grid>
@@ -231,14 +229,15 @@
                             <Border IsVisible="{Binding FaultedAtSegmentIndex, Converter={x:Static ObjectConverters.IsNotNull}}"
                                     Background="{StaticResource HudWarningDimBrush}" BorderBrush="{StaticResource HudWarningBrush}"
                                     BorderThickness="1" Padding="12,8" Margin="0,12,0,0">
-                                <TextBlock Foreground="{StaticResource HudWarningBrush}"
-                                           Text="{Binding FaultedAtSegmentIndex, StringFormat='Ошибка на сегменте: {0}'}" />
+                                <TextBlock Foreground="{StaticResource HudWarningBrush}" TextWrapping="Wrap"
+                                           Text="{Binding FaultedMessage}" />
                             </Border>
                         </StackPanel>
                         </ScrollViewer>
 
                         <js:VirtualJoystick x:Name="RightJoystick" Mode="Fixed" Shape="Circle"
                                              VerticalAlignment="Center" IsEnabled="{Binding !IsProgramLocked}"
+                                             ToolTip.Tip="Правый джойстик: пан и наклон камеры (Z · A)"
                                              JoystickDown="OnRightJoystickDown" JoystickMove="OnRightJoystickMove" JoystickUp="OnRightJoystickUp" />
                     </Grid>
                 </Border>
