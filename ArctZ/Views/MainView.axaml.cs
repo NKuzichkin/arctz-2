@@ -30,7 +30,8 @@ namespace ArctZ.Views
         public MainView()
         {
             InitializeComponent();
-            SizeChanged += OnSizeChanged;
+            SizeChanged += OnLayoutSizeChanged;
+            HeaderBorder.SizeChanged += OnLayoutSizeChanged;   // header can re-wrap without resizing MainView
             DataContextChanged += OnDataContextChanged;
         }
 
@@ -55,9 +56,11 @@ namespace ArctZ.Views
             }
         }
 
-        private void OnSizeChanged(object? sender, SizeChangedEventArgs e)
+        private void OnLayoutSizeChanged(object? sender, SizeChangedEventArgs e) => UpdateJoystickRadius();
+
+        private void UpdateJoystickRadius()
         {
-            var radius = ComputeJoystickRadius(e.NewSize.Width, e.NewSize.Height, HeaderBorder.Bounds.Height);
+            var radius = ComputeJoystickRadius(Bounds.Width, Bounds.Height, HeaderBorder.Bounds.Height);
             LeftJoystick.Radius = radius;
             RightJoystick.Radius = radius;
         }
