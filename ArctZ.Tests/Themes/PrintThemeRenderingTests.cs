@@ -69,6 +69,10 @@ public class PrintThemeRenderingTests
                 {
                     resources[key] = value;
                 }
+                else
+                {
+                    resources.Remove(key);
+                }
             }
         }
     }
