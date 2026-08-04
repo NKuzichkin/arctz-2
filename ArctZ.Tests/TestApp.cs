@@ -13,16 +13,21 @@ namespace ArctZ.Tests;
 /// container and constructs MainWindow/MainView on startup, none of which a
 /// control-level test (e.g. VirtualJoystick) needs. It merges just enough —
 /// the HUD color palette and the VirtualJoystick ControlTheme — for
-/// VirtualJoystick's template to apply without unresolved StaticResource
+/// VirtualJoystick's template to apply without unresolved resource
 /// lookups.
 /// </summary>
 public sealed class TestApp : Application
 {
     public override void Initialize()
     {
-        // Order matters: VirtualJoystick.axaml's StaticResource lookups (HudAccentColor
-        // etc.) resolve eagerly when the style is added, so the color dictionary must
-        // already be merged in by that point.
+        // Order matters: Colors.axaml must already be merged in by the time
+        // HudControls.axaml's styles are added below, because HudControls.axaml still
+        // uses eager StaticResource lookups for its font-related keys (HudFontBody,
+        // HudFontMono, HudFontSizeBody, HudFontSizeTelemetry) that resolve when the
+        // style is added. VirtualJoystick.axaml and HudControls.axaml's own
+        // Hud*Color/Hud*Brush references use DynamicResource and re-resolve live, so
+        // they don't strictly need this ordering, but keeping Colors.axaml first for
+        // all of them avoids relying on that distinction.
         Resources.MergedDictionaries.Add(new ResourceInclude(new Uri("avares://ArctZ.Tests/"))
         {
             Source = new Uri("avares://ArctZ/Themes/Colors.axaml"),

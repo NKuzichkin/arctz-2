@@ -4,7 +4,10 @@
              x:Class="ArctZ.App"
              RequestedThemeVariant="Dark">
              <!-- Fixed to Dark: the HUD cockpit palette is designed against a near-black
-                  base and doesn't have a light counterpart. -->
+                  base and doesn't have a light counterpart. Exception: when launched with
+                  the print theme flag (see PrintThemeOptions.cs), App.axaml.cs's
+                  Initialize() reassigns this to Light at runtime and swaps in the
+                  monochrome print palette (see PrintTheme.cs). -->
 
     <Application.DataTemplates>
         <DataTypeViewLocator />
