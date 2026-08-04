@@ -98,4 +98,33 @@
     </Setter>
   </Style>
 
+  <!-- Print theme (Window.print, set by App when launched with the print theme flag, "theme=print"):
+       the ambient glow, blur, and drop-shadow read as a grey smear on
+       monochrome hardcopy even once their color resolves to black via
+       PrintColors.axaml, so print mode drops them outright instead of
+       recoloring them. The base/knob strokes get a fully opaque brush since
+       their template strokes are intentionally translucent (Opacity 0.3-0.85)
+       for the dark HUD look, which would read as pale grey on a white page. -->
+  <Style Selector="Window.print local|VirtualJoystick /template/ Ellipse#PART_Glow">
+    <Setter Property="IsVisible" Value="False" />
+  </Style>
+
+  <Style Selector="Window.print local|VirtualJoystick /template/ Ellipse#PART_Base">
+    <Setter Property="Effect" Value="{x:Null}" />
+    <Setter Property="Stroke" Value="{StaticResource HudBorderStrongBrush}" />
+  </Style>
+
+  <Style Selector="Window.print local|VirtualJoystick /template/ Ellipse#PART_Knob">
+    <Setter Property="Effect" Value="{x:Null}" />
+    <Setter Property="Stroke" Value="{StaticResource HudBorderStrongBrush}" />
+  </Style>
+
+  <Style Selector="Window.print local|VirtualJoystick:active /template/ Ellipse#PART_Base">
+    <Setter Property="Stroke" Value="{StaticResource HudBorderStrongBrush}" />
+  </Style>
+
+  <Style Selector="Window.print local|VirtualJoystick:active /template/ Ellipse#PART_Knob">
+    <Setter Property="Effect" Value="{x:Null}" />
+  </Style>
+
 </Styles>
