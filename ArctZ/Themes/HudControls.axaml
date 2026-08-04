@@ -104,4 +104,12 @@
     <Setter Property="CornerRadius" Value="3" />
   </Style>
 
+  <!-- Print theme (Window.print, set by App when launched with theme=print):
+       primary and danger buttons both resolve to black/grey once accent and
+       warning colors collapse to the monochrome palette, so danger is told
+       apart by a heavier border instead of a color. -->
+  <Style Selector="Window.print Button.danger">
+    <Setter Property="BorderThickness" Value="2" />
+  </Style>
+
 </Styles>

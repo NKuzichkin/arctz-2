@@ -32,6 +32,11 @@ public sealed class TestApp : Application
         {
             Source = new Uri("avares://ArctZ/Themes/VirtualJoystick.axaml"),
         });
+
+        Styles.Add(new StyleInclude(new Uri("avares://ArctZ.Tests/"))
+        {
+            Source = new Uri("avares://ArctZ/Themes/HudControls.axaml"),
+        });
     }
 }
 
