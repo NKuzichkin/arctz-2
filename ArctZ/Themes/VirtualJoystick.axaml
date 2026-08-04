@@ -5,7 +5,7 @@
   <!-- The Hud*Brush/Hud*Color references below use DynamicResource, not StaticResource:
        this file's Styles (including the template's inline content) are loaded once via
        AvaloniaXamlLoader.Load, before App.axaml.cs conditionally merges the print-theme
-       palette (theme=print), a StaticResource here would permanently bake in the dark
+       palette (theme=print). A StaticResource here would permanently bake in the dark
        HUD color regardless of that flag. -->
   <Style Selector="local|VirtualJoystick">
     <Setter Property="Template">

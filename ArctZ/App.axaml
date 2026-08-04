@@ -64,7 +64,7 @@
 
         <!-- DynamicResource, not StaticResource: Setter values in Application.Styles are
              resolved once when AvaloniaXamlLoader.Load builds this style tree, which runs
-             before App.axaml.cs conditionally merges the print-theme palette, a
+             before App.axaml.cs conditionally merges the print-theme palette. A
              StaticResource here would permanently bake in the dark HUD color regardless
              of the theme=print flag. -->
         <Style Selector="Window">
