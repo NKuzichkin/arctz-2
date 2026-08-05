@@ -53,4 +53,13 @@ public class ProgramViewModelSideMenuTests
         Assert.True(vm.Connection.IsGCodeLogOpen);
         Assert.False(vm.IsSideMenuOpen);
     }
+
+    [Fact]
+    public void OpenGCodeLogCommand_WhenLogAlreadyOpen_LeavesItOpen()
+    {
+        var vm = CreateViewModel();
+        vm.OpenGCodeLogCommand.Execute(null);
+        vm.OpenGCodeLogCommand.Execute(null);
+        Assert.True(vm.Connection.IsGCodeLogOpen);
+    }
 }
