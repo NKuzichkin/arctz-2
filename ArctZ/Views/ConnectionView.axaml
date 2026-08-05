@@ -10,23 +10,14 @@
     </UserControl.Resources>
 
     <WrapPanel ItemSpacing="10" LineSpacing="10" VerticalAlignment="Center">
-        <HeaderedContainer Padding="10,6">
-            <EdgePanel VerticalAlignment="Center">
-                <EdgePanel.StartContent>
-                    <Ellipse Width="8" Height="8" VerticalAlignment="Center"
-                             Fill="{Binding ConnectionState, Converter={StaticResource StateToBrush}}" />
-                </EdgePanel.StartContent>
-                <TextBlock Text="{Binding ConnectionStateLabel}" Margin="8,0,0,0" VerticalAlignment="Center" />
-            </EdgePanel>
-        </HeaderedContainer>
+        <Ellipse Width="8" Height="8" VerticalAlignment="Center"
+                 Fill="{Binding ConnectionState, Converter={StaticResource StateToBrush}}" />
 
-        <Border Background="{StaticResource HudPanelElevatedBrush}" BorderBrush="{StaticResource HudBorderStrongBrush}"
-                BorderThickness="1" Padding="10,6" IsVisible="{Binding !IsConnectionModalVisible}">
-            <StackPanel Orientation="Horizontal" Spacing="10">
-                <TextBlock Classes="telemetry" FontSize="13" Text="{Binding MachineStateLabel}" />
-                <TextBlock Classes="telemetry" FontSize="13" Text="{Binding PositionLabel}" />
-            </StackPanel>
-        </Border>
+        <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center"
+                    IsVisible="{Binding !IsConnectionModalVisible}">
+            <TextBlock Classes="telemetry" FontSize="13" Text="{Binding MachineStateLabel}" />
+            <TextBlock Classes="telemetry" FontSize="13" Text="{Binding PositionLabel}" />
+        </StackPanel>
 
         <Border IsVisible="{Binding HasError}" Background="{StaticResource HudWarningDimBrush}"
                 BorderBrush="{StaticResource HudWarningBrush}" BorderThickness="1" Padding="10,6">
