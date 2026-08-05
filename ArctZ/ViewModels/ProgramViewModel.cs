@@ -454,21 +454,36 @@ public partial class ProgramViewModel : ViewModelBase
     public bool IsProgramLocked => PlaybackState is PlaybackState.Running or PlaybackState.Paused;
 
     // Единый статус станка и программы — приоритет сверху вниз, первое совпадение побеждает.
-    // MachineState.Alarm сюда не входит: авария уже перекрывает экран отдельной блокирующей
-    // модалкой (ConnectionViewModel.IsAlarmModalVisible), StatusLabel под ней всё равно не виден.
-    // MachineState.Hold тоже не проверяется отдельно: единственный путь к нему — FeedHoldAsync()
-    // из PauseAsync/StopAsync, которые уже выставляют Paused/Stopped раньше по списку.
+    // MachineState.Alarm проверяется первым: авария обычно перекрыта отдельной блокирующей
+    // модалкой (ConnectionViewModel.IsAlarmModalVisible), но эта модалка гейтится через
+    // LastAlarmCode (устанавливается только пуш-строкой "ALARM:n"), а не через сам
+    // MachineState.State из статус-репорта — при подключении к уже аварийному станку,
+    // после ResetAlarmAsync (сбрасывает LastAlarmCode оптимистично, не дожидаясь
+    // подтверждения от контроллера) или после смены Session модалка может быть не видна,
+    // пока станок реально ещё в Alarm — тогда только эта ветка сигнализирует об этом.
+    // MachineState.Run проверяется после Home: FluidNC подтверждает G-code-строку по
+    // приёму в буфер, а не по завершению физического движения, так что PlaybackState
+    // уходит в Completed на доли секунды раньше, чем станок реально останавливается —
+    // в этот хвост движения показываем "Выполнение", а не "Завершено".
+    // MachineState.Hold проверяется после Stopped: PauseAsync/StopAsync отправляют
+    // FeedHoldAsync(), и станок остаётся в Hold, пока не придёт ResumeAsync() (следующий
+    // Пуск) — этот Hold переживает автосброс терминальных состояний (Task 3, 4 секунды),
+    // так что без отдельной ветки шапка после автосброса покажет "Ожидание", хотя станок
+    // всё ещё физически удерживается и не двигается.
     public string StatusLabel
     {
         get
         {
+            if (Connection.DeviceStatus?.State == MachineState.Alarm) return "АВАРИЯ";
             if (PlaybackState == PlaybackState.Faulted) return "Ошибка";
             if (PlaybackState == PlaybackState.Running) return "Выполнение";
             if (PlaybackState == PlaybackState.Paused) return "Пауза";
             if (Connection.DeviceStatus?.State == MachineState.Jog) return "Джог";
             if (Connection.DeviceStatus?.State == MachineState.Home) return "Homing";
+            if (Connection.DeviceStatus?.State == MachineState.Run) return "Выполнение";
             if (PlaybackState == PlaybackState.Completed) return "Завершено";
             if (PlaybackState == PlaybackState.Stopped) return "Остановлено";
+            if (Connection.DeviceStatus?.State == MachineState.Hold) return "Удержание";
             return "Ожидание";
         }
     }
