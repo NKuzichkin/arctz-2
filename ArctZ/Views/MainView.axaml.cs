@@ -10,13 +10,13 @@ namespace ArctZ.Views
 {
     public partial class MainView : UserControl
     {
-        // Border(reveal-3).Margin(0,12,12,12→12) + BorderThickness(1+1=2) + ContentGrid.Margin(20+20=40)
-        private const double ContentGridChromeWidth = 54;
+        // Border(reveal-3).Margin(12→12+12=24 гор.) + BorderThickness(1+1=2) + ContentGrid.Margin(20+20=40)
+        private const double ContentGridChromeWidth = 66;
         private const double MinRadius = 50;
         private const double MaxRadius = 110;
         private const double CenterGap = 24;
 
-        // Border(reveal-3).Margin(0,12,12,12→12+12=24 верт.) + BorderThickness(1+1=2)
+        // Border(reveal-3).Margin(12→12+12=24 верт.) + BorderThickness(1+1=2)
         private const double ContentBorderVerticalChrome = 26;
         // ContentGrid.Margin(20+20=40 верт.)
         private const double ContentGridVerticalMargin = 40;

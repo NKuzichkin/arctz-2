@@ -6,7 +6,7 @@ public class MainViewJoystickRadiusTests
 {
     [Theory]
     [InlineData(1200, 800, 60, 110)]     // просторный десктоп: упирается в верхний предел MaxRadius
-    [InlineData(360, 700, 90, 70.5)]     // узкий телефон-портрет: ширина ограничивает
+    [InlineData(360, 700, 90, 67.5)]     // узкий телефон-портрет: ширина ограничивает
     [InlineData(250, 800, 60, 50)]       // вырожденная ширина: floor-clamp по MinRadius
     [InlineData(800, 300, 60, 50)]       // очень низкое окно: высота floor-clamp по MinRadius
     [InlineData(1000, 500, 60, 101)]     // высота ограничивает, но не floor/ceiling

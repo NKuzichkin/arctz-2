@@ -115,7 +115,7 @@
             <Grid x:Name="RootPanel">
                 <!-- radius formula in MainView.axaml.cs (ComputeJoystickRadius) depends on these margins —
                      see ContentGridChromeWidth/ContentBorderVerticalChrome/ContentGridVerticalMargin/JoystickBarTopMargin -->
-                <Border Classes="reveal-3" Margin="0,12,12,12"
+                <Border Classes="reveal-3" Margin="12"
                         Background="{StaticResource HudPanelBrush}"
                         BorderBrush="{StaticResource HudBorderBrush}"
                         BorderThickness="1">
@@ -136,12 +136,13 @@
                                                 <MenuItem Header="Новая" Command="{Binding NewProgramCommand}" />
                                                 <MenuItem Header="Сохранить" Command="{Binding SaveProgramCommand}" />
                                                 <MenuItem Header="Библиотека" Command="{Binding OpenLibraryCommand}" />
+                                                <Separator />
+                                                <MenuItem Header="Захватить" Command="{Binding CaptureKeyPointCommand}"
+                                                          ToolTip.Tip="Нужно подключение к станку и известная текущая позиция" />
                                             </MenuFlyout>
                                         </Button.Flyout>
                                     </Button>
                                 </Grid>
-                                <Button Classes="primary" Content="Захватить точку" Command="{Binding CaptureKeyPointCommand}" HorizontalAlignment="Left"
-                                        ToolTip.Tip="Нужно подключение к станку и известная текущая позиция" />
                                 <TextBlock Classes="section-heading" Text="ТОЧКИ" Margin="0,8,0,0" />
                                 <ItemsControl x:Name="KeyPointsList" ItemsSource="{Binding KeyPoints}"
                                               ScrollViewer.VerticalScrollBarVisibility="Disabled">
