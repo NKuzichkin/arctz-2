@@ -144,4 +144,89 @@ public class ProgramViewModelStatusLabelTests
 
         Assert.Equal("Homing", vm.StatusLabel);
     }
+
+    [Fact]
+    public async Task StatusLabel_Completed_ResetsToIdleAfterDelay()
+    {
+        var vm = CreateViewModel(out var transport);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+        vm.TerminalStatusResetDelay = TimeSpan.FromMilliseconds(20);
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await playTask;
+        Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
+
+        await WaitUntilAsync(() => vm.PlaybackState == PlaybackState.Idle, TimeSpan.FromSeconds(1));
+        Assert.Equal("Ожидание", vm.StatusLabel);
+    }
+
+    [Fact]
+    public async Task StatusLabel_Stopped_ResetsToIdleAfterDelay()
+    {
+        var vm = CreateViewModel(out var transport);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+        vm.TerminalStatusResetDelay = TimeSpan.FromMilliseconds(20);
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+        await vm.StopCommand.ExecuteAsync(null);
+        Assert.Equal(PlaybackState.Stopped, vm.PlaybackState);
+
+        await WaitUntilAsync(() => vm.PlaybackState == PlaybackState.Idle, TimeSpan.FromSeconds(1));
+        Assert.Equal("Ожидание", vm.StatusLabel);
+
+        // Both dispatched G1 lines are still in-flight (see StatusLabel_Stopped_AfterStop) —
+        // drain both so playTask actually completes.
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await playTask;
+    }
+
+    [Fact]
+    public async Task TerminalStatusReset_CancelledIfPlayPressedAgainBeforeDelayElapses()
+    {
+        var vm = CreateViewModel(out var transport);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+        vm.TerminalStatusResetDelay = TimeSpan.FromMilliseconds(200);
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+        await vm.StopCommand.ExecuteAsync(null);
+        // Both dispatched G1 lines are still in-flight (see StatusLabel_Stopped_AfterStop) —
+        // drain both so playTask actually completes.
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await playTask;
+        Assert.Equal(PlaybackState.Stopped, vm.PlaybackState);
+
+        // Re-play well before the original 200ms terminal-reset delay elapses.
+        var secondPlayTask = vm.PlayCommand.ExecuteAsync(null);
+        Assert.Equal(PlaybackState.Running, vm.PlaybackState);
+
+        // Wait past the original delay window — the stale reset must not fire and stomp
+        // the freshly-started Running back to Idle.
+        await Task.Delay(400);
+        Assert.Equal(PlaybackState.Running, vm.PlaybackState);
+
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await secondPlayTask;
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
+    {
+        var start = DateTime.UtcNow;
+        while (!condition())
+        {
+            if (DateTime.UtcNow - start > timeout)
+            {
+                throw new TimeoutException("Condition was not met in time.");
+            }
+
+            await Task.Delay(20);
+        }
+    }
 }

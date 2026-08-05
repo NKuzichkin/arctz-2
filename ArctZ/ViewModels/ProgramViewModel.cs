@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using ArctZ.Components.VirtualJoystick;
 using ArctZ.Services.Device;
@@ -437,6 +438,11 @@ public partial class ProgramViewModel : ViewModelBase
 
     private bool _pausedForLinkLoss;
 
+    private CancellationTokenSource? _terminalStatusResetCts;
+
+    /// <summary>Overridable in tests so the terminal-state auto-reset doesn't require waiting the real delay.</summary>
+    internal TimeSpan TerminalStatusResetDelay { get; set; } = TimeSpan.FromSeconds(4);
+
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(PlayCommand))]
     [NotifyCanExecuteChangedFor(nameof(PauseCommand))]
@@ -478,6 +484,37 @@ public partial class ProgramViewModel : ViewModelBase
             _leftInput = default;
             _rightInput = default;
             Connection.Session?.EndJog();
+        }
+
+        // Completed/Stopped/Faulted never resolved back to Idle on their own before this — the
+        // operator had to press Play again to clear the label. Auto-reset after a delay, but
+        // cancel it the moment we leave the terminal state (e.g. Play redispatches a fresh run)
+        // so a stale reset can never stomp a freshly-started Running back to Idle.
+        _terminalStatusResetCts?.Cancel();
+        _terminalStatusResetCts = null;
+
+        if (value is PlaybackState.Completed or PlaybackState.Stopped or PlaybackState.Faulted)
+        {
+            var cts = new CancellationTokenSource();
+            _terminalStatusResetCts = cts;
+            _ = ResetToIdleAfterDelayAsync(value, cts.Token);
+        }
+    }
+
+    private async Task ResetToIdleAfterDelayAsync(PlaybackState terminalState, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(TerminalStatusResetDelay, cancellationToken);
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+
+        if (PlaybackState == terminalState)
+        {
+            PlaybackState = PlaybackState.Idle;
         }
     }
 
