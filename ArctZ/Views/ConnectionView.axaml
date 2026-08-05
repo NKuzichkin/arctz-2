@@ -15,7 +15,6 @@
 
         <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center"
                     IsVisible="{Binding !IsConnectionModalVisible}">
-            <TextBlock Classes="telemetry" FontSize="13" Text="{Binding MachineStateLabel}" />
             <TextBlock Classes="telemetry" FontSize="13" Text="{Binding PositionLabel}" />
         </StackPanel>
 

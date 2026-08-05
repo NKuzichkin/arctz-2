@@ -83,17 +83,6 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
         _ => "—",
     };
 
-    public string MachineStateLabel => DeviceStatus?.State switch
-    {
-        MachineState.Idle => "Простой",
-        MachineState.Run => "Выполнение",
-        MachineState.Jog => "Джог",
-        MachineState.Hold => "Удержание",
-        MachineState.Home => "Homing",
-        MachineState.Alarm => "АВАРИЯ",
-        _ => "—",
-    };
-
     public string PositionLabel => DeviceStatus is { } status
         ? $"X {status.WPos.X:0.00}  Y {status.WPos.Y:0.00}  Z {status.WPos.Z:0.00}  A {status.WPos.A:0.00}"
         : "—";
@@ -202,7 +191,6 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
                 this.RaisePropertyChanged(nameof(IsAlarmModalVisible));
                 this.RaisePropertyChanged(nameof(IsAnyModalVisible));
                 this.RaisePropertyChanged(nameof(ConnectionStateLabel));
-                this.RaisePropertyChanged(nameof(MachineStateLabel));
                 this.RaisePropertyChanged(nameof(PositionLabel));
                 this.RaisePropertyChanged(nameof(HasError));
                 this.RaisePropertyChanged(nameof(ErrorMessage));
