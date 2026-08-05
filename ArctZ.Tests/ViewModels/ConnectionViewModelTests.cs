@@ -254,4 +254,35 @@ public class ConnectionViewModelTests
         vm.ToggleGCodeLogCommand.Execute(null);
         Assert.False(vm.IsGCodeLogOpen);
     }
+
+    [Fact]
+    public async Task IsAlarmModalVisible_TracksAlarmTriggerAndReset()
+    {
+        var realTransport = new FakeDeviceTransport();
+        var vm = CreateVm(realTransport);
+        await vm.ConnectCommand.Execute();
+        Assert.False(vm.IsAlarmModalVisible);
+        Assert.False(vm.IsAnyModalVisible);
+
+        realTransport.SimulateReceivedLine("ALARM:1");
+        Assert.True(vm.IsAlarmModalVisible);
+        Assert.True(vm.IsAnyModalVisible);
+
+        // ResetAlarmCommand is IEnhancedCommand<Unit> (ReactiveUI), which has no ExecuteAsync —
+        // Execute() returns a cold IObservable<Unit> that only starts running once subscribed.
+        // .GetAwaiter() (System.Reactive.Linq.Observable, already global-used via GlobalUsings.cs)
+        // subscribes immediately (starting ResetAlarmAsync's execution up to its "$X" send, which
+        // suspends until the queue's TaskCompletionSource resolves) and returns an AsyncSubject<Unit>
+        // that is itself awaitable, so it can be captured now and awaited after unblocking the
+        // in-flight "$X" with a simulated "ok" — same fire-now/unblock/await-later idiom as
+        // ProgramViewModelPlaybackTests' `var playTask = vm.PlayCommand.ExecuteAsync(null); ...
+        // transport.SimulateReceivedLine("ok"); await playTask;`, adapted to this VM's ReactiveUI
+        // commands instead of ProgramViewModel's CommunityToolkit IAsyncRelayCommand ones.
+        var resetAwaiter = vm.ResetAlarmCommand.Execute().GetAwaiter();
+        realTransport.SimulateReceivedLine("ok");
+        await resetAwaiter;
+
+        Assert.False(vm.IsAlarmModalVisible);
+        Assert.False(vm.IsAnyModalVisible);
+    }
 }

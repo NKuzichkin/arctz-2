@@ -59,6 +59,12 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
 
     public bool IsConnectionModalVisible => Session is null || ConnectionState != ConnectionState.Connected;
 
+    // Авария (LastAlarmCode) блокирует основной экран отдельной модалкой; обычная ошибка
+    // соединения (LastError) остаётся баннером внутри ConnectionView — см. HasError/ErrorMessage.
+    public bool IsAlarmModalVisible => LastAlarmCode is not null;
+
+    public bool IsAnyModalVisible => IsConnectionModalVisible || IsAlarmModalVisible;
+
     public string ConnectionStateLabel => ConnectionState switch
     {
         ConnectionState.Disconnected => "Не подключено",
@@ -187,6 +193,8 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
             .Subscribe(_ =>
             {
                 this.RaisePropertyChanged(nameof(IsConnectionModalVisible));
+                this.RaisePropertyChanged(nameof(IsAlarmModalVisible));
+                this.RaisePropertyChanged(nameof(IsAnyModalVisible));
                 this.RaisePropertyChanged(nameof(ConnectionStateLabel));
                 this.RaisePropertyChanged(nameof(MachineStateLabel));
                 this.RaisePropertyChanged(nameof(PositionLabel));
