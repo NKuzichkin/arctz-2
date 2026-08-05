@@ -89,7 +89,7 @@
                     Padding="12,10">
                 <StackPanel x:Name="HeaderPanel" Spacing="8">
                     <Grid x:Name="HeaderStatusRow" ColumnDefinitions="*,Auto">
-                        <ContentControl x:Name="ConnectionStatus" Grid.Column="0" Content="{Binding Connection}" />
+                        <ContentControl x:Name="ConnectionStatus" Grid.Column="0" ClipToBounds="True" Content="{Binding Connection}" />
                         <Border Grid.Column="1" Background="{StaticResource HudPanelElevatedBrush}" BorderBrush="{StaticResource HudBorderStrongBrush}"
                                 BorderThickness="1" Padding="10,6" Margin="8,0,0,0" VerticalAlignment="Center">
                             <TextBlock Classes="telemetry" FontSize="14" Text="{Binding PlaybackStateLabel}" />
