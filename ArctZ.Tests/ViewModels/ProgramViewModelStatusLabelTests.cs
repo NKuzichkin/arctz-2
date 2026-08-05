@@ -157,8 +157,15 @@ public class ProgramViewModelStatusLabelTests
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
         await playTask;
-        Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
 
+        // No immediate PlaybackState==Completed assertion here (unlike the Stopped sibling
+        // below): reaching Completed goes through the full two-step dispatch+ack loop before
+        // the 20ms auto-reset timer starts, leaving enough scheduling gap for the test's
+        // continuation to resume after the reset already fired — flaky in practice (observed:
+        // Assert.Equal() Failure, Expected: Completed, Actual: Idle). Completed-then-Idle is
+        // already covered end-to-end by StatusLabel_Completed_AfterProgramFinishes (default,
+        // non-shortened delay) plus the WaitUntilAsync below; asserting the transient midpoint
+        // here adds nothing but a race.
         await WaitUntilAsync(() => vm.PlaybackState == PlaybackState.Idle, TimeSpan.FromSeconds(1));
         Assert.Equal("Ожидание", vm.StatusLabel);
     }
