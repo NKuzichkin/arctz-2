@@ -99,7 +99,6 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
 
     public IEnhancedCommand<Unit> ConnectCommand { get; }
     public IEnhancedCommand<Unit> DisconnectCommand { get; }
-    public IEnhancedCommand<Unit> HomeCommand { get; }
     public IEnhancedCommand<Unit> ResetAlarmCommand { get; }
     public IEnhancedCommand<Unit> ToggleGCodeLogCommand { get; }
 
@@ -127,8 +126,6 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
             .Enhance(text: "Подключить", name: "ConnectCommand"));
         DisconnectCommand = Track(ReactiveCommand.CreateFromTask(DisconnectAsync, notPlaybackLocked)
             .Enhance(text: "Отключить", name: "DisconnectCommand"));
-        HomeCommand = Track(ReactiveCommand.CreateFromTask(HomeAsync, notPlaybackLocked)
-            .Enhance(text: "Homing", name: "HomeCommand"));
         ResetAlarmCommand = Track(ReactiveCommand.CreateFromTask(ResetAlarmAsync)
             .Enhance(text: "Сброс аварии", name: "ResetAlarmCommand"));
         ToggleGCodeLogCommand = Track(ReactiveCommand.Create(() => { IsGCodeLogOpen = !IsGCodeLogOpen; })
@@ -283,8 +280,6 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
 
         SentGCodeLines.Add(line);
     }
-
-    private Task HomeAsync() => Session?.HomeAsync() ?? Task.CompletedTask;
 
     private async Task ResetAlarmAsync()
     {

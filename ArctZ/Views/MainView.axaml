@@ -100,9 +100,6 @@
                     </Border>
                     <ScrollViewer x:Name="HeaderActionsScroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
                         <StackPanel x:Name="HeaderActions" Orientation="Horizontal" Spacing="8">
-                            <Button Classes="header-action" Content="Homing" Command="{Binding Connection.HomeCommand}" />
-                            <Button Classes="danger header-action" Content="Сброс аварии" Command="{Binding Connection.ResetAlarmCommand}" />
-                            <Border Classes="header-divider" />
                             <Button Classes="primary header-action" Content="Пуск" Command="{Binding PlayCommand}" />
                             <Button Classes="header-action" Content="Пауза" Command="{Binding PauseCommand}" />
                             <Button Classes="danger header-action" Content="Стоп" Command="{Binding StopCommand}" />
