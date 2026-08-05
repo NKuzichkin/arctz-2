@@ -285,4 +285,38 @@ public class ConnectionViewModelTests
         Assert.False(vm.IsAlarmModalVisible);
         Assert.False(vm.IsAnyModalVisible);
     }
+
+    [Fact]
+    public async Task UnsolicitedDisconnect_DuringAlarm_ConnectionModalWinsOverAlarmModal()
+    {
+        // Regression test: an alarm firing followed by a routine transport-level link drop
+        // (same Session instance, just ConnectionState moving to Reconnecting/Disconnected —
+        // see the comment above the Session subscription in ConnectionViewModel's constructor,
+        // LastAlarmCode is only cleared when Session itself changes, NOT on a state transition
+        // of the same session) used to leave BOTH IsConnectionModalVisible and
+        // IsAlarmModalVisible true. Because the alarm modal is the last child of MainView's root
+        // Grid, it painted over the connection modal, hiding the only working recovery control
+        // ("Подключить") behind a hit-testable scrim — "Сброс аварии" alone can't recover
+        // because it depends on a live link to get an "ok" back. ConnectionViewModel now favors
+        // the connection modal whenever both conditions are true.
+        var realTransport = new FakeDeviceTransport();
+        var vm = CreateVm(realTransport);
+        await vm.ConnectCommand.Execute();
+
+        realTransport.SimulateReceivedLine("ALARM:1");
+        Assert.True(vm.IsAlarmModalVisible);
+        Assert.False(vm.IsConnectionModalVisible);
+        Assert.True(vm.IsAnyModalVisible);
+
+        // Same idiom as UnsolicitedDisconnect_TransitionsToReconnectingAndShowsModal: the
+        // upcoming reconnect attempts must fail so the VM observes Reconnecting rather than
+        // racing straight back to Connected.
+        realTransport.ConnectFailuresRemaining = 10;
+        realTransport.SimulateDisconnect();
+
+        Assert.Equal(ConnectionState.Reconnecting, vm.ConnectionState);
+        Assert.True(vm.IsConnectionModalVisible);
+        Assert.False(vm.IsAlarmModalVisible);
+        Assert.True(vm.IsAnyModalVisible);
+    }
 }

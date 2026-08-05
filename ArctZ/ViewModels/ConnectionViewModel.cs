@@ -61,7 +61,16 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
 
     // Авария (LastAlarmCode) блокирует основной экран отдельной модалкой; обычная ошибка
     // соединения (LastError) остаётся баннером внутри ConnectionView — см. HasError/ErrorMessage.
-    public bool IsAlarmModalVisible => LastAlarmCode is not null;
+    // Соединение имеет приоритет: если связь разорвана на транспортном уровне во время
+    // аварии (тот же Session, ConnectionState уходит в Reconnecting/Disconnected —
+    // LastAlarmCode при этом НЕ сбрасывается, см. подписку на Session выше), модалка
+    // аварии не должна перекрывать модалку соединения — её "Сброс аварии" всё равно
+    // не может выполниться без живой связи (зависает в BufferAwareCommandQueue), а
+    // единственная рабочая кнопка восстановления ("Подключить") лежит в модалке
+    // соединения. Модалка аварии появится снова автоматически после переподключения,
+    // если авария всё ещё активна — обе модалки пересчитываются в одной и той же
+    // WhenAnyValue-подписке ниже.
+    public bool IsAlarmModalVisible => LastAlarmCode is not null && !IsConnectionModalVisible;
 
     public bool IsAnyModalVisible => IsConnectionModalVisible || IsAlarmModalVisible;
 
