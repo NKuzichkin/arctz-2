@@ -136,9 +136,10 @@
     <Setter Property="BorderThickness" Value="2" />
   </Style>
 
-  <!-- Header action row (Homing/Сброс аварии/Отключить/Пуск/Пауза/Стоп/Лог G-code): runs inside
-       a horizontally swiping ScrollViewer on phones, so it needs a touch target bigger than the
-       shared ButtonPadding gives buttons elsewhere in the app. -->
+  <!-- Header action row (Пуск/Пауза/Стоп/Лог G-code): runs inside a horizontally swiping
+       ScrollViewer on phones, so it needs a touch target bigger than the shared ButtonPadding
+       gives buttons elsewhere in the app. (Homing was removed; Сброс аварии now lives in the
+       alarm modal and Отключить in the status panel's icon-action button — see below.) -->
   <Style Selector="Button.header-action">
     <Setter Property="MinHeight" Value="44" />
     <Setter Property="Padding" Value="18,12" />

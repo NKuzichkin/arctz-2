@@ -33,10 +33,10 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
 
     [Reactive] private bool isGCodeLogOpen;
 
-    // Set by ProgramViewModel to mirror its IsProgramLocked. Homing/Disconnect
-    // move or tear down the link out from under an in-flight program dispatch
-    // loop (ProgramViewModel.PlayAsync captures Connection.Session per step),
-    // so they must be unavailable while a program is Running/Paused.
+    // Set by ProgramViewModel to mirror its IsProgramLocked. Disconnect tears
+    // down the link out from under an in-flight program dispatch loop
+    // (ProgramViewModel.PlayAsync captures Connection.Session per step), so it
+    // must be unavailable while a program is Running/Paused.
     [Reactive] private bool isPlaybackLocked;
 
     // Mirrors Session.DeviceStatus the same way ConnectionState mirrors
