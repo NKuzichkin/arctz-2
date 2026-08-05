@@ -151,4 +151,14 @@
     <Setter Property="Background" Value="{DynamicResource HudBorderBrush}" />
   </Style>
 
+  <!-- Icon-only header action (disconnect ⏻): lives in the unified status panel instead of the
+       swiping action row, so it needs the same 44px minimum touch target as Button.header-action
+       even though its content is a single glyph, not a text label. -->
+  <Style Selector="Button.icon-action">
+    <Setter Property="MinWidth" Value="44" />
+    <Setter Property="MinHeight" Value="44" />
+    <Setter Property="Padding" Value="10" />
+    <Setter Property="FontSize" Value="18" />
+  </Style>
+
 </Styles>
