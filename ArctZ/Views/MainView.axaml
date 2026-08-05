@@ -93,7 +93,7 @@
                         <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" VerticalAlignment="Center">
                             <ContentControl x:Name="ConnectionStatus" Grid.Column="0" ClipToBounds="True" Content="{Binding Connection}" />
                             <Border Grid.Column="1" Classes="header-divider" />
-                            <TextBlock Grid.Column="2" Classes="telemetry" FontSize="14" VerticalAlignment="Center" Text="{Binding PlaybackStateLabel}" />
+                            <TextBlock Grid.Column="2" Classes="telemetry" FontSize="14" VerticalAlignment="Center" Text="{Binding StatusLabel}" />
                             <Border Grid.Column="3" Classes="header-divider" />
                             <Button Grid.Column="4" Classes="icon-action" Content="⏻" Command="{Binding Connection.DisconnectCommand}" />
                         </Grid>

@@ -442,21 +442,30 @@ public partial class ProgramViewModel : ViewModelBase
     [NotifyCanExecuteChangedFor(nameof(PauseCommand))]
     [NotifyCanExecuteChangedFor(nameof(StopCommand))]
     [NotifyPropertyChangedFor(nameof(IsProgramLocked))]
-    [NotifyPropertyChangedFor(nameof(PlaybackStateLabel))]
+    [NotifyPropertyChangedFor(nameof(StatusLabel))]
     private PlaybackState _playbackState = PlaybackState.Idle;
 
     public bool IsProgramLocked => PlaybackState is PlaybackState.Running or PlaybackState.Paused;
 
-    public string PlaybackStateLabel => PlaybackState switch
+    // Единый статус станка и программы — приоритет сверху вниз, первое совпадение побеждает.
+    // MachineState.Alarm сюда не входит: авария уже перекрывает экран отдельной блокирующей
+    // модалкой (ConnectionViewModel.IsAlarmModalVisible), StatusLabel под ней всё равно не виден.
+    // MachineState.Hold тоже не проверяется отдельно: единственный путь к нему — FeedHoldAsync()
+    // из PauseAsync/StopAsync, которые уже выставляют Paused/Stopped раньше по списку.
+    public string StatusLabel
     {
-        PlaybackState.Idle => "Ожидание",
-        PlaybackState.Running => "Выполняется",
-        PlaybackState.Paused => "Пауза",
-        PlaybackState.Completed => "Завершено",
-        PlaybackState.Faulted => "Ошибка",
-        PlaybackState.Stopped => "Остановлено",
-        _ => "—",
-    };
+        get
+        {
+            if (PlaybackState == PlaybackState.Faulted) return "Ошибка";
+            if (PlaybackState == PlaybackState.Running) return "Выполнение";
+            if (PlaybackState == PlaybackState.Paused) return "Пауза";
+            if (Connection.DeviceStatus?.State == MachineState.Jog) return "Джог";
+            if (Connection.DeviceStatus?.State == MachineState.Home) return "Homing";
+            if (PlaybackState == PlaybackState.Completed) return "Завершено";
+            if (PlaybackState == PlaybackState.Stopped) return "Остановлено";
+            return "Ожидание";
+        }
+    }
 
     partial void OnPlaybackStateChanged(PlaybackState value)
     {
@@ -508,6 +517,7 @@ public partial class ProgramViewModel : ViewModelBase
         {
             CaptureKeyPointCommand.NotifyCanExecuteChanged();
             FillKeyPointFromCurrentPositionCommand.NotifyCanExecuteChanged();
+            OnPropertyChanged(nameof(StatusLabel));
             return;
         }
 
