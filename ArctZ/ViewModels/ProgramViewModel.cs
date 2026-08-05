@@ -47,6 +47,9 @@ public partial class ProgramViewModel : ViewModelBase
     [ObservableProperty]
     private bool _isLibraryOpen;
 
+    [ObservableProperty]
+    private bool _isSideMenuOpen;
+
     public ProgramViewModel(ConnectionViewModel connection, IProgramStorage storage, ITrajectoryCompiler compiler)
     {
         Connection = connection;
@@ -84,6 +87,25 @@ public partial class ProgramViewModel : ViewModelBase
     private void CloseLibrary()
     {
         IsLibraryOpen = false;
+    }
+
+    [RelayCommand]
+    private void ToggleSideMenu()
+    {
+        IsSideMenuOpen = !IsSideMenuOpen;
+    }
+
+    [RelayCommand]
+    private void CloseSideMenu()
+    {
+        IsSideMenuOpen = false;
+    }
+
+    [RelayCommand]
+    private void OpenGCodeLog()
+    {
+        Connection.IsGCodeLogOpen = true;
+        IsSideMenuOpen = false;
     }
 
     partial void OnProgramIdChanged(Guid? value)
