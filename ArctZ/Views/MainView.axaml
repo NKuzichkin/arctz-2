@@ -81,7 +81,7 @@
     </UserControl.Styles>
 
     <Grid>
-        <DockPanel IsEnabled="{Binding !Connection.IsConnectionModalVisible}">
+        <DockPanel IsEnabled="{Binding !Connection.IsAnyModalVisible}">
             <Border x:Name="HeaderBorder" DockPanel.Dock="Top" Classes="reveal-1"
                     Background="{StaticResource HudPanelBrush}"
                     BorderBrush="{StaticResource HudBorderBrush}"
@@ -336,6 +336,20 @@
                               DisplayMemberBinding="{Binding DisplayName}"
                               HorizontalAlignment="Stretch" />
                     <Button Classes="primary" Content="Подключить" Command="{Binding ConnectCommand}"
+                            HorizontalAlignment="Stretch" />
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <Border IsVisible="{Binding Connection.IsAlarmModalVisible}" Background="{StaticResource HudScrimBrush}">
+            <Border x:DataType="vm:ConnectionViewModel" DataContext="{Binding Connection}"
+                    Width="360" Background="{StaticResource HudPanelElevatedBrush}"
+                    BorderBrush="{StaticResource HudBorderStrongBrush}" BorderThickness="1"
+                    Padding="20" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel Spacing="14">
+                    <TextBlock Classes="section-heading" Text="АВАРИЯ" />
+                    <TextBlock TextWrapping="Wrap" Text="{Binding ErrorMessage}" />
+                    <Button Classes="danger" Content="Сброс аварии" Command="{Binding ResetAlarmCommand}"
                             HorizontalAlignment="Stretch" />
                 </StackPanel>
             </Border>
