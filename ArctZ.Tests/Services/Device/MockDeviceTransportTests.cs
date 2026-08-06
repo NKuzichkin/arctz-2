@@ -185,4 +185,56 @@ public class MockDeviceTransportTests
         var afterDwell = QueryStatus();
         Assert.Equal(MachineState.Idle, afterDwell.State);
     }
+
+    [Fact]
+    public async Task TriggerAlarm_SetsAlarmStateAndRaisesAlarmLineWithCode()
+    {
+        await _mock.ConnectAsync("demo");
+        string? raisedLine = null;
+        _mock.LineReceived += line => raisedLine ??= line;
+
+        _mock.TriggerAlarm(1);
+
+        Assert.Equal("ALARM:1", raisedLine);
+        var status = QueryStatus();
+        Assert.Equal(MachineState.Alarm, status.State);
+    }
+
+    [Fact]
+    public async Task TriggerAlarm_StopsInFlightMotionImmediately()
+    {
+        await _mock.ConnectAsync("demo");
+        await _mock.SendLineAsync("$J=G91 G21 X10 Y0 Z0 A0 F600");
+        _ticker.RaiseElapsed(); // ack + first 1-unit step
+
+        _mock.TriggerAlarm(1);
+        var atAlarm = QueryStatus();
+
+        _ticker.RaiseElapsed();
+        _ticker.RaiseElapsed();
+        var afterMoreTicks = QueryStatus();
+
+        Assert.Equal(atAlarm.WPos, afterMoreTicks.WPos);
+        Assert.Equal(MachineState.Alarm, afterMoreTicks.State);
+    }
+
+    [Fact]
+    public async Task SetResponseDelay_CalledBeforeSending_DelaysFirstCommandByConfiguredTicks()
+    {
+        await _mock.ConnectAsync("demo");
+        _mock.SetResponseDelay(TimeSpan.FromMilliseconds(300)); // 300ms / 100ms tick = 3 ticks
+        string? reply = null;
+        _mock.LineReceived += line => reply ??= line;
+
+        await _mock.SendLineAsync("G4 P0");
+
+        _ticker.RaiseElapsed();
+        Assert.Null(reply);
+        _ticker.RaiseElapsed();
+        Assert.Null(reply);
+        _ticker.RaiseElapsed();
+        Assert.Null(reply);
+        _ticker.RaiseElapsed();
+        Assert.Equal("ok", reply);
+    }
 }

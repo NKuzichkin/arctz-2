@@ -20,7 +20,7 @@ namespace ArctZ.Services.Device.Simulation;
 /// but the event is invoked only after the lock is released, so subscriber
 /// code never runs under the lock.
 /// </summary>
-public sealed class MockDeviceTransport : IDeviceTransport
+public sealed class MockDeviceTransport : IDeviceTransport, IMockDeviceControl
 {
     private const int RxBufferCapacity = 128;
     private const int PlannerBlockCapacity = 15;
@@ -39,6 +39,8 @@ public sealed class MockDeviceTransport : IDeviceTransport
     private bool _held;
     private int _rxBytesInFlight;
     private int? _forcedErrorForNextDequeue;
+    private int _responseDelayTicks;
+    private int _ticksUntilNextProcess;
 
     public MockDeviceTransport(MachineLimits limits, IPeriodicTimer motionTicker, TimeSpan tickInterval)
     {
@@ -55,6 +57,26 @@ public sealed class MockDeviceTransport : IDeviceTransport
 
     /// <summary>Makes the next dequeued command report an error instead of ok, and skips its effect.</summary>
     public void ForceNextCommandError(int code) => _forcedErrorForNextDequeue = code;
+
+    public void TriggerAlarm(int code)
+    {
+        lock (_lock)
+        {
+            _alarm = true;
+            _targetPose = null; // авария останавливает движение, как в реальном FluidNC
+        }
+
+        LineReceived?.Invoke($"ALARM:{code}");
+    }
+
+    public void SetResponseDelay(TimeSpan delay)
+    {
+        lock (_lock)
+        {
+            _responseDelayTicks = (int)Math.Round(delay.TotalMilliseconds / _tickInterval.TotalMilliseconds);
+            _ticksUntilNextProcess = _responseDelayTicks;
+        }
+    }
 
     public Task ConnectAsync(string deviceId, CancellationToken cancellationToken = default)
     {
@@ -136,8 +158,15 @@ public sealed class MockDeviceTransport : IDeviceTransport
             return null;
         }
 
+        if (_ticksUntilNextProcess > 0)
+        {
+            _ticksUntilNextProcess--;
+            return null;
+        }
+
         var line = _pendingLines.Dequeue();
         _rxBytesInFlight -= line.Length + 1;
+        _ticksUntilNextProcess = _responseDelayTicks;
 
         if (_forcedErrorForNextDequeue is { } code)
         {
