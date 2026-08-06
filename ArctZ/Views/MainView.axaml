@@ -133,8 +133,6 @@
                         <StackPanel Spacing="10">
                             <StackPanel Spacing="10" IsEnabled="{Binding !IsProgramLocked}">
                                 <TextBlock Classes="section-heading" Text="ПРОГРАММА" />
-                                <TextBlock Opacity="0.6" FontSize="12" TextWrapping="Wrap"
-                                           Text="Левый джойстик — подъём/поворот стрелы (X·Y). Правый — пан/наклон камеры (Z·A)." />
                                 <Grid ColumnDefinitions="*,Auto">
                                     <TextBlock Grid.Column="0" Classes="telemetry" FontSize="16" VerticalAlignment="Center"
                                                TextTrimming="CharacterEllipsis" Text="{Binding ProgramName}" />
@@ -146,8 +144,7 @@
                                                 <MenuItem Header="Сохранить" Command="{Binding SaveProgramCommand}" />
                                                 <MenuItem Header="Библиотека" Command="{Binding OpenLibraryCommand}" />
                                                 <Separator />
-                                                <MenuItem Header="Захватить" Command="{Binding CaptureKeyPointCommand}"
-                                                          ToolTip.Tip="Нужно подключение к станку и известная текущая позиция" />
+                                                <MenuItem Header="Захватить" Command="{Binding CaptureKeyPointCommand}" />
                                             </MenuFlyout>
                                         </Button.Flyout>
                                     </Button>
@@ -169,7 +166,6 @@
                                                 <Button.Flyout>
                                                     <MenuFlyout>
                                                         <MenuItem Header="На точку" CommandParameter="{Binding}"
-                                                                  ToolTip.Tip="Отправить станок к этой точке"
                                                                   Command="{Binding ((vm:ProgramViewModel)DataContext).MoveMachineToKeyPointCommand, ElementName=KeyPointsList}" />
                                                         <MenuItem Header="Изменить" CommandParameter="{Binding}"
                                                                   Command="{Binding ((vm:ProgramViewModel)DataContext).EditKeyPointCommand, ElementName=KeyPointsList}" />
