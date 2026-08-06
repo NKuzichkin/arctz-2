@@ -56,7 +56,13 @@ public sealed class MockDeviceTransport : IDeviceTransport, IMockDeviceControl
     public event Action? Disconnected;
 
     /// <summary>Makes the next dequeued command report an error instead of ok, and skips its effect.</summary>
-    public void ForceNextCommandError(int code) => _forcedErrorForNextDequeue = code;
+    public void ForceNextCommandError(int code)
+    {
+        lock (_lock)
+        {
+            _forcedErrorForNextDequeue = code;
+        }
+    }
 
     public void TriggerAlarm(int code)
     {
@@ -64,8 +70,6 @@ public sealed class MockDeviceTransport : IDeviceTransport, IMockDeviceControl
         {
             _alarm = true;
             _targetPose = null; // авария останавливает движение, как в реальном FluidNC
-            _pendingLines.Clear();
-            _rxBytesInFlight = 0;
         }
 
         LineReceived?.Invoke($"ALARM:{code}");
@@ -174,6 +178,14 @@ public sealed class MockDeviceTransport : IDeviceTransport, IMockDeviceControl
         {
             _forcedErrorForNextDequeue = null;
             return $"error:{code}";
+        }
+
+        var trimmed = line.Trim();
+        if (_alarm &&
+            !trimmed.Equals("$X", StringComparison.OrdinalIgnoreCase) &&
+            !trimmed.Equals("$H", StringComparison.OrdinalIgnoreCase))
+        {
+            return "error:9";
         }
 
         ApplyCommand(line);

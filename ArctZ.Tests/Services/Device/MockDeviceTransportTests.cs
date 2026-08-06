@@ -240,7 +240,7 @@ public class MockDeviceTransportTests
     }
 
     [Fact]
-    public async Task TriggerAlarm_ClearsQueuedCommandsSoTheyCannotResumeMotion()
+    public async Task TriggerAlarm_RejectsQueuedCommandsWithErrorSoTheyCannotResumeMotion()
     {
         await _mock.ConnectAsync("demo");
         await _mock.SendLineAsync("$J=G91 G21 X10 Y0 Z0 A0 F600");
@@ -258,6 +258,26 @@ public class MockDeviceTransportTests
 
         Assert.Equal(atAlarm.WPos, afterMoreTicks.WPos);
         Assert.Equal(MachineState.Alarm, afterMoreTicks.State);
-        Assert.DoesNotContain("ok", repliesAfterAlarm); // the second queued line is never dequeued/acked
+        Assert.DoesNotContain("ok", repliesAfterAlarm);
+        Assert.Contains("error:9", repliesAfterAlarm); // the second queued line is rejected, not silently dropped
+    }
+
+    [Fact]
+    public async Task TriggerAlarm_StillAllowsResetViaXCommand()
+    {
+        await _mock.ConnectAsync("demo");
+        await _mock.SendLineAsync("$J=G91 G21 X10 Y0 Z0 A0 F600");
+        _ticker.RaiseElapsed(); // ack + first 1-unit step
+
+        _mock.TriggerAlarm(1);
+
+        await _mock.SendLineAsync("$X");
+        string? resetReply = null;
+        _mock.LineReceived += line => resetReply ??= line;
+        _ticker.RaiseElapsed();
+
+        Assert.Equal("ok", resetReply);
+        var status = QueryStatus();
+        Assert.Equal(MachineState.Idle, status.State);
     }
 }
