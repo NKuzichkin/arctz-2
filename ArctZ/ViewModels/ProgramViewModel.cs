@@ -108,6 +108,13 @@ public partial class ProgramViewModel : ViewModelBase
         IsSideMenuOpen = false;
     }
 
+    [RelayCommand]
+    private void OpenMockSettings()
+    {
+        Connection.IsMockSettingsOpen = true;
+        IsSideMenuOpen = false;
+    }
+
     partial void OnProgramIdChanged(Guid? value)
     {
         foreach (var item in Library)

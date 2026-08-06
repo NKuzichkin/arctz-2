@@ -62,4 +62,26 @@ public class ProgramViewModelSideMenuTests
         vm.OpenGCodeLogCommand.Execute(null);
         Assert.True(vm.Connection.IsGCodeLogOpen);
     }
+
+    [Fact]
+    public void OpenMockSettingsCommand_OpensDialogAndClosesMenu()
+    {
+        var vm = CreateViewModel();
+        vm.ToggleSideMenuCommand.Execute(null);
+        Assert.False(vm.Connection.IsMockSettingsOpen);
+
+        vm.OpenMockSettingsCommand.Execute(null);
+
+        Assert.True(vm.Connection.IsMockSettingsOpen);
+        Assert.False(vm.IsSideMenuOpen);
+    }
+
+    [Fact]
+    public void OpenMockSettingsCommand_WhenDialogAlreadyOpen_LeavesItOpen()
+    {
+        var vm = CreateViewModel();
+        vm.OpenMockSettingsCommand.Execute(null);
+        vm.OpenMockSettingsCommand.Execute(null);
+        Assert.True(vm.Connection.IsMockSettingsOpen);
+    }
 }
