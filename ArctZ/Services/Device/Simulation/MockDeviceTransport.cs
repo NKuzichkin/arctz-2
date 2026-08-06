@@ -64,6 +64,8 @@ public sealed class MockDeviceTransport : IDeviceTransport, IMockDeviceControl
         {
             _alarm = true;
             _targetPose = null; // авария останавливает движение, как в реальном FluidNC
+            _pendingLines.Clear();
+            _rxBytesInFlight = 0;
         }
 
         LineReceived?.Invoke($"ALARM:{code}");

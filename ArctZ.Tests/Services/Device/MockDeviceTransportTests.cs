@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using ArctZ.Services.Device;
 using ArctZ.Services.Device.Simulation;
@@ -236,5 +237,27 @@ public class MockDeviceTransportTests
         Assert.Null(reply);
         _ticker.RaiseElapsed();
         Assert.Equal("ok", reply);
+    }
+
+    [Fact]
+    public async Task TriggerAlarm_ClearsQueuedCommandsSoTheyCannotResumeMotion()
+    {
+        await _mock.ConnectAsync("demo");
+        await _mock.SendLineAsync("$J=G91 G21 X10 Y0 Z0 A0 F600");
+        await _mock.SendLineAsync("$J=G91 G21 X10 Y0 Z0 A0 F600"); // second line still queued behind the first
+        _ticker.RaiseElapsed(); // dequeues+acks the FIRST line, steps 1 unit
+
+        _mock.TriggerAlarm(1);
+        var atAlarm = QueryStatus();
+
+        var repliesAfterAlarm = new List<string>();
+        _mock.LineReceived += line => repliesAfterAlarm.Add(line);
+        _ticker.RaiseElapsed();
+        _ticker.RaiseElapsed();
+        var afterMoreTicks = QueryStatus();
+
+        Assert.Equal(atAlarm.WPos, afterMoreTicks.WPos);
+        Assert.Equal(MachineState.Alarm, afterMoreTicks.State);
+        Assert.DoesNotContain("ok", repliesAfterAlarm); // the second queued line is never dequeued/acked
     }
 }
