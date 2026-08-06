@@ -87,6 +87,14 @@ private string? ProcessOnePendingLine()
         return $"error:{code}";
     }
 
+    var trimmed = line.Trim();
+    if (_alarm &&
+        !trimmed.Equals("$X", StringComparison.OrdinalIgnoreCase) &&
+        !trimmed.Equals("$H", StringComparison.OrdinalIgnoreCase))
+    {
+        return "error:9";
+    }
+
     ApplyCommand(line);
     return "ok";
 }
@@ -96,7 +104,19 @@ private string? ProcessOnePendingLine()
 
 При `delay = 0` (значение по умолчанию при создании транспорта) поведение идентично текущему — существующие тесты в `MockDeviceTransportTests.cs` не меняются.
 
-`ForceNextCommandError` не меняется — переиспользуется как есть.
+**Найдено на финальном ревью и исправлено:** первоначальная версия `TriggerAlarm` вместо `_alarm`-гейта в `ProcessOnePendingLine` очищала `_pendingLines`/`_rxBytesInFlight` напрямую. Это ломало `BufferAwareCommandQueue`: строки, уже лежавшие в его собственной очереди `_inFlight` с `TaskCompletionSource`, ожидающими `ok`/`error`, просто исчезали из `MockDeviceTransport` без ответа — эти `TaskCompletionSource` никогда не резолвились. `ProgramViewModel.PlayAsync` зависал навсегда на `await completion`, а `$X` (эксклюзивная команда) вообще не мог быть отправлен, пока в `_inFlight` что-то висит — то есть «Сброс аварии», вызванный во время выполнения программы, зависал навечно, и единственная кнопка модалки аварии становилась недоступной без перезапуска приложения. Исправление — не молчаливо ронять команды из очереди, а отвечать на них `error:9` (тот же код, что уже используется для «Смоделировать ошибку»), пока авария активна, кроме `$X`/`$H` — так каждая команда всё равно получает ответ (её `TaskCompletionSource` резолвится), а `$X`/`$H` по-прежнему проходят и снимают аварию.
+
+`ForceNextCommandError` защищена тем же `_lock`, что и остальное мутируемое состояние класса (по документированному в шапке файла инварианту):
+
+```csharp
+public void ForceNextCommandError(int code)
+{
+    lock (_lock)
+    {
+        _forcedErrorForNextDequeue = code;
+    }
+}
+```
 
 ## `ConnectionViewModel`
 
