@@ -1,6 +1,8 @@
+using System;
 using System.Linq;
 using System.Threading.Tasks;
 using ArctZ.Services.Device;
+using ArctZ.Services.Device.Simulation;
 using ArctZ.Tests.Services.Device;
 using ArctZ.ViewModels;
 
@@ -318,5 +320,73 @@ public class ConnectionViewModelTests
         Assert.True(vm.IsConnectionModalVisible);
         Assert.False(vm.IsAlarmModalVisible);
         Assert.True(vm.IsAnyModalVisible);
+    }
+
+    [Fact]
+    public void ToggleMockSettingsCommand_TogglesIsMockSettingsOpen()
+    {
+        var vm = CreateVm(new FakeDeviceTransport());
+        Assert.False(vm.IsMockSettingsOpen);
+
+        vm.ToggleMockSettingsCommand.Execute(null);
+        Assert.True(vm.IsMockSettingsOpen);
+
+        vm.ToggleMockSettingsCommand.Execute(null);
+        Assert.False(vm.IsMockSettingsOpen);
+    }
+
+    [Fact]
+    public async Task TriggerMockErrorAndAlarmCommands_ConnectedToNonMockDemoTransport_DoNotThrow()
+    {
+        // The default demo transport in these tests is FakeDeviceTransport, which does not
+        // implement IMockDeviceControl — this exercises the cast-miss no-op path, not just
+        // "never connected".
+        var vm = CreateVm(new FakeDeviceTransport());
+        vm.SelectedEndpoint = vm.AvailableEndpoints.Single(e => e.Kind == ConnectionEndpointKind.Demo);
+        await vm.ConnectCommand.Execute();
+
+        var errorException = Record.Exception(() => vm.TriggerMockErrorCommand.Execute(null));
+        var alarmException = Record.Exception(() => vm.TriggerMockAlarmCommand.Execute(null));
+
+        Assert.Null(errorException);
+        Assert.Null(alarmException);
+    }
+
+    [Fact]
+    public async Task TriggerMockAlarmCommand_WhileConnectedToRealMockTransport_SetsLastAlarmCodeToOne()
+    {
+        var realTransport = new FakeDeviceTransport();
+        var mockTransport = new MockDeviceTransport(MachineLimits.Default, new ManualPeriodicTimer(), TimeSpan.FromMilliseconds(100));
+        var vm = CreateVm(realTransport, mockTransport);
+        vm.SelectedEndpoint = vm.AvailableEndpoints.Single(e => e.Kind == ConnectionEndpointKind.Demo);
+        await vm.ConnectCommand.Execute();
+        Assert.False(vm.IsAlarmModalVisible);
+
+        vm.TriggerMockAlarmCommand.Execute(null);
+
+        Assert.Equal(1, vm.LastAlarmCode);
+        Assert.True(vm.IsAlarmModalVisible);
+    }
+
+    [Fact]
+    public async Task MockResponseDelayMs_ChangedWhileConnected_DelaysNextCommandAck()
+    {
+        var realTransport = new FakeDeviceTransport();
+        var ticker = new ManualPeriodicTimer();
+        var mockTransport = new MockDeviceTransport(MachineLimits.Default, ticker, TimeSpan.FromMilliseconds(100));
+        var vm = CreateVm(realTransport, mockTransport);
+        vm.SelectedEndpoint = vm.AvailableEndpoints.Single(e => e.Kind == ConnectionEndpointKind.Demo);
+        await vm.ConnectCommand.Execute();
+
+        vm.MockResponseDelayMs = 200; // 2 ticks at the 100ms tick interval
+
+        var sendTask = vm.Session!.SendGCodeAsync("G4 P0");
+        ticker.RaiseElapsed();
+        Assert.False(sendTask.IsCompleted);
+        ticker.RaiseElapsed();
+        Assert.False(sendTask.IsCompleted);
+        ticker.RaiseElapsed();
+
+        Assert.True(sendTask.IsCompletedSuccessfully);
     }
 }

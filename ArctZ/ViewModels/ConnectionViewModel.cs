@@ -17,7 +17,10 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
     private readonly Func<IDeviceTransport> _createDemoTransport;
     private readonly IDeviceSessionFactory _sessionFactory;
     private IDisposable? _sentGCodeSubscription;
+    private IMockDeviceControl? _currentMockControl;
     private const int MaxSentGCodeLines = 200;
+    private const int MockErrorCode = 9;
+    private const int MockAlarmCode = 1;
 
     [Reactive] private IDeviceSession? session;
 
@@ -32,6 +35,9 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
     [Reactive] private ConnectionEndpoint? selectedEndpoint;
 
     [Reactive] private bool isGCodeLogOpen;
+
+    [Reactive] private bool isMockSettingsOpen;
+    [Reactive] private int mockResponseDelayMs;
 
     // Set by ProgramViewModel to mirror its IsProgramLocked. Disconnect tears
     // down the link out from under an in-flight program dispatch loop
@@ -99,6 +105,9 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
     public IEnhancedCommand<Unit> DisconnectCommand { get; }
     public IEnhancedCommand<Unit> ResetAlarmCommand { get; }
     public IEnhancedCommand<Unit> ToggleGCodeLogCommand { get; }
+    public IEnhancedCommand<Unit> ToggleMockSettingsCommand { get; }
+    public IEnhancedCommand<Unit> TriggerMockErrorCommand { get; }
+    public IEnhancedCommand<Unit> TriggerMockAlarmCommand { get; }
 
     public ConnectionViewModel(
         IDeviceTransport realTransport,
@@ -128,6 +137,12 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
             .Enhance(text: "Сброс аварии", name: "ResetAlarmCommand"));
         ToggleGCodeLogCommand = Track(ReactiveCommand.Create(() => { IsGCodeLogOpen = !IsGCodeLogOpen; })
             .Enhance(text: "Лог G-code", name: "ToggleGCodeLogCommand"));
+        ToggleMockSettingsCommand = Track(ReactiveCommand.Create(() => { IsMockSettingsOpen = !IsMockSettingsOpen; })
+            .Enhance(text: "Настройки мока", name: "ToggleMockSettingsCommand"));
+        TriggerMockErrorCommand = Track(ReactiveCommand.Create(() => { _currentMockControl?.ForceNextCommandError(MockErrorCode); })
+            .Enhance(text: "Смоделировать ошибку", name: "TriggerMockErrorCommand"));
+        TriggerMockAlarmCommand = Track(ReactiveCommand.Create(() => { _currentMockControl?.TriggerAlarm(MockAlarmCode); })
+            .Enhance(text: "Смоделировать аварию", name: "TriggerMockAlarmCommand"));
 
         // Immediately mirror a newly-assigned session's state, then keep mirroring it
         // as ConnectionStateChanged fires later (on a background thread for the
@@ -196,6 +211,10 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
                 this.RaisePropertyChanged(nameof(ErrorMessage));
             })
             .DisposeWith(Disposables);
+
+        this.WhenAnyValue(x => x.MockResponseDelayMs)
+            .Subscribe(ms => _currentMockControl?.SetResponseDelay(TimeSpan.FromMilliseconds(ms)))
+            .DisposeWith(Disposables);
     }
 
     private async Task ConnectAsync()
@@ -219,6 +238,9 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
         var innerTransport = SelectedEndpoint.Kind == ConnectionEndpointKind.Demo
             ? _createDemoTransport()
             : _realTransport;
+
+        _currentMockControl = innerTransport as IMockDeviceControl;
+        _currentMockControl?.SetResponseDelay(TimeSpan.FromMilliseconds(MockResponseDelayMs));
 
         if (_sentGCodeSubscription is not null)
         {
@@ -259,6 +281,7 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
         {
             await Session.DisconnectAsync();
             Session = null;
+            _currentMockControl = null;
         }
 
         if (_sentGCodeSubscription is not null)
