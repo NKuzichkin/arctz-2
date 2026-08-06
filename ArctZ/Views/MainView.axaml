@@ -15,6 +15,7 @@
     <UserControl.Resources>
         <conv:ConnectionStateToBrushConverter x:Key="StateToBrush" />
         <conv:LabelLengthToFontSizeConverter x:Key="LabelLengthToFontSize" />
+        <js:RadiusToSizeConverter x:Key="RadiusToSize" />
     </UserControl.Resources>
 
     <UserControl.Styles>
@@ -209,14 +210,22 @@
                         </ScrollViewer>
 
                         <Grid x:Name="JoystickBar" Grid.Row="1" ColumnDefinitions="Auto,*,Auto" Margin="0,12,0,0">
-                            <js:VirtualJoystick x:Name="LeftJoystick" Grid.Column="0" Mode="Fixed" Shape="Circle"
-                                                 VerticalAlignment="Center" IsEnabled="{Binding !IsProgramLocked}"
-                                                 ToolTip.Tip="Левый джойстик: подъём и поворот стрелы (X · Y)"
-                                                 JoystickDown="OnLeftJoystickDown" JoystickMove="OnLeftJoystickMove" JoystickUp="OnLeftJoystickUp" />
-                            <js:VirtualJoystick x:Name="RightJoystick" Grid.Column="2" Mode="Fixed" Shape="Circle"
-                                                 VerticalAlignment="Center" IsEnabled="{Binding !IsProgramLocked}"
-                                                 ToolTip.Tip="Правый джойстик: пан и наклон камеры (Z · A)"
-                                                 JoystickDown="OnRightJoystickDown" JoystickMove="OnRightJoystickMove" JoystickUp="OnRightJoystickUp" />
+                            <StackPanel Grid.Column="0" Spacing="4" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <js:VirtualJoystick x:Name="LeftJoystick" Mode="Fixed" Shape="Circle"
+                                                     IsEnabled="{Binding !IsProgramLocked}"
+                                                     JoystickDown="OnLeftJoystickDown" JoystickMove="OnLeftJoystickMove" JoystickUp="OnLeftJoystickUp" />
+                                <TextBlock Text="Подъём / поворот стрелы" Opacity="0.6" FontSize="12"
+                                           TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center"
+                                           MaxWidth="{Binding Radius, ElementName=LeftJoystick, Converter={StaticResource RadiusToSize}}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Spacing="4" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <js:VirtualJoystick x:Name="RightJoystick" Mode="Fixed" Shape="Circle"
+                                                     IsEnabled="{Binding !IsProgramLocked}"
+                                                     JoystickDown="OnRightJoystickDown" JoystickMove="OnRightJoystickMove" JoystickUp="OnRightJoystickUp" />
+                                <TextBlock Text="Пан / наклон камеры" Opacity="0.6" FontSize="12"
+                                           TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center"
+                                           MaxWidth="{Binding Radius, ElementName=RightJoystick, Converter={StaticResource RadiusToSize}}" />
+                            </StackPanel>
                         </Grid>
                     </Grid>
                 </Border>
