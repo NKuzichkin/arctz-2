@@ -15,6 +15,7 @@
     <UserControl.Resources>
         <conv:ConnectionStateToBrushConverter x:Key="StateToBrush" />
         <conv:LabelLengthToFontSizeConverter x:Key="LabelLengthToFontSize" />
+        <conv:KeyPointIsExecutingConverter x:Key="KeyPointIsExecuting" />
         <js:RadiusToSizeConverter x:Key="RadiusToSize" />
     </UserControl.Resources>
 
@@ -78,6 +79,12 @@
             <Setter Property="Background" Value="{DynamicResource HudAccentDimBrush}" />
             <Setter Property="BorderBrush" Value="{DynamicResource HudAccentBrush}" />
             <Setter Property="BorderThickness" Value="3,0,0,0" />
+        </Style>
+
+        <Style Selector="Border.executing-indicator">
+            <Setter Property="Background" Value="{DynamicResource HudAccentDimBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource HudAccentBrush}" />
+            <Setter Property="BorderThickness" Value="2" />
         </Style>
 
     </UserControl.Styles>
@@ -159,30 +166,40 @@
                                     </ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="program:KeyPoint">
-                                            <Button Width="120" Height="60"
-                                                    Background="{StaticResource HudPanelElevatedBrush}"
-                                                    BorderBrush="{StaticResource HudBorderBrush}" BorderThickness="1"
-                                                    Padding="16,14" HorizontalContentAlignment="Left">
-                                                <Button.Flyout>
-                                                    <MenuFlyout>
-                                                        <MenuItem Header="На точку" CommandParameter="{Binding}"
-                                                                  Command="{Binding ((vm:ProgramViewModel)DataContext).MoveMachineToKeyPointCommand, ElementName=KeyPointsList}" />
-                                                        <MenuItem Header="Изменить" CommandParameter="{Binding}"
-                                                                  Command="{Binding ((vm:ProgramViewModel)DataContext).EditKeyPointCommand, ElementName=KeyPointsList}" />
-                                                        <MenuItem Header="Из машины" CommandParameter="{Binding}"
-                                                                  Command="{Binding ((vm:ProgramViewModel)DataContext).FillKeyPointFromCurrentPositionCommand, ElementName=KeyPointsList}" />
-                                                        <MenuItem Header="Переместить вверх" CommandParameter="{Binding}"
-                                                                  Command="{Binding ((vm:ProgramViewModel)DataContext).MoveKeyPointUpCommand, ElementName=KeyPointsList}" />
-                                                        <MenuItem Header="Переместить вниз" CommandParameter="{Binding}"
-                                                                  Command="{Binding ((vm:ProgramViewModel)DataContext).MoveKeyPointDownCommand, ElementName=KeyPointsList}" />
-                                                        <MenuItem Header="Удалить" CommandParameter="{Binding}"
-                                                                  Command="{Binding ((vm:ProgramViewModel)DataContext).RemoveKeyPointCommand, ElementName=KeyPointsList}" />
-                                                    </MenuFlyout>
-                                                </Button.Flyout>
-                                                <TextBlock Classes="telemetry" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
-                                                           FontSize="{Binding Label, Converter={StaticResource LabelLengthToFontSize}}"
-                                                           Text="{Binding Label}" />
-                                            </Button>
+                                            <Panel>
+                                                <Button Width="120" Height="60"
+                                                        Background="{StaticResource HudPanelElevatedBrush}"
+                                                        BorderBrush="{StaticResource HudBorderBrush}" BorderThickness="1"
+                                                        Padding="16,14" HorizontalContentAlignment="Left">
+                                                    <Button.Flyout>
+                                                        <MenuFlyout>
+                                                            <MenuItem Header="На точку" CommandParameter="{Binding}"
+                                                                      Command="{Binding ((vm:ProgramViewModel)DataContext).MoveMachineToKeyPointCommand, ElementName=KeyPointsList}" />
+                                                            <MenuItem Header="Изменить" CommandParameter="{Binding}"
+                                                                      Command="{Binding ((vm:ProgramViewModel)DataContext).EditKeyPointCommand, ElementName=KeyPointsList}" />
+                                                            <MenuItem Header="Из машины" CommandParameter="{Binding}"
+                                                                      Command="{Binding ((vm:ProgramViewModel)DataContext).FillKeyPointFromCurrentPositionCommand, ElementName=KeyPointsList}" />
+                                                            <MenuItem Header="Переместить вверх" CommandParameter="{Binding}"
+                                                                      Command="{Binding ((vm:ProgramViewModel)DataContext).MoveKeyPointUpCommand, ElementName=KeyPointsList}" />
+                                                            <MenuItem Header="Переместить вниз" CommandParameter="{Binding}"
+                                                                      Command="{Binding ((vm:ProgramViewModel)DataContext).MoveKeyPointDownCommand, ElementName=KeyPointsList}" />
+                                                            <MenuItem Header="Удалить" CommandParameter="{Binding}"
+                                                                      Command="{Binding ((vm:ProgramViewModel)DataContext).RemoveKeyPointCommand, ElementName=KeyPointsList}" />
+                                                        </MenuFlyout>
+                                                    </Button.Flyout>
+                                                    <TextBlock Classes="telemetry" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
+                                                               FontSize="{Binding Label, Converter={StaticResource LabelLengthToFontSize}}"
+                                                               Text="{Binding Label}" />
+                                                </Button>
+                                                <Border Classes="executing-indicator" IsHitTestVisible="False">
+                                                    <Border.IsVisible>
+                                                        <MultiBinding Converter="{StaticResource KeyPointIsExecuting}">
+                                                            <Binding Path="Id" />
+                                                            <Binding Path="((vm:ProgramViewModel)DataContext).CurrentlyExecutingKeyPointId" ElementName="KeyPointsList" />
+                                                        </MultiBinding>
+                                                    </Border.IsVisible>
+                                                </Border>
+                                            </Panel>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
