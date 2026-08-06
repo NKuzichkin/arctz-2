@@ -20,6 +20,9 @@
   <Color x:Key="HudAccentColor">#000000</Color>
   <Color x:Key="HudAccentDimColor">#CCCCCC</Color>
   <Color x:Key="HudAccentBrightColor">#000000</Color>
+  <!-- Translucent counterpart to HudAccentDimColor for the executing-keypoint
+       overlay Border (see Colors.axaml for rationale). -->
+  <Color x:Key="HudAccentOverlayColor">#59CCCCCC</Color>
 
   <Color x:Key="HudWarningColor">#000000</Color>
   <Color x:Key="HudWarningDimColor">#CCCCCC</Color>
@@ -36,6 +39,7 @@
   <SolidColorBrush x:Key="HudAccentBrush" Color="#000000" />
   <SolidColorBrush x:Key="HudAccentDimBrush" Color="#CCCCCC" />
   <SolidColorBrush x:Key="HudAccentBrightBrush" Color="#000000" />
+  <SolidColorBrush x:Key="HudAccentOverlayBrush" Color="{StaticResource HudAccentOverlayColor}" />
 
   <SolidColorBrush x:Key="HudWarningBrush" Color="#000000" />
   <SolidColorBrush x:Key="HudWarningDimBrush" Color="#CCCCCC" />

@@ -82,7 +82,7 @@
         </Style>
 
         <Style Selector="Border.executing-indicator">
-            <Setter Property="Background" Value="{DynamicResource HudAccentDimBrush}" />
+            <Setter Property="Background" Value="{DynamicResource HudAccentOverlayBrush}" />
             <Setter Property="BorderBrush" Value="{DynamicResource HudAccentBrush}" />
             <Setter Property="BorderThickness" Value="2" />
         </Style>

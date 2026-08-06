@@ -16,6 +16,11 @@
   <Color x:Key="HudAccentColor">#3DDBD9</Color>
   <Color x:Key="HudAccentDimColor">#1F4B4A</Color>
   <Color x:Key="HudAccentBrightColor">#7FF0EE</Color>
+  <!-- Translucent version of HudAccentDimColor (~35% alpha), used only for the
+       executing-keypoint overlay Border, which paints on top of the tile's own
+       label — HudAccentDimBrush itself must stay opaque for loaded-entry, where
+       content sits inside the Border rather than under a separate control. -->
+  <Color x:Key="HudAccentOverlayColor">#591F4B4A</Color>
 
   <Color x:Key="HudWarningColor">#E8A33D</Color>
   <Color x:Key="HudWarningDimColor">#4D3818</Color>
@@ -32,6 +37,7 @@
   <SolidColorBrush x:Key="HudAccentBrush" Color="{StaticResource HudAccentColor}" />
   <SolidColorBrush x:Key="HudAccentDimBrush" Color="{StaticResource HudAccentDimColor}" />
   <SolidColorBrush x:Key="HudAccentBrightBrush" Color="{StaticResource HudAccentBrightColor}" />
+  <SolidColorBrush x:Key="HudAccentOverlayBrush" Color="{StaticResource HudAccentOverlayColor}" />
 
   <SolidColorBrush x:Key="HudWarningBrush" Color="{StaticResource HudWarningColor}" />
   <SolidColorBrush x:Key="HudWarningDimBrush" Color="{StaticResource HudWarningDimColor}" />
