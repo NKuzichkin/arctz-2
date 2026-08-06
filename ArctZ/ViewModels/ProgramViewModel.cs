@@ -478,6 +478,7 @@ public partial class ProgramViewModel : ViewModelBase
     [NotifyCanExecuteChangedFor(nameof(StopCommand))]
     [NotifyPropertyChangedFor(nameof(IsProgramLocked))]
     [NotifyPropertyChangedFor(nameof(StatusLabel))]
+    [NotifyPropertyChangedFor(nameof(CurrentlyExecutingKeyPointId))]
     private PlaybackState _playbackState = PlaybackState.Idle;
 
     public bool IsProgramLocked => PlaybackState is PlaybackState.Running or PlaybackState.Paused;
@@ -564,6 +565,7 @@ public partial class ProgramViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SegmentProgressLabel))]
+    [NotifyPropertyChangedFor(nameof(CurrentlyExecutingKeyPointId))]
     private int? _currentSegmentIndex;
 
     [ObservableProperty]
@@ -589,6 +591,22 @@ public partial class ProgramViewModel : ViewModelBase
     public string SegmentProgressLabel => CurrentSegmentIndex is { } index && TotalSegments > 0
         ? $"{index + 1} из {TotalSegments}  ({SegmentProgress:P0})"
         : "—";
+
+    public Guid? CurrentlyExecutingKeyPointId
+    {
+        get
+        {
+            if (PlaybackState is not (PlaybackState.Running or PlaybackState.Paused))
+            {
+                return null;
+            }
+
+            var targetIndex = (CurrentSegmentIndex ?? -1) + 2;
+            return targetIndex >= 0 && targetIndex < KeyPoints.Count
+                ? KeyPoints[targetIndex].Id
+                : null;
+        }
+    }
 
     private IDeviceSession? _subscribedSession;
 

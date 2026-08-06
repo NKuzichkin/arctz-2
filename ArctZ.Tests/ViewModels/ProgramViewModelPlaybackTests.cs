@@ -222,4 +222,69 @@ public class ProgramViewModelPlaybackTests
 
         Assert.Equal(PlaybackState.Faulted, vm.PlaybackState);
     }
+
+    [Fact]
+    public void CurrentlyExecutingKeyPointId_IsNull_WhileIdle()
+    {
+        var vm = CreateViewModel(out var transport);
+        SeedTwoSegmentProgram(vm, transport);
+
+        Assert.Null(vm.CurrentlyExecutingKeyPointId);
+    }
+
+    [Fact]
+    public async Task CurrentlyExecutingKeyPointId_TargetsFirstDestination_AsSoonAsPlayStarts_BeforeAnyAck()
+    {
+        var vm = CreateViewModel(out var transport);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+
+        Assert.Equal(vm.KeyPoints[1].Id, vm.CurrentlyExecutingKeyPointId);
+
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await playTask;
+    }
+
+    [Fact]
+    public async Task CurrentlyExecutingKeyPointId_AdvancesWithEachSegmentAck_ThenClearsOnCompletion()
+    {
+        var vm = CreateViewModel(out var transport);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+        Assert.Equal(vm.KeyPoints[1].Id, vm.CurrentlyExecutingKeyPointId);
+
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.CurrentSegmentIndex == 0, TimeSpan.FromSeconds(1));
+        Assert.Equal(vm.KeyPoints[2].Id, vm.CurrentlyExecutingKeyPointId);
+
+        transport.SimulateReceivedLine("ok");
+        await playTask;
+
+        Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
+        Assert.Null(vm.CurrentlyExecutingKeyPointId);
+    }
+
+    [Fact]
+    public async Task CurrentlyExecutingKeyPointId_StaysOnTarget_WhilePaused()
+    {
+        var vm = CreateViewModel(out var transport);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+        await vm.PauseCommand.ExecuteAsync(null);
+
+        Assert.Equal(PlaybackState.Paused, vm.PlaybackState);
+        Assert.Equal(vm.KeyPoints[1].Id, vm.CurrentlyExecutingKeyPointId);
+
+        await vm.PlayCommand.ExecuteAsync(null);
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await playTask;
+    }
 }
