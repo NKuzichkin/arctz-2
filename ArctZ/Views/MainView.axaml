@@ -14,6 +14,7 @@
 
     <UserControl.Resources>
         <conv:ConnectionStateToBrushConverter x:Key="StateToBrush" />
+        <conv:LabelLengthToFontSizeConverter x:Key="LabelLengthToFontSize" />
     </UserControl.Resources>
 
     <UserControl.Styles>
@@ -160,9 +161,10 @@
                                     </ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="program:KeyPoint">
-                                            <Button Background="{StaticResource HudPanelElevatedBrush}"
+                                            <Button Width="120" Height="60"
+                                                    Background="{StaticResource HudPanelElevatedBrush}"
                                                     BorderBrush="{StaticResource HudBorderBrush}" BorderThickness="1"
-                                                    Padding="14,12" HorizontalContentAlignment="Left">
+                                                    Padding="16,14" HorizontalContentAlignment="Left">
                                                 <Button.Flyout>
                                                     <MenuFlyout>
                                                         <MenuItem Header="На точку" CommandParameter="{Binding}"
@@ -180,7 +182,9 @@
                                                                   Command="{Binding ((vm:ProgramViewModel)DataContext).RemoveKeyPointCommand, ElementName=KeyPointsList}" />
                                                     </MenuFlyout>
                                                 </Button.Flyout>
-                                                <TextBlock Classes="telemetry" FontSize="16" Text="{Binding Label}" />
+                                                <TextBlock Classes="telemetry" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
+                                                           FontSize="{Binding Label, Converter={StaticResource LabelLengthToFontSize}}"
+                                                           Text="{Binding Label}" />
                                             </Button>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
@@ -224,7 +228,7 @@
                             Padding="20" HorizontalAlignment="Center" VerticalAlignment="Center">
                         <StackPanel Spacing="10">
                             <TextBlock Classes="section-heading" Text="{Binding Number, StringFormat='ТОЧКА №{0}'}" />
-                            <TextBox Text="{Binding Label}" PlaceholderText="Название" />
+                            <TextBox Text="{Binding Label}" PlaceholderText="Название" MaxLength="30" />
                             <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" Margin="0,4,0,0">
                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="X" VerticalAlignment="Center" Margin="0,0,10,6" />
                                 <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding X}" Margin="0,0,0,6" />
