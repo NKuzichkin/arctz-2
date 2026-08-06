@@ -52,11 +52,14 @@ public void SetResponseDelay(TimeSpan delay)
     lock (_lock)
     {
         _responseDelayTicks = (int)Math.Round(delay.TotalMilliseconds / _tickInterval.TotalMilliseconds);
+        _ticksUntilNextProcess = _responseDelayTicks;
     }
 }
 ```
 
-Новые приватные поля: `_responseDelayTicks` (по умолчанию `0`, сохраняет текущее поведение без изменений), `_ticksUntilNextProcess` (счётчик текущей задержки).
+Новые приватные поля: `_responseDelayTicks` (по умолчанию `0`, сохраняет текущее поведение без изменений), `_ticksUntilNextProcess` (счётчик текущей задержки, тоже по умолчанию `0`).
+
+`SetResponseDelay` обязательно перезаписывает и `_ticksUntilNextProcess`, а не только `_responseDelayTicks` — иначе первая же команда, отправленная после включения задержки, проскочила бы без неё (счётчик стоял бы на `0` с момента создания транспорта). Перезапись срабатывает, даже если в очереди сейчас ничего нет — `_ticksUntilNextProcess` просто не тратится (`ProcessOnePendingLine` проверяет пустую очередь раньше, чем свой countdown), пока не появится реальная команда для отсчёта.
 
 `ProcessOnePendingLine` (вызывается только из `OnTick`, уже под `_lock`) меняется так, чтобы перед обработкой головы очереди сначала выждать `_responseDelayTicks` тиков:
 
@@ -187,7 +190,8 @@ private void OpenMockSettings() => Connection.IsMockSettingsOpen = true;
 
 `ArctZ.Tests/Services/Device/MockDeviceTransportTests.cs` (новые кейсы):
 - `TriggerAlarm` → статус-запрос сразу после вызова отдаёт `MachineState.Alarm`; поднятая строка `LineReceived` равна `ALARM:{code}`; `_targetPose` сброшен (движение останавливается).
-- `SetResponseDelay` → после отправки команды и `delay = N` тиков `ok` не приходит раньше `N` вызовов `_ticker.RaiseElapsed()`, но приходит ровно на `N+1`-м; движение по осям (`WPos`) в промежуточных тиках всё равно продолжается, если задержка относится к следующей команде, а не к уже выполняющемуся движению.
+- `SetResponseDelay(delay)`, где `delay` соответствует `N` тикам (например, `300`мс при интервале тика `100`мс → `N=3`): после отправки команды первые `N` вызовов `_ticker.RaiseElapsed()` не производят `ok`, он приходит ровно на `(N+1)`-м вызове (тот же расклад, что показан пользователю на этапе уточнений: «3 тика простаивает → на 4-м тике приходит ok»).
+- `SetResponseDelay`, вызванный ДО отправки команды (пока очередь пуста), всё равно применяется к самой первой последующей команде — не только к командам после первой (регресс-тест на то, что `_ticksUntilNextProcess` прайм-ится в `SetResponseDelay`, а не только сбрасывается после каждой обработанной строки).
 - `delay = 0` (по умолчанию) — существующие тесты проходят без изменений.
 
 `ArctZ.Tests/ViewModels/ConnectionViewModelTests.cs` (новые кейсы):
