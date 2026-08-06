@@ -88,17 +88,24 @@
                     BorderThickness="0,0,0,1"
                     Padding="12,10">
                 <StackPanel x:Name="HeaderPanel" Spacing="8">
-                    <Border x:Name="HeaderStatusRow" Background="{StaticResource HudPanelElevatedBrush}" BorderBrush="{StaticResource HudBorderStrongBrush}"
-                            BorderThickness="1" Padding="10,6">
-                        <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" VerticalAlignment="Center">
-                            <Button Grid.Column="0" Classes="icon-action" Content="☰" Command="{Binding ToggleSideMenuCommand}" />
-                            <ContentControl x:Name="ConnectionStatus" Grid.Column="1" ClipToBounds="True" Content="{Binding Connection}" />
-                            <Border Grid.Column="2" Classes="header-divider" />
-                            <TextBlock Grid.Column="3" Classes="telemetry" FontSize="14" VerticalAlignment="Center" Text="{Binding StatusLabel}" />
-                            <Border Grid.Column="4" Classes="header-divider" />
-                            <Button Grid.Column="5" Classes="icon-action" Content="⏻" Command="{Binding Connection.DisconnectCommand}" />
-                        </Grid>
-                    </Border>
+                    <Grid ColumnDefinitions="Auto,*" VerticalAlignment="Center">
+                        <Button Grid.Column="0" Classes="icon-action" Content="☰" Command="{Binding ToggleSideMenuCommand}" Margin="0,0,8,0" />
+                        <Border x:Name="HeaderStatusRow" Grid.Column="1" Background="{StaticResource HudPanelElevatedBrush}" BorderBrush="{StaticResource HudBorderStrongBrush}"
+                                BorderThickness="1" Padding="10,6">
+                            <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" VerticalAlignment="Center">
+                                <ContentControl x:Name="ConnectionStatus" Grid.Column="0" ClipToBounds="True" Content="{Binding Connection}" />
+                                <Border Grid.Column="1" Classes="header-divider" />
+                                <TextBlock Grid.Column="2" Classes="telemetry" FontSize="14" VerticalAlignment="Center" Text="{Binding StatusLabel}" />
+                                <Border Grid.Column="3" Classes="header-divider" />
+                                <Button Grid.Column="4" Classes="icon-action" Command="{Binding Connection.DisconnectCommand}" ToolTip.Tip="Отключить">
+                                    <Path Width="18" Height="18" Stretch="Uniform"
+                                          Stroke="{DynamicResource HudTextPrimaryBrush}" StrokeThickness="2"
+                                          StrokeLineCap="Round" StrokeJoin="Round"
+                                          Data="M18.36,6.64 A9,9 0 1 1 5.64,6.64 M12,2 L12,12" />
+                                </Button>
+                            </Grid>
+                        </Border>
+                    </Grid>
                     <ScrollViewer x:Name="HeaderActionsScroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
                                   IsEnabled="{Binding !IsSideMenuOpen}">
                         <StackPanel x:Name="HeaderActions" Orientation="Horizontal" Spacing="8">
