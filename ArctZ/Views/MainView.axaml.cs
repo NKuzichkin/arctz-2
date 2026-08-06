@@ -22,6 +22,8 @@ namespace ArctZ.Views
         private const double ContentGridVerticalMargin = 40;
         private const double JoystickBarTopMargin = 12;
         private const double ProgramPanelMinHeight = 160;
+        // Подпись под джойстиком: StackPanel Spacing=4 + до 2 строк текста FontSize=12
+        private const double JoystickLabelReservedHeight = 36;
 
         // Фолбэк для HeaderBorder.Bounds.Height на первом кадре, до первого layout-прохода
         // (однострочная шапка: Padding="12,10" + одна строка контента).
@@ -75,7 +77,7 @@ namespace ArctZ.Views
             var contentGridHeight = mainViewHeight - effectiveHeaderHeight - ContentBorderVerticalChrome
                 - ContentGridVerticalMargin - JoystickBarTopMargin;
             var joystickRowBudget = contentGridHeight - ProgramPanelMinHeight;
-            var heightRadius = joystickRowBudget / 2;
+            var heightRadius = (joystickRowBudget - JoystickLabelReservedHeight) / 2;
 
             return Math.Clamp(Math.Min(widthRadius, heightRadius), MinRadius, MaxRadius);
         }
