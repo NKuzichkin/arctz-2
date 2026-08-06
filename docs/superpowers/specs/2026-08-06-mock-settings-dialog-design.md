@@ -15,6 +15,24 @@
 
 Диалог доступен всегда (пункт меню не скрывается и не блокируется вне демо-подключения), но кнопки и слайдер реально влияют на поведение только когда есть живой демо-транспорт — иначе это тихий no-op, значение задержки при этом запоминается и применяется к следующему демо-подключению.
 
+## `IMockDeviceControl` — новый интерфейс
+
+`ConnectionViewModel` не должен знать о конкретном классе `MockDeviceTransport` (из тестового `FakeDeviceTransport`, который сегодня подставляется в `ConnectionViewModelTests` по умолчанию, к нему всё равно не привести кастом) — вместо этого выделяется узкий интерфейс, который реализует только `MockDeviceTransport`:
+
+`ArctZ/Services/Device/IMockDeviceControl.cs` (namespace `ArctZ.Services.Device`, рядом с `IDeviceTransport`):
+
+```csharp
+/// <summary>Demo-only knobs for MockDeviceTransport, surfaced to the UI via ConnectionViewModel.</summary>
+public interface IMockDeviceControl
+{
+    void ForceNextCommandError(int code);
+    void TriggerAlarm(int code);
+    void SetResponseDelay(TimeSpan delay);
+}
+```
+
+`MockDeviceTransport` объявляется как `public sealed class MockDeviceTransport : IDeviceTransport, IMockDeviceControl` — существующий `ForceNextCommandError` уже соответствует сигнатуре, ничего в нём менять не нужно.
+
 ## `MockDeviceTransport` — новые методы
 
 ```csharp
@@ -82,10 +100,10 @@ private string? ProcessOnePendingLine()
 Новые члены:
 - `[Reactive] private bool isMockSettingsOpen;` → `IsMockSettingsOpen`
 - `[Reactive] private int mockResponseDelayMs;` → `MockResponseDelayMs` (по умолчанию `0`)
-- `private MockDeviceTransport? _currentMockTransport;`
+- `private IMockDeviceControl? _currentMockControl;`
 - `ToggleMockSettingsCommand` — `ReactiveCommand.Create(() => IsMockSettingsOpen = !IsMockSettingsOpen)`, через `Track(...).Enhance(...)`, как `ToggleGCodeLogCommand`.
-- `TriggerMockErrorCommand` — `ReactiveCommand.Create(() => _currentMockTransport?.ForceNextCommandError(9))`.
-- `TriggerMockAlarmCommand` — `ReactiveCommand.Create(() => _currentMockTransport?.TriggerAlarm(1))`.
+- `TriggerMockErrorCommand` — `ReactiveCommand.Create(() => _currentMockControl?.ForceNextCommandError(9))`.
+- `TriggerMockAlarmCommand` — `ReactiveCommand.Create(() => _currentMockControl?.TriggerAlarm(1))`.
 
 В `ConnectAsync`, там же, где сегодня выбирается `innerTransport`:
 
@@ -94,17 +112,17 @@ var innerTransport = SelectedEndpoint.Kind == ConnectionEndpointKind.Demo
     ? _createDemoTransport()
     : _realTransport;
 
-_currentMockTransport = innerTransport as MockDeviceTransport;
-_currentMockTransport?.SetResponseDelay(TimeSpan.FromMilliseconds(MockResponseDelayMs));
+_currentMockControl = innerTransport as IMockDeviceControl;
+_currentMockControl?.SetResponseDelay(TimeSpan.FromMilliseconds(MockResponseDelayMs));
 ```
 
-`DisconnectAsync` дополнительно обнуляет `_currentMockTransport = null`.
+`DisconnectAsync` дополнительно обнуляет `_currentMockControl = null`.
 
 Подписка на изменение `MockResponseDelayMs` (в конструкторе, рядом с остальными `WhenAnyValue`-подписками) применяет новое значение к живому транспорту сразу, без ожидания реконнекта:
 
 ```csharp
 this.WhenAnyValue(x => x.MockResponseDelayMs)
-    .Subscribe(ms => _currentMockTransport?.SetResponseDelay(TimeSpan.FromMilliseconds(ms)))
+    .Subscribe(ms => _currentMockControl?.SetResponseDelay(TimeSpan.FromMilliseconds(ms)))
     .DisposeWith(Disposables);
 ```
 
@@ -156,11 +174,13 @@ private void OpenMockSettings() => Connection.IsMockSettingsOpen = true;
 
 ## Обработка ошибок / граничные случаи
 
-- Клик по «Смоделировать ошибку»/«Смоделировать аварию» вне демо-подключения (`_currentMockTransport == null`) — no-op, диалог остаётся открытым, никакой обратной связи не показывается (осознанное решение, см. Q&A).
+- Клик по «Смоделировать ошибку»/«Смоделировать аварию» вне демо-подключения (`_currentMockControl == null`) — no-op, диалог остаётся открытым, никакой обратной связи не показывается (осознанное решение, см. Q&A).
 - «Смоделировать ошибку» не имеет мгновенного эффекта, если в моменте нет отправленной команды в очереди — она «взводит» следующую команду, как и раньше делал `ForceNextCommandError`. Это соответствует протоколу FluidNC: ошибка — всегда ответ на конкретную команду, а не асинхронный пуш.
 - «Смоделировать аварию», напротив, отправляется мгновенно и асинхронно (как и реальный `ALARM:` от контроллера) — сразу открывает модалку аварии поверх основного экрана.
 - Существующая кнопка «Сброс аварии» (`$X`) уже работает с моком без изменений — `ApplyCommand` сбрасывает `_alarm = false` на `$X`.
-- Переключение с «Демо» на «Устройство» между подключениями обнуляет `_currentMockTransport` в `DisconnectAsync`, так что случайный вызов методов мока после переключения невозможен.
+- Переключение с «Демо» на «Устройство» между подключениями обнуляет `_currentMockControl` в `DisconnectAsync`, так что случайный вызов методов мока после переключения невозможен.
+- Подключение через реальный эндпоинт (`_realTransport`, не реализующий `IMockDeviceControl`) тоже даёт `_currentMockControl == null` через тот же каст — отдельной ветки на `RealDevice` не нужно.
+- Тестовый дублёр `FakeDeviceTransport` (используется по умолчанию в `ConnectionViewModelTests` как демо-транспорт) не реализует `IMockDeviceControl`, так что для позитивных проверок triggr-команд тесты должны явно передать в `CreateVm(...)` настоящий `MockDeviceTransport` в качестве демо-транспорта.
 - Задержка ответа не влияет на realtime-статус-опрос (`?`), поэтому UI продолжает получать живые координаты/состояние, даже когда очередь строковых команд «зависла» в задержке.
 
 ## Тесты
@@ -172,14 +192,15 @@ private void OpenMockSettings() => Connection.IsMockSettingsOpen = true;
 
 `ArctZ.Tests/ViewModels/ConnectionViewModelTests.cs` (новые кейсы):
 - `ToggleMockSettingsCommand` переключает `IsMockSettingsOpen`.
-- `TriggerMockErrorCommand`/`TriggerMockAlarmCommand` вне подключения не бросают исключений (no-op).
-- После подключения к «Демо» `TriggerMockAlarmCommand` приводит к тому, что `LastAlarmCode` становится `1` (через реальный `AlarmTriggered` пайплайн `DeviceSession`).
-- Изменение `MockResponseDelayMs` во время активного демо-подключения форвардится в `_currentMockTransport.SetResponseDelay(...)` (проверяется через наблюдаемый эффект — задержку `ok` на реально отправленной команде).
+- `TriggerMockErrorCommand`/`TriggerMockAlarmCommand` вне подключения (демо-транспорт по умолчанию — `FakeDeviceTransport`, не реализующий `IMockDeviceControl`) не бросают исключений (no-op).
+- После подключения к «Демо» с настоящим `MockDeviceTransport`, переданным в `CreateVm(...)` как демо-транспорт, `TriggerMockAlarmCommand` приводит к тому, что `LastAlarmCode` становится `1` (через реальный `AlarmTriggered` пайплайн `DeviceSession`).
+- Изменение `MockResponseDelayMs` во время активного демо-подключения (тот же настоящий `MockDeviceTransport`) форвардится в `SetResponseDelay(...)` — проверяется через наблюдаемый эффект (задержку `ok` на реально отправленной команде).
 
 ## Затронутые файлы
 
-- `ArctZ/Services/Device/Simulation/MockDeviceTransport.cs` — `TriggerAlarm`, `SetResponseDelay`, изменение `ProcessOnePendingLine`
-- `ArctZ/ViewModels/ConnectionViewModel.cs` — `IsMockSettingsOpen`, `MockResponseDelayMs`, `_currentMockTransport`, три новые команды, подписка на задержку
+- `ArctZ/Services/Device/IMockDeviceControl.cs` — новый интерфейс
+- `ArctZ/Services/Device/Simulation/MockDeviceTransport.cs` — реализует `IMockDeviceControl`; `TriggerAlarm`, `SetResponseDelay`, изменение `ProcessOnePendingLine`
+- `ArctZ/ViewModels/ConnectionViewModel.cs` — `IsMockSettingsOpen`, `MockResponseDelayMs`, `_currentMockControl`, три новые команды, подписка на задержку
 - `ArctZ/ViewModels/ProgramViewModel.cs` — `OpenMockSettingsCommand`
 - `ArctZ/Views/MainView.axaml` — пункт бокового меню, диалог настроек мока
 - `ArctZ.Tests/Services/Device/MockDeviceTransportTests.cs` — новые тесты
