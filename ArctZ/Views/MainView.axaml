@@ -319,6 +319,8 @@
                             <StackPanel Spacing="8">
                                 <Button Classes="header-action" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
                                         Content="Лог G-code" Command="{Binding OpenGCodeLogCommand}" />
+                                <Button Classes="header-action" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                        Content="Настройки мока" Command="{Binding OpenMockSettingsCommand}" />
                             </StackPanel>
                         </DockPanel>
                     </Border>
@@ -344,6 +346,28 @@
                                 </ListBox.Styles>
                             </ListBox>
                         </DockPanel>
+                    </Border>
+                </Border>
+
+                <Border IsVisible="{Binding Connection.IsMockSettingsOpen}" Background="{StaticResource HudScrimBrush}">
+                    <Border Width="320" Background="{StaticResource HudPanelElevatedBrush}"
+                            BorderBrush="{StaticResource HudBorderStrongBrush}" BorderThickness="1"
+                            Padding="20" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <StackPanel Spacing="14">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Grid.Column="0" Classes="section-heading" Text="НАСТРОЙКИ МОКА" VerticalAlignment="Center" />
+                                <Button Grid.Column="1" Content="✕" Padding="8,2" Command="{Binding Connection.ToggleMockSettingsCommand}" />
+                            </Grid>
+                            <Button Content="Смоделировать ошибку" Command="{Binding Connection.TriggerMockErrorCommand}"
+                                    HorizontalAlignment="Stretch" />
+                            <Button Content="Смоделировать аварию" Command="{Binding Connection.TriggerMockAlarmCommand}"
+                                    HorizontalAlignment="Stretch" />
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="{Binding Connection.MockResponseDelayMs, StringFormat='Задержка ответа: {0} мс'}" />
+                                <Slider Minimum="0" Maximum="5000" TickFrequency="250" IsSnapToTickEnabled="True"
+                                        Value="{Binding Connection.MockResponseDelayMs}" />
+                            </StackPanel>
+                        </StackPanel>
                     </Border>
                 </Border>
             </Grid>
