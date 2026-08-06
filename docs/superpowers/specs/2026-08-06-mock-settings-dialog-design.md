@@ -135,10 +135,14 @@ this.WhenAnyValue(x => x.MockResponseDelayMs)
 
 ```csharp
 [RelayCommand]
-private void OpenMockSettings() => Connection.IsMockSettingsOpen = true;
+private void OpenMockSettings()
+{
+    Connection.IsMockSettingsOpen = true;
+    IsSideMenuOpen = false;
+}
 ```
 
-Генерирует `OpenMockSettingsCommand` — тот же `[RelayCommand]`-паттерн (CommunityToolkit.Mvvm), что и остальные простые команды `ProgramViewModel` (например, `OpenGCodeLog` на строке 105).
+Генерирует `OpenMockSettingsCommand` — тот же `[RelayCommand]`-паттерн (CommunityToolkit.Mvvm) и та же форма, что у `OpenGCodeLog` (строка 104-109): открывает диалог и заодно закрывает боковое меню.
 
 ## UI: `MainView.axaml`
 
