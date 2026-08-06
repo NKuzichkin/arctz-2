@@ -601,7 +601,7 @@ public partial class ProgramViewModel : ViewModelBase
                 return null;
             }
 
-            var targetIndex = (CurrentSegmentIndex ?? -1) + 2;
+            var targetIndex = (CurrentSegmentIndex ?? -1) + 1;
             return targetIndex >= 0 && targetIndex < KeyPoints.Count
                 ? KeyPoints[targetIndex].Id
                 : null;
