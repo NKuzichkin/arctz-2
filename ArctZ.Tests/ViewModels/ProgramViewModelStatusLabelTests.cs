@@ -5,6 +5,7 @@ using ArctZ.Services.Program;
 using ArctZ.Tests.Services.Device;
 using ArctZ.Tests.Services.Program;
 using ArctZ.ViewModels;
+using static ArctZ.Tests.TestSupport.AsyncAssert;
 
 namespace ArctZ.Tests.ViewModels;
 
@@ -294,19 +295,5 @@ public class ProgramViewModelStatusLabelTests
         transport.SimulateReceivedLine("<Hold|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
 
         Assert.Equal("Удержание", vm.StatusLabel);
-    }
-
-    private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
-    {
-        var start = DateTime.UtcNow;
-        while (!condition())
-        {
-            if (DateTime.UtcNow - start > timeout)
-            {
-                throw new TimeoutException("Condition was not met in time.");
-            }
-
-            await Task.Delay(20);
-        }
     }
 }

@@ -6,6 +6,7 @@ using ArctZ.Services.Program;
 using ArctZ.Tests.Services.Device;
 using ArctZ.Tests.Services.Program;
 using ArctZ.ViewModels;
+using static ArctZ.Tests.TestSupport.AsyncAssert;
 
 namespace ArctZ.Tests.ViewModels;
 
@@ -38,20 +39,6 @@ public class ProgramViewModelPlaybackTests
         }
     }
 
-    private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
-    {
-        var start = DateTime.UtcNow;
-        while (!condition())
-        {
-            if (DateTime.UtcNow - start > timeout)
-            {
-                throw new TimeoutException("Condition was not met in time.");
-            }
-
-            await Task.Delay(20);
-        }
-    }
-
     [Fact]
     public async Task PlayAsync_DispatchesAllStepsBeforeAwaitingAcks_ThenTracksProgress()
     {
@@ -81,7 +68,7 @@ public class ProgramViewModelPlaybackTests
     [Fact]
     public async Task DisplayProgress_ForcesTo100Percent_WhenCompleted_EvenIfAcksArrivedBeforeAnyTick()
     {
-        var vm = CreateViewModel(out var transport, out var progressTimer);
+        var vm = CreateViewModel(out var transport, out _);
         await vm.Connection.ConnectCommand.Execute();
         SeedTwoSegmentProgram(vm, transport);
 
@@ -136,6 +123,12 @@ public class ProgramViewModelPlaybackTests
         await playTask;
 
         Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
+        Assert.Equal(1.0, vm.DisplayProgress);
+
+        // A tick already queued to the ThreadPool when the run ended must not overwrite the
+        // final 1.0 with a stale mid-timeline value — IPeriodicTimer.Stop() cannot cancel a
+        // callback that has already been dispatched.
+        progressTimer.RaiseElapsed();
         Assert.Equal(1.0, vm.DisplayProgress);
     }
 
@@ -418,6 +411,61 @@ public class ProgramViewModelPlaybackTests
         await playTask;
 
         Assert.Equal(PlaybackState.Stopped, vm.PlaybackState);
+    }
+
+    [Fact]
+    public async Task Pause_DuringTheMotionTail_DoesNotCancelTheWait_AndResumeCompletesTheRun()
+    {
+        var vm = CreateViewModel(out var transport, out _);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("<Run|WPos:5.000,0.000,0.000,0.000|FS:500,0>");
+
+        // Pause is legal here (still Running) and must NOT cancel the motion-idle wait — the
+        // machine reports Hold, not Idle, while held, so the same wait simply continues once
+        // the operator resumes. If Pause instead cancelled/replaced the wait, playTask would
+        // never resolve from the later Idle report below.
+        await vm.PauseCommand.ExecuteAsync(null);
+        Assert.False(playTask.IsCompleted);
+        Assert.Equal(PlaybackState.Paused, vm.PlaybackState);
+
+        // Resume needs no bookkeeping of its own: it just flips PlaybackState back to Running.
+        await vm.PlayCommand.ExecuteAsync(null);
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
+        await playTask;
+
+        Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
+    }
+
+    [Fact]
+    public async Task LinkLoss_DuringTheMotionTail_FaultsTheRunAndResolvesTheWait()
+    {
+        var vm = CreateViewModel(out var transport, out _);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+        transport.ConnectFailuresRemaining = 10;
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+
+        // Link loss while waiting for the machine to go Idle: no status report can ever resolve
+        // the wait once the transport is gone, so Faulted is the only escape hatch besides Stop.
+        transport.SimulateDisconnect();
+
+        await WaitUntilAsync(() => vm.PlaybackState == PlaybackState.Faulted, TimeSpan.FromSeconds(3));
+
+        // Must not hang: OnPlaybackStateChanged's Faulted branch resolves _motionIdleSignal.
+        await playTask;
+        Assert.True(playTask.IsCompletedSuccessfully);
     }
 
     [Fact]

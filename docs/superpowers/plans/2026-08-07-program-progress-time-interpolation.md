@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make the program-execution progress bar move continuously in real time (estimated from distance/feed, self-calibrating against actual ack timing) instead of jumping only when the controller acknowledges a G-code line.
+**Goal:** Make the program-execution progress bar move continuously in real time (estimated from distance/feed) for the whole run, and reach 100% only when the machine has actually stopped moving — instead of jumping only when the controller acknowledges a G-code line, or snapping to 100% while the machine is still finishing its last move.
 
-**Architecture:** `TrajectoryCompiler` gains a per-step `EstimatedDurationSeconds` (distance/feed, or exact dwell time). `ProgramViewModel` drives a new `DisplayProgress` property from a periodic timer that interpolates linearly toward each step's known target over that estimated duration, snapping to the ack-confirmed truth (`OverallProgress`) whenever a real ack arrives, and refining a cumulative calibration factor (actual-time / estimated-time so far) applied to every subsequent step's estimate. The XAML `ProgressBar` binds to `DisplayProgress` instead of `OverallProgress`.
+**Architecture:** `TrajectoryCompiler` gains a per-step `EstimatedDurationSeconds` (distance/feed, or exact dwell time). `ProgramViewModel` drives a new `DisplayProgress` property that is an ack-independent visual timeline player: `PlayAsync` seeds the whole compiled step list, and a periodic-timer tick walks that timeline purely by elapsed time along the steps' estimated durations, force-snapping to 1.0 when `PlaybackState` becomes `Completed`. `PlaybackState.Completed` itself was moved off the last G-code ack (which only means "buffered", not "moved") onto the first status report showing `MachineState.Idle` after the ack wait finishes. The XAML `ProgressBar` binds to `DisplayProgress` instead of `OverallProgress`.
 
 **Tech Stack:** Avalonia UI (.NET 10), CommunityToolkit.Mvvm (`[ObservableProperty]`), xUnit tests, existing `IPeriodicTimer`/`ManualPeriodicTimer` test-double infrastructure.
 

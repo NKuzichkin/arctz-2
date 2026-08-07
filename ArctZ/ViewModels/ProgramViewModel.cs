@@ -29,10 +29,14 @@ public partial class ProgramViewModel : ViewModelBase
     // Guards the fields below AND DisplayProgress: OnProgressTick fires on a raw
     // System.Threading.Timer callback (a ThreadPool thread, unsynchronized with the UI
     // thread), while OnPlaybackStateChanged's Completed-forced snap runs on whatever thread
-    // PlayAsync's `await` resumes on. Without this lock a stale tick — already queued to the
-    // ThreadPool before Completed fired, computed from now-superseded field values — can
-    // execute after the Completed snap and overwrite DisplayProgress with a lower value: a
-    // visible backward jump. The lock removes the race outright rather than narrowing it.
+    // PlayAsync's `await` resumes on. The lock only gives mutual exclusion, not ordering: it
+    // cannot by itself stop a tick that was already queued to the ThreadPool before Completed
+    // fired from running after the Completed snap and overwriting DisplayProgress with a lower,
+    // now-stale value — a visible backward jump. IPeriodicTimer.Stop() (Timer.Change(Infinite,
+    // Infinite) underneath) does not cancel a callback already dispatched to the ThreadPool, so
+    // ordering has to be enforced from inside the tick itself: _animActive is state the tick
+    // checks before doing anything. A queued tick that lands after the run ended observes
+    // _animActive == false and returns without touching DisplayProgress.
     private readonly object _animLock = new();
     private IReadOnlyList<CompiledStep> _visualSteps = Array.Empty<CompiledStep>();
     private int _visualStepIndex;
@@ -40,6 +44,7 @@ public partial class ProgramViewModel : ViewModelBase
     private double _animTargetProgress;
     private double _animDurationSeconds;
     private double _animElapsedSeconds;
+    private bool _animActive;
 
     public ConnectionViewModel Connection { get; }
 
@@ -68,8 +73,9 @@ public partial class ProgramViewModel : ViewModelBase
     [ObservableProperty]
     private bool _isSideMenuOpen;
 
-    /// <summary>Time-interpolated view of OverallProgress — moves continuously between
-    /// ack-confirmed checkpoints instead of jumping only when a G-code line is acknowledged.</summary>
+    /// <summary>Ack-independent visual timeline of the run: advances purely on elapsed tick time
+    /// along the compiled steps' estimated durations, and is force-snapped to 1.0 when the run
+    /// completes. Deliberately not derived from OverallProgress — see the note on _animLock.</summary>
     [ObservableProperty]
     private double _displayProgress;
 
@@ -100,6 +106,11 @@ public partial class ProgramViewModel : ViewModelBase
     {
         lock (_animLock)
         {
+            if (!_animActive)
+            {
+                return;
+            }
+
             _animElapsedSeconds += _progressTickInterval.TotalSeconds;
 
             while (_animElapsedSeconds >= _animDurationSeconds && _visualStepIndex < _visualSteps.Count - 1)
@@ -521,7 +532,10 @@ public partial class ProgramViewModel : ViewModelBase
 
     private bool _pausedForLinkLoss;
 
-    private TaskCompletionSource<bool>? _motionIdleSignal;
+    // Written on the PlayAsync continuation thread, read on the transport's reader thread
+    // (OnSessionDeviceStatusChanged) — volatile so a read there can never observe a stale/torn
+    // reference from a write on the other thread.
+    private volatile TaskCompletionSource<bool>? _motionIdleSignal;
 
     /// <summary>
     /// Test hook: true once PlayAsync is waiting for the machine to report Idle. Tests drive a fake
@@ -604,6 +618,7 @@ public partial class ProgramViewModel : ViewModelBase
         {
             lock (_animLock)
             {
+                _animActive = false;
                 DisplayProgress = 1.0;
             }
         }
@@ -654,7 +669,11 @@ public partial class ProgramViewModel : ViewModelBase
         }
         finally
         {
-            _motionIdleSignal = null;
+            // Only clear the signal if it is still this run's own signal. Stop/Faulted resolve
+            // the wait via TrySetResult but the awaiting continuation (RunContinuationsAsynchronously)
+            // may not run until after a subsequent Play has already armed a new signal for a new
+            // run — an unconditional clear here would strand that newer run waiting forever.
+            Interlocked.CompareExchange(ref _motionIdleSignal, null, signal);
         }
     }
 
@@ -857,6 +876,7 @@ public partial class ProgramViewModel : ViewModelBase
             _animTargetProgress = StepOverallProgress(steps[0]);
             _animDurationSeconds = steps[0].EstimatedDurationSeconds;
             _animElapsedSeconds = 0;
+            _animActive = true;
         }
 
         var dispatched = new (CompiledStep Step, Task<CommandResult> Completion)[steps.Count];
@@ -924,6 +944,7 @@ public partial class ProgramViewModel : ViewModelBase
         SegmentProgress = 0;
         lock (_animLock)
         {
+            _animActive = false;
             DisplayProgress = 0;
         }
         Connection.Session?.AbortPendingCommands();
