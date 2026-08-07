@@ -571,6 +571,7 @@ public partial class ProgramViewModel : ViewModelBase
     }
 
     private bool _pausedForLinkLoss;
+    private bool _currentPassBackward;
 
     // Written on the PlayAsync continuation thread, read on the transport's reader thread
     // (OnSessionDeviceStatusChanged) — volatile so a read there can never observe a stale/torn
@@ -777,7 +778,10 @@ public partial class ProgramViewModel : ViewModelBase
                 return null;
             }
 
-            var targetIndex = (CurrentSegmentIndex ?? -1) + 1;
+            var segmentIndex = CurrentSegmentIndex ?? -1;
+            var targetIndex = _currentPassBackward
+                ? KeyPoints.Count - 2 - segmentIndex
+                : segmentIndex + 1;
             return targetIndex >= 0 && targetIndex < KeyPoints.Count
                 ? KeyPoints[targetIndex].Id
                 : null;
@@ -909,10 +913,27 @@ public partial class ProgramViewModel : ViewModelBase
         }
 
         PlaybackState = PlaybackState.Running;
-        CurrentSegmentIndex = null;
-        SegmentProgress = 0;
         FaultedAtSegmentIndex = null;
         TotalSegments = Math.Max(0, KeyPoints.Count - 1);
+
+        if (!await RunPassAsync(steps, backward: false))
+        {
+            return;
+        }
+
+        await WaitForMotionToFinishAsync();
+
+        if (PlaybackState == PlaybackState.Running)
+        {
+            PlaybackState = PlaybackState.Completed;
+        }
+    }
+
+    private async Task<bool> RunPassAsync(IReadOnlyList<CompiledStep> steps, bool backward)
+    {
+        _currentPassBackward = backward;
+        CurrentSegmentIndex = null;
+        SegmentProgress = 0;
 
         lock (_animLock)
         {
@@ -939,31 +960,21 @@ public partial class ProgramViewModel : ViewModelBase
 
             if (PlaybackState == PlaybackState.Stopped)
             {
-                return;
+                return false;
             }
 
             if (result.Outcome != CommandOutcome.Acknowledged)
             {
                 PlaybackState = PlaybackState.Faulted;
                 FaultedAtSegmentIndex = step.SegmentIndex;
-                return;
+                return false;
             }
 
             CurrentSegmentIndex = step.SegmentIndex;
             SegmentProgress = step.SegmentProgress;
         }
 
-        if (PlaybackState != PlaybackState.Running)
-        {
-            return;
-        }
-
-        await WaitForMotionToFinishAsync();
-
-        if (PlaybackState == PlaybackState.Running)
-        {
-            PlaybackState = PlaybackState.Completed;
-        }
+        return PlaybackState == PlaybackState.Running;
     }
 
     [RelayCommand(CanExecute = nameof(CanPause))]
