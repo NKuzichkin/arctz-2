@@ -29,7 +29,10 @@
 3. Расхождение оценки с реальностью корректируется в момент прихода настоящего
    ack — значение "довoдится" (snap) до подтверждённого, отображаемый прогресс
    никогда не идёт назад.
-4. Существующее поведение, наблюдаемое тестами (`OverallProgress`,
+4. Оценка длительности для ещё не выполненных шагов калибруется по фактическому
+   времени уже выполненных команд текущего прогона: коррекция включается после
+   первой фактически выполненной команды и уточняется на каждой следующей.
+5. Существующее поведение, наблюдаемое тестами (`OverallProgress`,
    `SegmentProgress`, `CurrentSegmentIndex` меняются только по ack) не меняется —
    добавляется отдельное анимированное представление для UI.
 
@@ -65,9 +68,16 @@
 
 ```
 var targetOverall = Math.Clamp((step.SegmentIndex + step.SegmentProgress) / TotalSegments, 0, 1);
-BeginStepAnimation(previousOverall, targetOverall, step.EstimatedDurationSeconds);
+var correctedDuration = step.EstimatedDurationSeconds * _durationCalibrationFactor;
+BeginStepAnimation(previousOverall, targetOverall, correctedDuration);
 var result = await completion;
 ...
+var actualElapsedSeconds = _animElapsedSeconds; // сколько реально тикало до этого ack
+_cumulativeEstimatedSeconds += step.EstimatedDurationSeconds;
+_cumulativeActualSeconds += actualElapsedSeconds;
+_durationCalibrationFactor = _cumulativeEstimatedSeconds > 0
+    ? _cumulativeActualSeconds / _cumulativeEstimatedSeconds
+    : 1.0;
 DisplayProgress = targetOverall; // snap на истину при ack
 previousOverall = targetOverall;
 ```
@@ -75,12 +85,40 @@ previousOverall = targetOverall;
 `BeginStepAnimation` запоминает `(_animStart, _animTarget, _animDurationSeconds)` и
 обнуляет `_animElapsedSeconds`. Работает общий `IPeriodicTimer` (интервал 100 мс —
 как у `StatusPoller`/`JogScheduler`, `ServiceCollectionExtensions.cs:22-23`): на
-каждый `Elapsed` — `_animElapsedSeconds += interval`; `frac = duration <= 0 ? 1.0 :
-Clamp(elapsed / duration, 0, 1)`; `DisplayProgress = start + (target - start) * frac`.
-Тик — фиксированный инкремент времени (не `DateTime.UtcNow`/`Stopwatch`), что делает
+каждый `Elapsed` — `_animElapsedSeconds += interval` (без верхнего предела — это тот
+же счётчик, что используется для калибровки, поэтому копится и после того, как
+анимация упёрлась в `frac = 1.0`); `frac = duration <= 0 ? 1.0 : Clamp(elapsed /
+duration, 0, 1)`; `DisplayProgress = start + (target - start) * frac`. Тик —
+фиксированный инкремент времени (не `DateTime.UtcNow`/`Stopwatch`), что делает
 поведение детерминированным и тестируемым через уже существующий
 `ManualPeriodicTimer` (`ArctZ.Tests/Services/Device/ManualPeriodicTimer.cs`) —
 `RaiseElapsed()` в тесте эквивалентен одному интервалу реального времени.
+
+#### Калибровка оценки по фактическому времени выполнения
+
+Оценка "расстояние / подача" не учитывает разгон/торможение и lookahead
+контроллера, поэтому она первично может расходиться с реальностью. Коррекция
+включается после первой же фактически выполненной команды и уточняется на каждой
+следующей:
+
+- `_durationCalibrationFactor` (double, поле ViewModel) — множитель, на который
+  умножается сырая `EstimatedDurationSeconds` перед стартом анимации шага.
+  Начальное значение `1.0` — для первого шага коррекции ещё нет (не на чем
+  считать), используется исходная оценка компилятора как есть.
+- После ack на каждый шаг в накопители `_cumulativeEstimatedSeconds` и
+  `_cumulativeActualSeconds` добавляются, соответственно, исходная (не
+  скорректированная) оценка шага и реально прошедшее число тиков `interval` за
+  время его выполнения. `_durationCalibrationFactor` пересчитывается как
+  отношение накопленного факта к накопленной оценке — это кумулятивное среднее,
+  а не коррекция только по последнему шагу, поэтому фактор стабилизируется по
+  мере выполнения программы, а не дёргается от шага к шагу.
+- Накопители и фактор сбрасываются в `1.0`/`0` при каждом свежем запуске
+  (`PlayAsync` с чистого листа) — вместе с остальными сбросами в
+  `ProgramViewModel.cs:720`; при `Pause`→`Play` (возобновление того же прогона)
+  не сбрасываются, накопленная калибровка продолжает действовать.
+- Если `_cumulativeEstimatedSeconds` всё ещё 0 (например, оценка первого шага
+  была 0 из-за нулевой подачи) — фактор остаётся `1.0`, деление на ноль не
+  происходит.
 
 `ProgramViewModel` получает конструкторные параметры `IPeriodicTimer timer,
 TimeSpan interval`. Регистрация в DI (`ServiceCollectionExtensions.cs`) — явной
@@ -99,7 +137,10 @@ TimeSpan.FromMilliseconds(100))`), как уже сделано для `MockDevi
 
 `DisplayProgress = 0` сбрасывается в тех же местах, где уже сбрасывается
 `SegmentProgress = 0`: начало свежего `PlayAsync` (`ProgramViewModel.cs:720`) и
-`StopAsync` (`ProgramViewModel.cs:779`).
+`StopAsync` (`ProgramViewModel.cs:779`). В том же месте в `PlayAsync` (не в
+`StopAsync` — там прогон уже закончен, накопители не нужны) обнуляются
+`_cumulativeEstimatedSeconds`, `_cumulativeActualSeconds` и
+`_durationCalibrationFactor = 1.0`.
 
 ### 4. Крайние случаи
 
@@ -130,6 +171,12 @@ TimeSpan.FromMilliseconds(100))`), как уже сделано для `MockDevi
   нескольких `RaiseElapsed()` (но до реального `ok`) `DisplayProgress` растёт
   монотонно, не достигая/не превышая целевое значение шага, а по приходу `ok`
   доводится ровно до него.
+- Новый тест на калибровку: первый шаг выполняется медленнее/быстрее оценки
+  (например, `RaiseElapsed()` вызывается больше/меньше раз, чем предполагает
+  `EstimatedDurationSeconds` при интервале 100 мс) — второй шаг должен
+  анимироваться с длительностью, скорректированной по фактическому времени
+  первого (т.е. `DisplayProgress` на N-м тике второго шага соответствует
+  `correctedDuration`, а не сырой `EstimatedDurationSeconds`).
 - Ручная UI-проверка по стандартному воркфлоу проекта: собрать и запустить
   `ArctZ.Desktop`, прогнать программу с несколькими точками (в т.ч. с
   `EaseInOut` и без) и подтвердить через `AskUserQuestion`, что бар движется
