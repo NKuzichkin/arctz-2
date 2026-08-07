@@ -16,6 +16,7 @@
         <conv:ConnectionStateToBrushConverter x:Key="StateToBrush" />
         <conv:LabelLengthToFontSizeConverter x:Key="LabelLengthToFontSize" />
         <conv:KeyPointIsExecutingConverter x:Key="KeyPointIsExecuting" />
+        <conv:EnumEqualsConverter x:Key="EnumEquals" />
         <js:RadiusToSizeConverter x:Key="RadiusToSize" />
     </UserControl.Resources>
 
@@ -149,6 +150,7 @@
                                                 <MenuItem Header="Переименовать" Command="{Binding RenameProgramCommand}" />
                                                 <MenuItem Header="Новая" Command="{Binding NewProgramCommand}" />
                                                 <MenuItem Header="Сохранить" Command="{Binding SaveProgramCommand}" />
+                                                <MenuItem Header="Настройки завершения" Command="{Binding EditCompletionSettingsCommand}" />
                                                 <MenuItem Header="Библиотека" Command="{Binding OpenLibraryCommand}" />
                                                 <Separator />
                                                 <MenuItem Header="Захватить" Command="{Binding CaptureKeyPointCommand}" />
@@ -264,6 +266,37 @@
                                 <TextBlock Grid.Row="4" Grid.Column="0" Text="Стоянка, с" VerticalAlignment="Center" Margin="0,0,10,0" />
                                 <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding DwellSeconds}" />
                             </Grid>
+                            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,6,0,0">
+                                <Button Content="Отмена" Command="{Binding CancelCommand}" />
+                                <Button Classes="primary" Content="Сохранить" Command="{Binding SaveCommand}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </Border>
+
+                <Border IsVisible="{Binding IsEditingCompletionSettings}" Background="{StaticResource HudScrimBrush}">
+                    <Border x:DataType="vm:CompletionSettingsViewModel" DataContext="{Binding CompletionSettingsEditor}"
+                            Width="320" Background="{StaticResource HudPanelElevatedBrush}"
+                            BorderBrush="{StaticResource HudBorderStrongBrush}" BorderThickness="1"
+                            Padding="20" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <StackPanel Spacing="10">
+                            <TextBlock Classes="section-heading" Text="НАСТРОЙКИ ЗАВЕРШЕНИЯ" />
+                            <RadioButton GroupName="CompletionMode" Content="Завершение"
+                                         IsChecked="{Binding Mode, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static program:ProgramCompletionMode.Stop}}" />
+                            <RadioButton GroupName="CompletionMode" Content="Начать с начала (по циклу)"
+                                         IsChecked="{Binding Mode, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static program:ProgramCompletionMode.Loop}}" />
+                            <RadioButton GroupName="CompletionMode" Content="В обратном порядке"
+                                         IsChecked="{Binding Mode, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static program:ProgramCompletionMode.PingPong}}" />
+
+                            <StackPanel Spacing="6" IsVisible="{Binding ShowRepeatCount}" Margin="0,4,0,0">
+                                <TextBlock Text="Количество повторов" />
+                                <TextBox Text="{Binding RepeatCount}" IsEnabled="{Binding !IsRepeatUnlimited}" />
+                                <CheckBox Content="Неограниченно" IsChecked="{Binding IsRepeatUnlimited}" />
+                            </StackPanel>
+
+                            <CheckBox Content="Встать в начальную позицию по завершении" Margin="0,4,0,0"
+                                      IsChecked="{Binding ReturnToStartOnFinish}" />
+
                             <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,6,0,0">
                                 <Button Content="Отмена" Command="{Binding CancelCommand}" />
                                 <Button Classes="primary" Content="Сохранить" Command="{Binding SaveCommand}" />
