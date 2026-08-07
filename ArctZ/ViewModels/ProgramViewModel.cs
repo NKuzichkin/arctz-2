@@ -734,12 +734,6 @@ public partial class ProgramViewModel : ViewModelBase
             CaptureKeyPointCommand.NotifyCanExecuteChanged();
             FillKeyPointFromCurrentPositionCommand.NotifyCanExecuteChanged();
             OnPropertyChanged(nameof(StatusLabel));
-
-            if (Connection.DeviceStatus?.State == MachineState.Idle)
-            {
-                _motionIdleSignal?.TrySetResult(true);
-            }
-
             return;
         }
 
@@ -751,6 +745,7 @@ public partial class ProgramViewModel : ViewModelBase
         if (_subscribedSession is not null)
         {
             _subscribedSession.ConnectionStateChanged -= OnSessionConnectionStateChanged;
+            _subscribedSession.DeviceStatusChanged -= OnSessionDeviceStatusChanged;
         }
 
         _subscribedSession = Connection.Session;
@@ -758,11 +753,25 @@ public partial class ProgramViewModel : ViewModelBase
         if (_subscribedSession is not null)
         {
             _subscribedSession.ConnectionStateChanged += OnSessionConnectionStateChanged;
+            _subscribedSession.DeviceStatusChanged += OnSessionDeviceStatusChanged;
         }
 
         CaptureKeyPointCommand.NotifyCanExecuteChanged();
         FillKeyPointFromCurrentPositionCommand.NotifyCanExecuteChanged();
         MoveMachineToKeyPointCommand.NotifyCanExecuteChanged();
+    }
+
+    // Deliberately driven by the session's own per-report event rather than
+    // ConnectionViewModel.DeviceStatus: that mirrored property is [Reactive] and so skips
+    // notification when a report is structurally identical to the previous one. A program whose
+    // moves cover zero distance produces exactly that — the machine never leaves Idle and WPos
+    // never changes — which would strand PlayAsync waiting for a notification that never comes.
+    private void OnSessionDeviceStatusChanged()
+    {
+        if (Connection.Session?.DeviceStatus?.State == MachineState.Idle)
+        {
+            _motionIdleSignal?.TrySetResult(true);
+        }
     }
 
     private void OnSessionConnectionStateChanged()
