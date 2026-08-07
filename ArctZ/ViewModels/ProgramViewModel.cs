@@ -964,10 +964,27 @@ public partial class ProgramViewModel : ViewModelBase
 
         await WaitForMotionToFinishAsync();
 
-        if (PlaybackState == PlaybackState.Running)
+        if (PlaybackState != PlaybackState.Running)
         {
-            PlaybackState = PlaybackState.Completed;
+            return;
         }
+
+        if (ReturnToStartOnFinish)
+        {
+            if (!await RunReturnToStartMoveAsync())
+            {
+                return;
+            }
+
+            await WaitForMotionToFinishAsync();
+
+            if (PlaybackState != PlaybackState.Running)
+            {
+                return;
+            }
+        }
+
+        PlaybackState = PlaybackState.Completed;
     }
 
     private static JibProgram ReversedProgram(JibProgram source)

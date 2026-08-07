@@ -682,4 +682,47 @@ public class ProgramViewModelPlaybackTests
 
         Assert.Equal(PlaybackState.Stopped, vm.PlaybackState);
     }
+
+    [Fact]
+    public async Task PlayAsync_ReturnToStartOnFinish_MovesToFirstKeyPointAfterNaturalCompletion()
+    {
+        var vm = CreateViewModel(out var transport);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+        vm.ReturnToStartOnFinish = true;
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
+
+        await WaitUntilAsync(() => transport.SentLines.Contains("G1 X0 Y0 Z0 A0 F500"), TimeSpan.FromSeconds(1));
+        Assert.False(playTask.IsCompleted, "must wait for the return-to-start move's own physical completion before finishing");
+
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
+        await playTask;
+
+        Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
+    }
+
+    [Fact]
+    public async Task Stop_WithReturnToStartOnFinishEnabled_DoesNotTriggerTheReturnMove()
+    {
+        var vm = CreateViewModel(out var transport);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+        vm.ReturnToStartOnFinish = true;
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+        await vm.StopCommand.ExecuteAsync(null);
+        transport.SimulateReceivedLine("ok"); // resolves the command already in flight
+        await playTask;
+
+        Assert.Equal(PlaybackState.Stopped, vm.PlaybackState);
+        Assert.DoesNotContain("G1 X0 Y0 Z0 A0 F500", transport.SentLines);
+    }
 }
