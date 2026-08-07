@@ -68,6 +68,15 @@ public class ProgramViewModelPlaybackTests
         Assert.Equal(0.5, vm.OverallProgress);
 
         transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+
+        // A real machine reports Run while still moving after the last ack — feeding it here
+        // forces a genuine state transition, matching what StatusPoller would produce, so the
+        // subsequent Idle report below isn't a same-value repeat of the Idle status the machine
+        // was already sitting in before Play started (which the fake transport, unlike a
+        // StatusPoller-backed live session, would otherwise never actually change from).
+        transport.SimulateReceivedLine("<Run|WPos:15.000,0.000,0.000,0.000|FS:500,0>");
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
         await playTask;
 
         Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
@@ -92,6 +101,11 @@ public class ProgramViewModelPlaybackTests
         // the explicit Completed-forced snap.
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+
+        // Forces a real Idle->Run->Idle transition (see the comment in the first test above for why).
+        transport.SimulateReceivedLine("<Run|WPos:15.000,0.000,0.000,0.000|FS:500,0>");
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
         await playTask;
 
         Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
@@ -127,6 +141,11 @@ public class ProgramViewModelPlaybackTests
         Assert.Equal(4.0 / 12 * 0.5, vm.DisplayProgress, 3);
 
         transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+
+        // Forces a real Idle->Run->Idle transition (see the comment in the first test above for why).
+        transport.SimulateReceivedLine("<Run|WPos:15.000,0.000,0.000,0.000|FS:500,0>");
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
         await playTask;
 
         Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
@@ -169,6 +188,11 @@ public class ProgramViewModelPlaybackTests
 
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+
+        // Forces a real Idle->Run->Idle transition (see the comment in the first test above for why).
+        transport.SimulateReceivedLine("<Run|WPos:15.000,0.000,0.000,0.000|FS:500,0>");
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
         await playTask;
 
         Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
@@ -244,6 +268,11 @@ public class ProgramViewModelPlaybackTests
 
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+
+        // Forces a real Idle->Run->Idle transition (see the comment in the first test above for why).
+        transport.SimulateReceivedLine("<Run|WPos:15.000,0.000,0.000,0.000|FS:500,0>");
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
         await secondPlayTask;
         Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
     }
@@ -310,6 +339,11 @@ public class ProgramViewModelPlaybackTests
 
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+
+        // Forces a real Idle->Run->Idle transition (see the comment in the first test above for why).
+        transport.SimulateReceivedLine("<Run|WPos:15.000,0.000,0.000,0.000|FS:500,0>");
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
         await playTask;
     }
 
@@ -328,6 +362,11 @@ public class ProgramViewModelPlaybackTests
         Assert.Equal(vm.KeyPoints[1].Id, vm.CurrentlyExecutingKeyPointId);
 
         transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+
+        // Forces a real Idle->Run->Idle transition (see the comment in the first test above for why).
+        transport.SimulateReceivedLine("<Run|WPos:15.000,0.000,0.000,0.000|FS:500,0>");
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
         await playTask;
 
         Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
@@ -350,6 +389,62 @@ public class ProgramViewModelPlaybackTests
         await vm.PlayCommand.ExecuteAsync(null);
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+
+        // Forces a real Idle->Run->Idle transition (see the comment in the first test above for why).
+        transport.SimulateReceivedLine("<Run|WPos:15.000,0.000,0.000,0.000|FS:500,0>");
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
         await playTask;
+    }
+
+    [Fact]
+    public async Task PlayAsync_DoesNotComplete_UntilTheMachineReportsIdleAfterTheLastAck()
+    {
+        var vm = CreateViewModel(out var transport, out _);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+
+        // Every line is acknowledged, but the controller acks on buffering — the machine is
+        // still executing the moves, so the program is not finished.
+        transport.SimulateReceivedLine("<Run|WPos:5.000,0.000,0.000,0.000|FS:500,0>");
+        Assert.False(playTask.IsCompleted);
+        Assert.Equal(PlaybackState.Running, vm.PlaybackState);
+        Assert.True(vm.IsProgramLocked);
+
+        // The first Idle report after the acks is what actually ends the run.
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
+        await playTask;
+
+        Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
+        Assert.Equal(1.0, vm.DisplayProgress);
+    }
+
+    [Fact]
+    public async Task Stop_DuringTheMotionTail_EndsTheRunWithoutWaitingForIdle()
+    {
+        var vm = CreateViewModel(out var transport, out _);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("<Run|WPos:5.000,0.000,0.000,0.000|FS:500,0>");
+        Assert.False(playTask.IsCompleted);
+
+        // Stop is the operator's escape hatch while the machine finishes moving — it must not
+        // hang waiting for an Idle report that a stopped run may never produce.
+        await vm.StopCommand.ExecuteAsync(null);
+        await playTask;
+
+        Assert.Equal(PlaybackState.Stopped, vm.PlaybackState);
     }
 }

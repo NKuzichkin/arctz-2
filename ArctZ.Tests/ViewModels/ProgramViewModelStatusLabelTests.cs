@@ -53,6 +53,15 @@ public class ProgramViewModelStatusLabelTests
 
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+
+        // Forces a real Idle->Run->Idle transition: ConnectionViewModel.DeviceStatus is a
+        // [Reactive] record-struct property that only raises PropertyChanged on an actual value
+        // change, and SeedTwoSegmentProgram already left it sitting at Idle/WPos(20,0,0,0) before
+        // Play ever started — feeding the same Idle status again would be silently deduped and
+        // the motion-idle wait below would never resolve.
+        transport.SimulateReceivedLine("<Run|WPos:15.000,0.000,0.000,0.000|FS:500,0>");
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
         await playTask;
     }
 
@@ -97,6 +106,11 @@ public class ProgramViewModelStatusLabelTests
         var playTask = vm.PlayCommand.ExecuteAsync(null);
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+
+        // Forces a real Idle->Run->Idle transition (see the comment in StatusLabel_Running_WhilePlaybackRunning above for why).
+        transport.SimulateReceivedLine("<Run|WPos:15.000,0.000,0.000,0.000|FS:500,0>");
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
         await playTask;
 
         Assert.Equal("Завершено", vm.StatusLabel);
@@ -156,6 +170,11 @@ public class ProgramViewModelStatusLabelTests
         var playTask = vm.PlayCommand.ExecuteAsync(null);
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+
+        // Forces a real Idle->Run->Idle transition (see the comment in StatusLabel_Running_WhilePlaybackRunning above for why).
+        transport.SimulateReceivedLine("<Run|WPos:15.000,0.000,0.000,0.000|FS:500,0>");
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
         await playTask;
 
         // No immediate PlaybackState==Completed assertion here (unlike the Stopped sibling
@@ -220,6 +239,11 @@ public class ProgramViewModelStatusLabelTests
 
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+
+        // Forces a real Idle->Run->Idle transition (see the comment in StatusLabel_Running_WhilePlaybackRunning above for why).
+        transport.SimulateReceivedLine("<Run|WPos:15.000,0.000,0.000,0.000|FS:500,0>");
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
         await secondPlayTask;
     }
 
@@ -248,6 +272,11 @@ public class ProgramViewModelStatusLabelTests
         var playTask = vm.PlayCommand.ExecuteAsync(null);
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+
+        // Forces a real Idle->Run->Idle transition (see the comment in StatusLabel_Running_WhilePlaybackRunning above for why).
+        transport.SimulateReceivedLine("<Run|WPos:15.000,0.000,0.000,0.000|FS:500,0>");
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
         await playTask;
         Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
 

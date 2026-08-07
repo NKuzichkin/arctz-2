@@ -521,6 +521,15 @@ public partial class ProgramViewModel : ViewModelBase
 
     private bool _pausedForLinkLoss;
 
+    private TaskCompletionSource<bool>? _motionIdleSignal;
+
+    /// <summary>
+    /// Test hook: true once PlayAsync is waiting for the machine to report Idle. Tests drive a fake
+    /// transport with no status poller behind it, so a status report fired before the wait is armed
+    /// would be dropped with no second report to recover from — the real app re-polls every 100ms.
+    /// </summary>
+    internal bool IsAwaitingMotionIdle => _motionIdleSignal is not null;
+
     private CancellationTokenSource? _terminalStatusResetCts;
 
     /// <summary>Overridable in tests so the terminal-state auto-reset doesn't require waiting the real delay.</summary>
@@ -583,6 +592,14 @@ public partial class ProgramViewModel : ViewModelBase
             _progressTimer.Stop();
         }
 
+        // Stop/Faulted abandon the run outright, so nothing is left to wait for. Paused is
+        // deliberately absent: a held machine reports Hold rather than Idle, so the same wait
+        // simply continues once the operator resumes — no resume-side bookkeeping needed.
+        if (value is PlaybackState.Stopped or PlaybackState.Faulted)
+        {
+            _motionIdleSignal?.TrySetResult(false);
+        }
+
         if (value == PlaybackState.Completed)
         {
             lock (_animLock)
@@ -614,6 +631,30 @@ public partial class ProgramViewModel : ViewModelBase
             var cts = new CancellationTokenSource();
             _terminalStatusResetCts = cts;
             _ = ResetToIdleAfterDelayAsync(value, cts.Token);
+        }
+    }
+
+    /// <summary>
+    /// The controller acknowledges a G-code line when it buffers it, not when the move finishes,
+    /// so the last ack can land tens of seconds before the machine physically stops. Waiting for
+    /// the first status report that says Idle is what makes PlaybackState.Completed mean "the
+    /// program actually finished" — the progress bar's visibility, its final 100%, and the
+    /// joystick unlock all key off it. No timeout: any timeout would declare Completed while the
+    /// machine might still be moving, which is the exact defect this fixes. The escape hatches
+    /// are Stop (enabled throughout the wait) and the link-loss path, which faults the run.
+    /// </summary>
+    private async Task WaitForMotionToFinishAsync()
+    {
+        var signal = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _motionIdleSignal = signal;
+
+        try
+        {
+            await signal.Task;
+        }
+        finally
+        {
+            _motionIdleSignal = null;
         }
     }
 
@@ -693,6 +734,12 @@ public partial class ProgramViewModel : ViewModelBase
             CaptureKeyPointCommand.NotifyCanExecuteChanged();
             FillKeyPointFromCurrentPositionCommand.NotifyCanExecuteChanged();
             OnPropertyChanged(nameof(StatusLabel));
+
+            if (Connection.DeviceStatus?.State == MachineState.Idle)
+            {
+                _motionIdleSignal?.TrySetResult(true);
+            }
+
             return;
         }
 
@@ -829,6 +876,13 @@ public partial class ProgramViewModel : ViewModelBase
             CurrentSegmentIndex = step.SegmentIndex;
             SegmentProgress = step.SegmentProgress;
         }
+
+        if (PlaybackState != PlaybackState.Running)
+        {
+            return;
+        }
+
+        await WaitForMotionToFinishAsync();
 
         if (PlaybackState == PlaybackState.Running)
         {
