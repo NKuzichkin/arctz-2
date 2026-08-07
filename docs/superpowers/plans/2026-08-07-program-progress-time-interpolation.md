@@ -1028,3 +1028,228 @@ git commit -m "fix: decouple progress-bar animation from ack timing, drop calibr
 ### Task 4 (resume): re-run the live UI verification
 
 After Task 5 lands, repeat Task 4's Steps 2-5 (build `ArctZ.Desktop`, run it, ask the user the same three questions, commit the XAML binding change alongside Task 5's fix if not already committed). Do not mark Task 4 complete until both "moves continuously" and "never jumps backward" get a yes.
+
+> **Second revision note (added after the second live-UI pass):** Task 5 fixed the
+> backward jump (confirmed by the user), but the bar still filled to 100% almost
+> immediately. Root cause is one level up and documented in the spec's
+> "Ревизия 2" section: `PlaybackState.Completed` fires when the last G-code line
+> is *acknowledged* (≈1s, buffer-drain time), not when the machine stops moving
+> (tens of seconds) — and the bar's forced 100%, its animation-timer stop, AND
+> its `IsVisible` binding (`IsProgramLocked`, true only for Running/Paused) all
+> hang off `Completed`. **Task 6 below makes `Completed` mean what it says; it
+> must land before repeating Steps 2-4 again.**
+>
+> (Note for the record: the first repeat pass also happened to run against a
+> degenerate saved program in which 7 of 8 key points shared the same pose, so
+> 6 of 7 segments had zero distance and therefore zero estimated duration. A
+> non-degenerate test program is at
+> `%APPDATA%\ArctZ\Programs\5c1e9a02-7b64-4d31-9f0a-3a2ce6f81d47.json`
+> ("Тест прогресс-бара", 4 distinct points, ~35s run, third segment `EaseInOut`).
+> Use that program for the next verification pass.)
+
+---
+
+### Task 6: Make `PlaybackState.Completed` mean the machine actually finished moving
+
+**Files:**
+- Modify: `ArctZ/ViewModels/ProgramViewModel.cs`
+- Modify: `ArctZ.Tests/ViewModels/ProgramViewModelPlaybackTests.cs`
+- Possibly modify: `ArctZ.Tests/ViewModels/ProgramViewModelStatusLabelTests.cs` (only if the full-suite run shows failures there — see Step 5)
+
+**Interfaces:**
+- Consumes: `ConnectionViewModel.DeviceStatus` (already mirrored live and already surfaced to `ProgramViewModel` via the existing `OnConnectionPropertyChanged` `DeviceStatus` branch), `MachineState.Idle` (`ArctZ/Services/Device/`). `FakeDeviceTransport.SimulateReceivedLine` (tests) already feeds FluidNC status lines like `<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>` and `<Run|WPos:...|FS:0,0>`.
+- Produces: no new public members. `PlaybackState.Completed`'s *timing* changes — it now fires when the machine reports Idle after the run, not when the last ack arrives. Everything already keyed off `Completed` (the progress bar's `IsVisible` via `IsProgramLocked`, the forced `DisplayProgress = 1.0`, the animation timer stop, the joystick unlock, the 4-second auto-reset to Idle) inherits the corrected timing with no further change.
+
+- [ ] **Step 1: Write the failing test**
+
+Add to `ArctZ.Tests/ViewModels/ProgramViewModelPlaybackTests.cs`:
+
+```csharp
+[Fact]
+public async Task PlayAsync_DoesNotComplete_UntilTheMachineReportsIdleAfterTheLastAck()
+{
+    var vm = CreateViewModel(out var transport, out _);
+    await vm.Connection.ConnectCommand.Execute();
+    SeedTwoSegmentProgram(vm, transport);
+
+    var playTask = vm.PlayCommand.ExecuteAsync(null);
+
+    transport.SimulateReceivedLine("ok");
+    transport.SimulateReceivedLine("ok");
+
+    // Every line is acknowledged, but the controller acks on buffering — the machine is
+    // still executing the moves, so the program is not finished.
+    transport.SimulateReceivedLine("<Run|WPos:5.000,0.000,0.000,0.000|FS:500,0>");
+    Assert.False(playTask.IsCompleted);
+    Assert.Equal(PlaybackState.Running, vm.PlaybackState);
+    Assert.True(vm.IsProgramLocked);
+
+    // The first Idle report after the acks is what actually ends the run.
+    transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
+    await playTask;
+
+    Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
+    Assert.Equal(1.0, vm.DisplayProgress);
+}
+
+[Fact]
+public async Task Stop_DuringTheMotionTail_EndsTheRunWithoutWaitingForIdle()
+{
+    var vm = CreateViewModel(out var transport, out _);
+    await vm.Connection.ConnectCommand.Execute();
+    SeedTwoSegmentProgram(vm, transport);
+
+    var playTask = vm.PlayCommand.ExecuteAsync(null);
+
+    transport.SimulateReceivedLine("ok");
+    transport.SimulateReceivedLine("ok");
+    transport.SimulateReceivedLine("<Run|WPos:5.000,0.000,0.000,0.000|FS:500,0>");
+    Assert.False(playTask.IsCompleted);
+
+    // Stop is the operator's escape hatch while the machine finishes moving — it must not
+    // hang waiting for an Idle report that a stopped run may never produce.
+    await vm.StopCommand.ExecuteAsync(null);
+    await playTask;
+
+    Assert.Equal(PlaybackState.Stopped, vm.PlaybackState);
+}
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `dotnet test ArctZ.Tests/ArctZ.Tests.csproj --filter "FullyQualifiedName~PlayAsync_DoesNotComplete_UntilTheMachineReportsIdleAfterTheLastAck"`
+Expected: FAIL on `Assert.False(playTask.IsCompleted)` — today `PlaybackState` goes `Completed` and `playTask` finishes as soon as the second `ok` is processed, before any status report arrives.
+
+- [ ] **Step 3: Add the idle-wait signal**
+
+In `ArctZ/ViewModels/ProgramViewModel.cs`, add this field next to the other private fields (put it directly below `private bool _pausedForLinkLoss;`):
+
+```csharp
+    private TaskCompletionSource<bool>? _motionIdleSignal;
+```
+
+In `OnConnectionPropertyChanged`, extend the existing `DeviceStatus` branch so it also completes the signal. Replace:
+
+```csharp
+        if (e.PropertyName == nameof(ConnectionViewModel.DeviceStatus))
+        {
+            CaptureKeyPointCommand.NotifyCanExecuteChanged();
+            FillKeyPointFromCurrentPositionCommand.NotifyCanExecuteChanged();
+            OnPropertyChanged(nameof(StatusLabel));
+            return;
+        }
+```
+
+with:
+
+```csharp
+        if (e.PropertyName == nameof(ConnectionViewModel.DeviceStatus))
+        {
+            CaptureKeyPointCommand.NotifyCanExecuteChanged();
+            FillKeyPointFromCurrentPositionCommand.NotifyCanExecuteChanged();
+            OnPropertyChanged(nameof(StatusLabel));
+
+            if (Connection.DeviceStatus?.State == MachineState.Idle)
+            {
+                _motionIdleSignal?.TrySetResult(true);
+            }
+
+            return;
+        }
+```
+
+In `OnPlaybackStateChanged`, release a pending wait when the run is abandoned. Insert this directly after the existing timer start/stop block and before the `if (value == PlaybackState.Completed)` block:
+
+```csharp
+
+        // Stop/Faulted abandon the run outright, so nothing is left to wait for. Paused is
+        // deliberately absent: a held machine reports Hold rather than Idle, so the same wait
+        // simply continues once the operator resumes — no resume-side bookkeeping needed.
+        if (value is PlaybackState.Stopped or PlaybackState.Faulted)
+        {
+            _motionIdleSignal?.TrySetResult(false);
+        }
+```
+
+Add this method right after `OnPlaybackStateChanged` (before `ResetToIdleAfterDelayAsync`):
+
+```csharp
+    /// <summary>
+    /// The controller acknowledges a G-code line when it buffers it, not when the move finishes,
+    /// so the last ack can land tens of seconds before the machine physically stops. Waiting for
+    /// the first status report that says Idle is what makes PlaybackState.Completed mean "the
+    /// program actually finished" — the progress bar's visibility, its final 100%, and the
+    /// joystick unlock all key off it. No timeout: any timeout would declare Completed while the
+    /// machine might still be moving, which is the exact defect this fixes. The escape hatches
+    /// are Stop (enabled throughout the wait) and the link-loss path, which faults the run.
+    /// </summary>
+    private async Task WaitForMotionToFinishAsync()
+    {
+        var signal = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _motionIdleSignal = signal;
+
+        try
+        {
+            await signal.Task;
+        }
+        finally
+        {
+            _motionIdleSignal = null;
+        }
+    }
+```
+
+- [ ] **Step 4: Await the machine before declaring the program complete**
+
+In `PlayAsync`, replace the tail that follows the ack `foreach` loop:
+
+```csharp
+        if (PlaybackState == PlaybackState.Running)
+        {
+            PlaybackState = PlaybackState.Completed;
+        }
+```
+
+with:
+
+```csharp
+        if (PlaybackState != PlaybackState.Running)
+        {
+            return;
+        }
+
+        await WaitForMotionToFinishAsync();
+
+        if (PlaybackState == PlaybackState.Running)
+        {
+            PlaybackState = PlaybackState.Completed;
+        }
+```
+
+- [ ] **Step 5: Run the tests and fix the fallout in existing tests**
+
+Run: `dotnet test ArctZ.Tests/ArctZ.Tests.csproj --filter "FullyQualifiedName~ProgramViewModelPlaybackTests"`
+
+Existing tests that `await playTask` and expect `PlaybackState.Completed` will now hang or fail, because they never feed a status report after their acks. Fix each one mechanically by adding one line right after its final `transport.SimulateReceivedLine("ok");` and before its `await playTask;`:
+
+```csharp
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
+```
+
+Do NOT add that line to tests whose run ends in `Stopped` or `Faulted` (those paths return before the wait) — only to the ones that expect `Completed`. Work through the failures the runner reports rather than guessing which tests need it.
+
+Then run the full suite:
+
+Run: `dotnet test ArctZ.Tests/ArctZ.Tests.csproj`
+Expected: PASS. If `ProgramViewModelStatusLabelTests` (or any other file) shows failures for the same reason, apply the same one-line fix there.
+
+If any test hangs instead of failing, that is the same root cause (a `playTask` waiting for an Idle report that never comes) — add the status line rather than adding a timeout.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add ArctZ/ViewModels/ProgramViewModel.cs ArctZ.Tests/ViewModels/ProgramViewModelPlaybackTests.cs ArctZ.Tests/ViewModels/ProgramViewModelStatusLabelTests.cs
+git commit -m "fix: complete a program when the machine stops moving, not when the last line is acked"
+```
+
+(Drop `ProgramViewModelStatusLabelTests.cs` from the `git add` if Step 5 did not need to change it.)
