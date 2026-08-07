@@ -77,7 +77,7 @@ public class ProgramViewModelPlaybackTests
     }
 
     [Fact]
-    public async Task DisplayProgress_AnimatesTowardStepTarget_BetweenDispatchAndAck_ThenSnapsOnAck()
+    public async Task DisplayProgress_ForcesTo100Percent_WhenCompleted_EvenIfAcksArrivedBeforeAnyTick()
     {
         var vm = CreateViewModel(out var transport, out var progressTimer);
         await vm.Connection.ConnectCommand.Execute();
@@ -86,28 +86,20 @@ public class ProgramViewModelPlaybackTests
         var playTask = vm.PlayCommand.ExecuteAsync(null);
         Assert.Equal(0, vm.DisplayProgress);
 
-        // Segment distance 10 @ feed 500 => EstimatedDurationSeconds = 1.2s = 12 ticks @ 100ms.
-        progressTimer.RaiseElapsed();
-        progressTimer.RaiseElapsed();
-        progressTimer.RaiseElapsed();
-
-        // 3 of 12 ticks toward the first segment's target (0.5), starting from 0.
-        Assert.Equal(0.125, vm.DisplayProgress, 3);
-        Assert.True(vm.DisplayProgress < 0.5);
-
+        // Ack both segments immediately, before any progressTimer tick — real ack timing
+        // reflects buffer-drain speed, not motion time, so this is the common case, not an
+        // edge case. DisplayProgress must not have anywhere else to get a value from except
+        // the explicit Completed-forced snap.
         transport.SimulateReceivedLine("ok");
-        await WaitUntilAsync(() => vm.CurrentSegmentIndex == 0, TimeSpan.FromSeconds(1));
-
-        Assert.Equal(0.5, vm.DisplayProgress);
-
         transport.SimulateReceivedLine("ok");
         await playTask;
 
+        Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
         Assert.Equal(1.0, vm.DisplayProgress);
     }
 
     [Fact]
-    public async Task DisplayProgress_CalibratesFutureEstimates_FromActualFirstStepDuration()
+    public async Task DisplayProgress_FollowsItsOwnTimeline_UnaffectedByAnEarlyAck()
     {
         var vm = CreateViewModel(out var transport, out var progressTimer);
         await vm.Connection.ConnectCommand.Execute();
@@ -115,30 +107,29 @@ public class ProgramViewModelPlaybackTests
 
         var playTask = vm.PlayCommand.ExecuteAsync(null);
 
-        // First segment's estimate is 12 ticks (1.2s @ 100ms). Let it actually take 24 ticks
-        // (2x slower) before the ack arrives.
-        for (var i = 0; i < 24; i++)
-        {
-            progressTimer.RaiseElapsed();
-        }
+        // First segment's estimate is 1.2s = 12 ticks @ 100ms. Ack it after only 3 ticks.
+        progressTimer.RaiseElapsed();
+        progressTimer.RaiseElapsed();
+        progressTimer.RaiseElapsed();
 
         transport.SimulateReceivedLine("ok");
         await WaitUntilAsync(() => vm.CurrentSegmentIndex == 0, TimeSpan.FromSeconds(1));
-        Assert.Equal(0.5, vm.DisplayProgress);
 
-        // Second segment's raw estimate is also 12 ticks, but the calibration factor from the
-        // first step (actual 2.4s / estimated 1.2s = 2.0) doubles it to 24 ticks. After 12 ticks
-        // it should be roughly halfway from 0.5 to 1.0, not already there.
-        for (var i = 0; i < 12; i++)
-        {
-            progressTimer.RaiseElapsed();
-        }
+        // OverallProgress (ack-confirmed truth) jumps to 0.5 immediately — DisplayProgress must
+        // NOT snap to it, and must keep following the same first-segment animation.
+        Assert.Equal(0.5, vm.OverallProgress);
+        Assert.Equal(0.125, vm.DisplayProgress, 3); // 3/12 ticks toward the first segment's 0.5 target
+        Assert.True(vm.DisplayProgress < 0.5);
 
-        Assert.Equal(0.75, vm.DisplayProgress, 3);
+        // A 4th tick continues the SAME first-segment animation — the ack that already arrived
+        // changes nothing about its pace.
+        progressTimer.RaiseElapsed();
+        Assert.Equal(4.0 / 12 * 0.5, vm.DisplayProgress, 3);
 
         transport.SimulateReceivedLine("ok");
         await playTask;
 
+        Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
         Assert.Equal(1.0, vm.DisplayProgress);
     }
 

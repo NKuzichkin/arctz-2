@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
@@ -25,13 +26,20 @@ public partial class ProgramViewModel : ViewModelBase
     private bool _leftActive;
     private bool _rightActive;
 
+    // Guards the fields below AND DisplayProgress: OnProgressTick fires on a raw
+    // System.Threading.Timer callback (a ThreadPool thread, unsynchronized with the UI
+    // thread), while OnPlaybackStateChanged's Completed-forced snap runs on whatever thread
+    // PlayAsync's `await` resumes on. Without this lock a stale tick — already queued to the
+    // ThreadPool before Completed fired, computed from now-superseded field values — can
+    // execute after the Completed snap and overwrite DisplayProgress with a lower value: a
+    // visible backward jump. The lock removes the race outright rather than narrowing it.
+    private readonly object _animLock = new();
+    private IReadOnlyList<CompiledStep> _visualSteps = Array.Empty<CompiledStep>();
+    private int _visualStepIndex;
     private double _animStartProgress;
     private double _animTargetProgress;
     private double _animDurationSeconds;
     private double _animElapsedSeconds;
-    private double _cumulativeEstimatedSeconds;
-    private double _cumulativeActualSeconds;
-    private double _durationCalibrationFactor = 1.0;
 
     public ConnectionViewModel Connection { get; }
 
@@ -84,20 +92,33 @@ public partial class ProgramViewModel : ViewModelBase
         };
     }
 
+    /// <summary>Advances DisplayProgress along the precomputed visual timeline by however much
+    /// real time has passed — entirely independent of ack arrival (see the class-level note on
+    /// _animLock for why acks cannot drive this: ack timing reflects buffer-drain speed, not
+    /// physical motion time).</summary>
     private void OnProgressTick()
     {
-        _animElapsedSeconds += _progressTickInterval.TotalSeconds;
-        var frac = _animDurationSeconds <= 0 ? 1.0 : Math.Clamp(_animElapsedSeconds / _animDurationSeconds, 0, 1);
-        DisplayProgress = _animStartProgress + (_animTargetProgress - _animStartProgress) * frac;
+        lock (_animLock)
+        {
+            _animElapsedSeconds += _progressTickInterval.TotalSeconds;
+
+            while (_animElapsedSeconds >= _animDurationSeconds && _visualStepIndex < _visualSteps.Count - 1)
+            {
+                _animElapsedSeconds -= _animDurationSeconds;
+                _visualStepIndex++;
+                _animStartProgress = _animTargetProgress;
+                _animTargetProgress = StepOverallProgress(_visualSteps[_visualStepIndex]);
+                _animDurationSeconds = _visualSteps[_visualStepIndex].EstimatedDurationSeconds;
+            }
+
+            var frac = _animDurationSeconds <= 0 ? 1.0 : Math.Clamp(_animElapsedSeconds / _animDurationSeconds, 0, 1);
+            DisplayProgress = _animStartProgress + (_animTargetProgress - _animStartProgress) * frac;
+        }
     }
 
-    private void BeginStepAnimation(double startProgress, double targetProgress, double durationSeconds)
-    {
-        _animStartProgress = startProgress;
-        _animTargetProgress = targetProgress;
-        _animDurationSeconds = durationSeconds;
-        _animElapsedSeconds = 0;
-    }
+    private double StepOverallProgress(CompiledStep step) => TotalSegments > 0
+        ? Math.Clamp((step.SegmentIndex + step.SegmentProgress) / TotalSegments, 0, 1)
+        : 0;
 
     [RelayCommand]
     private async Task RefreshLibraryAsync()
@@ -562,6 +583,14 @@ public partial class ProgramViewModel : ViewModelBase
             _progressTimer.Stop();
         }
 
+        if (value == PlaybackState.Completed)
+        {
+            lock (_animLock)
+            {
+                DisplayProgress = 1.0;
+            }
+        }
+
         Connection.IsPlaybackLocked = IsProgramLocked;
 
         if (IsProgramLocked && (_leftActive || _rightActive))
@@ -763,9 +792,16 @@ public partial class ProgramViewModel : ViewModelBase
         DisplayProgress = 0;
         FaultedAtSegmentIndex = null;
         TotalSegments = Math.Max(0, KeyPoints.Count - 1);
-        _cumulativeEstimatedSeconds = 0;
-        _cumulativeActualSeconds = 0;
-        _durationCalibrationFactor = 1.0;
+
+        lock (_animLock)
+        {
+            _visualSteps = steps;
+            _visualStepIndex = 0;
+            _animStartProgress = 0;
+            _animTargetProgress = StepOverallProgress(steps[0]);
+            _animDurationSeconds = steps[0].EstimatedDurationSeconds;
+            _animElapsedSeconds = 0;
+        }
 
         var dispatched = new (CompiledStep Step, Task<CommandResult> Completion)[steps.Count];
         for (var i = 0; i < steps.Count; i++)
@@ -774,16 +810,8 @@ public partial class ProgramViewModel : ViewModelBase
             dispatched[i] = (steps[i], Connection.Session!.SendGCodeAsync(line));
         }
 
-        var previousDisplayProgress = 0.0;
-
         foreach (var (step, completion) in dispatched)
         {
-            var targetProgress = TotalSegments > 0
-                ? Math.Clamp((step.SegmentIndex + step.SegmentProgress) / TotalSegments, 0, 1)
-                : 0;
-            var correctedDuration = step.EstimatedDurationSeconds * _durationCalibrationFactor;
-            BeginStepAnimation(previousDisplayProgress, targetProgress, correctedDuration);
-
             var result = await completion;
 
             if (PlaybackState == PlaybackState.Stopped)
@@ -798,16 +826,8 @@ public partial class ProgramViewModel : ViewModelBase
                 return;
             }
 
-            _cumulativeEstimatedSeconds += step.EstimatedDurationSeconds;
-            _cumulativeActualSeconds += _animElapsedSeconds;
-            _durationCalibrationFactor = _cumulativeEstimatedSeconds > 0
-                ? _cumulativeActualSeconds / _cumulativeEstimatedSeconds
-                : 1.0;
-
             CurrentSegmentIndex = step.SegmentIndex;
             SegmentProgress = step.SegmentProgress;
-            DisplayProgress = targetProgress;
-            previousDisplayProgress = targetProgress;
         }
 
         if (PlaybackState == PlaybackState.Running)
@@ -839,7 +859,10 @@ public partial class ProgramViewModel : ViewModelBase
         PlaybackState = PlaybackState.Stopped;
         CurrentSegmentIndex = null;
         SegmentProgress = 0;
-        DisplayProgress = 0;
+        lock (_animLock)
+        {
+            DisplayProgress = 0;
+        }
         Connection.Session?.AbortPendingCommands();
         return Connection.Session?.FeedHoldAsync() ?? Task.CompletedTask;
     }
