@@ -206,7 +206,7 @@
                             </StackPanel>
 
                             <ProgressBar Margin="0,12,0,0" IsVisible="{Binding IsProgramLocked}"
-                                         HorizontalAlignment="Stretch" Minimum="0" Maximum="1" Value="{Binding OverallProgress}">
+                                         HorizontalAlignment="Stretch" Minimum="0" Maximum="1" Value="{Binding DisplayProgress}">
                                 <ProgressBar.Transitions>
                                     <Transitions>
                                         <DoubleTransition Property="Value" Duration="0:0:0.3" Easing="CubicEaseOut" />
