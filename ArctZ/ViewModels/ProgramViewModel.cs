@@ -789,12 +789,12 @@ public partial class ProgramViewModel : ViewModelBase
         PlaybackState = PlaybackState.Running;
         CurrentSegmentIndex = null;
         SegmentProgress = 0;
-        DisplayProgress = 0;
         FaultedAtSegmentIndex = null;
         TotalSegments = Math.Max(0, KeyPoints.Count - 1);
 
         lock (_animLock)
         {
+            DisplayProgress = 0;
             _visualSteps = steps;
             _visualStepIndex = 0;
             _animStartProgress = 0;
