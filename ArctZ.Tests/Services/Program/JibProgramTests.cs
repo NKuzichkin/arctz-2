@@ -34,4 +34,14 @@ public class JibProgramTests
 
         Assert.Empty(program.Segments());
     }
+
+    [Fact]
+    public void NewProgram_DefaultsToStopModeNoReturnNoRepeatLimit()
+    {
+        var program = new JibProgram();
+
+        Assert.Equal(ProgramCompletionMode.Stop, program.CompletionMode);
+        Assert.False(program.ReturnToStartOnFinish);
+        Assert.Null(program.RepeatCount);
+    }
 }

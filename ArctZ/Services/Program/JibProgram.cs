@@ -9,6 +9,13 @@ public sealed class JibProgram
 
     public string Name { get; set; } = "Новая программа";
 
+    public ProgramCompletionMode CompletionMode { get; set; } = ProgramCompletionMode.Stop;
+
+    public bool ReturnToStartOnFinish { get; set; }
+
+    /// <summary>Repeats for Loop/PingPong; null means unlimited. Unused (always null) in Stop mode.</summary>
+    public int? RepeatCount { get; set; }
+
     public List<KeyPoint> KeyPoints { get; } = new();
 
     /// <summary>Segment i describes the move from KeyPoints[i] to KeyPoints[i+1], using KeyPoints[i+1]'s own feed/ease/dwell settings.</summary>

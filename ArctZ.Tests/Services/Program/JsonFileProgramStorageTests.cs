@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Text.Json;
 using System.Threading.Tasks;
 using ArctZ.Services.Device;
 using ArctZ.Services.Program;
@@ -84,5 +85,42 @@ public class JsonFileProgramStorageTests : IDisposable
     public async Task LoadAsync_UnknownId_ThrowsFileNotFoundException()
     {
         await Assert.ThrowsAsync<FileNotFoundException>(() => _storage.LoadAsync(Guid.NewGuid()));
+    }
+
+    [Fact]
+    public async Task SaveAsync_ThenLoadAsync_RoundTripsCompletionSettings()
+    {
+        var program = SampleProgram("С повторами");
+        program.CompletionMode = ProgramCompletionMode.PingPong;
+        program.ReturnToStartOnFinish = true;
+        program.RepeatCount = 7;
+
+        await _storage.SaveAsync(program);
+        var loaded = await _storage.LoadAsync(program.Id);
+
+        Assert.Equal(ProgramCompletionMode.PingPong, loaded.CompletionMode);
+        Assert.True(loaded.ReturnToStartOnFinish);
+        Assert.Equal(7, loaded.RepeatCount);
+    }
+
+    [Fact]
+    public async Task LoadAsync_JsonWithoutCompletionFields_DefaultsToStopWithNoReturnAndNoRepeatLimit()
+    {
+        var id = Guid.NewGuid();
+        Directory.CreateDirectory(_directory);
+        var legacyJson = $$"""
+    {
+      "Id": "{{id}}",
+      "Name": "Старая программа",
+      "KeyPoints": []
+    }
+    """;
+        await File.WriteAllTextAsync(Path.Combine(_directory, $"{id}.json"), legacyJson);
+
+        var loaded = await _storage.LoadAsync(id);
+
+        Assert.Equal(ProgramCompletionMode.Stop, loaded.CompletionMode);
+        Assert.False(loaded.ReturnToStartOnFinish);
+        Assert.Null(loaded.RepeatCount);
     }
 }
