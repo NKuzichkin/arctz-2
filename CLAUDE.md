@@ -4,6 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 See also `AI_AGENT_README.md` for a Russian-language overview of the tech stack and folder layout.
 
+## Вопросы к пользователю
+
+Любой вопрос, адресованный пользователю — уточняющий, подтверждение/согласование, выбор варианта, а также вопросы с ответом да/нет (подтверждаю/отклоняю) — всегда задавать через инструмент `AskUserQuestion`, никогда простым текстом в диалоге. Это правило действует всегда, без исключений для "простых" или риторических на первый взгляд вопросов.
+
 ## Commands
 
 Build the full solution:
@@ -26,6 +30,16 @@ Android/iOS build requirements (already set up on this machine):
 - On Windows, `ArctZ.iOS` builds (targets `iossimulator-x64`) but cannot produce a device-signed app without a paired Mac/Xcode — that limitation is inherent to iOS tooling, not fixable from Windows.
 
 Run tests: `dotnet test ArctZ.Tests/ArctZ.Tests.csproj`
+
+## Тестирование UI
+
+Единственный допустимый способ проверки UI/поведенческих изменений — следующая последовательность (никаких других методов проверки, например самостоятельных скриншотов без подтверждения пользователем, недостаточно для того, чтобы считать задачу завершённой):
+
+0. Это единственный способ проверки UI.
+1. Подготовить приложение для запуска (собрать нужный platform head, например `dotnet build ArctZ.Desktop/ArctZ.Desktop.csproj`).
+2. Запустить приложение (`dotnet run` или запуск собранного exe) — оно должно быть реально запущено, а не просто собрано.
+3. Попросить пользователя проверить функции приложения самостоятельно.
+4. Задать пользователю вопросы по работе каждой проверяемой функции по задаче — через инструмент `AskUserQuestion`, по одному вопросу на каждое изменённое поведение/элемент, а не один общий вопрос "выглядит нормально?".
 
 ## Architecture
 
