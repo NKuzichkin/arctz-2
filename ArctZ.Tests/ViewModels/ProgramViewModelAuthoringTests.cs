@@ -17,7 +17,7 @@ public class ProgramViewModelAuthoringTests
         transport = new FakeDeviceTransport();
         storage = new FakeProgramStorage();
         var connection = new ConnectionViewModel(transport, () => new FakeDeviceTransport(), new DeviceSessionFactory(MachineLimits.Default));
-        return new ProgramViewModel(connection, storage, new TrajectoryCompiler());
+        return new ProgramViewModel(connection, storage, new TrajectoryCompiler(), new ManualPeriodicTimer(), TimeSpan.FromMilliseconds(100));
     }
 
     [Fact]

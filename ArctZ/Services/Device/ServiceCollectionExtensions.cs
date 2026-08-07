@@ -23,7 +23,12 @@ public static class ServiceCollectionExtensions
             TimeSpan.FromMilliseconds(100)));
         services.AddSingleton<ITrajectoryCompiler, TrajectoryCompiler>();
         services.AddSingleton<ConnectionViewModel>();
-        services.AddSingleton<ProgramViewModel>();
+        services.AddSingleton<ProgramViewModel>(sp => new ProgramViewModel(
+            sp.GetRequiredService<ConnectionViewModel>(),
+            sp.GetRequiredService<IProgramStorage>(),
+            sp.GetRequiredService<ITrajectoryCompiler>(),
+            new SystemPeriodicTimer(),
+            TimeSpan.FromMilliseconds(100)));
         return services;
     }
 }

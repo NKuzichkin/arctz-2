@@ -11,12 +11,16 @@ namespace ArctZ.Tests.ViewModels;
 
 public class ProgramViewModelPlaybackTests
 {
-    private static ProgramViewModel CreateViewModel(out FakeDeviceTransport transport)
+    private static ProgramViewModel CreateViewModel(out FakeDeviceTransport transport) =>
+        CreateViewModel(out transport, out _);
+
+    private static ProgramViewModel CreateViewModel(out FakeDeviceTransport transport, out ManualPeriodicTimer progressTimer)
     {
         transport = new FakeDeviceTransport();
         var storage = new FakeProgramStorage();
         var connection = new ConnectionViewModel(transport, () => new FakeDeviceTransport(), new DeviceSessionFactory(MachineLimits.Default));
-        return new ProgramViewModel(connection, storage, new TrajectoryCompiler());
+        progressTimer = new ManualPeriodicTimer();
+        return new ProgramViewModel(connection, storage, new TrajectoryCompiler(), progressTimer, TimeSpan.FromMilliseconds(100));
     }
 
     /// <summary>3 key points, 2 continuous-blend segments -> 2 compiled G1 steps, no G4.</summary>
@@ -70,6 +74,36 @@ public class ProgramViewModelPlaybackTests
         Assert.Equal(1, vm.CurrentSegmentIndex);
         Assert.Equal(1.0, vm.SegmentProgress);
         Assert.Equal(1.0, vm.OverallProgress);
+    }
+
+    [Fact]
+    public async Task DisplayProgress_AnimatesTowardStepTarget_BetweenDispatchAndAck_ThenSnapsOnAck()
+    {
+        var vm = CreateViewModel(out var transport, out var progressTimer);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+        Assert.Equal(0, vm.DisplayProgress);
+
+        // Segment distance 10 @ feed 500 => EstimatedDurationSeconds = 1.2s = 12 ticks @ 100ms.
+        progressTimer.RaiseElapsed();
+        progressTimer.RaiseElapsed();
+        progressTimer.RaiseElapsed();
+
+        // 3 of 12 ticks toward the first segment's target (0.5), starting from 0.
+        Assert.Equal(0.125, vm.DisplayProgress, 3);
+        Assert.True(vm.DisplayProgress < 0.5);
+
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.CurrentSegmentIndex == 0, TimeSpan.FromSeconds(1));
+
+        Assert.Equal(0.5, vm.DisplayProgress);
+
+        transport.SimulateReceivedLine("ok");
+        await playTask;
+
+        Assert.Equal(1.0, vm.DisplayProgress);
     }
 
     [Fact]

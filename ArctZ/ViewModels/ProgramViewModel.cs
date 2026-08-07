@@ -18,10 +18,17 @@ public partial class ProgramViewModel : ViewModelBase
 {
     private readonly IProgramStorage _storage;
     private readonly ITrajectoryCompiler _compiler;
+    private readonly IPeriodicTimer _progressTimer;
+    private readonly TimeSpan _progressTickInterval;
     private JoystickAxisInput _leftInput;
     private JoystickAxisInput _rightInput;
     private bool _leftActive;
     private bool _rightActive;
+
+    private double _animStartProgress;
+    private double _animTargetProgress;
+    private double _animDurationSeconds;
+    private double _animElapsedSeconds;
 
     public ConnectionViewModel Connection { get; }
 
@@ -50,11 +57,19 @@ public partial class ProgramViewModel : ViewModelBase
     [ObservableProperty]
     private bool _isSideMenuOpen;
 
-    public ProgramViewModel(ConnectionViewModel connection, IProgramStorage storage, ITrajectoryCompiler compiler)
+    /// <summary>Time-interpolated view of OverallProgress — moves continuously between
+    /// ack-confirmed checkpoints instead of jumping only when a G-code line is acknowledged.</summary>
+    [ObservableProperty]
+    private double _displayProgress;
+
+    public ProgramViewModel(ConnectionViewModel connection, IProgramStorage storage, ITrajectoryCompiler compiler, IPeriodicTimer progressTimer, TimeSpan progressTickInterval)
     {
         Connection = connection;
         _storage = storage;
         _compiler = compiler;
+        _progressTimer = progressTimer;
+        _progressTickInterval = progressTickInterval;
+        _progressTimer.Elapsed += OnProgressTick;
         Connection.PropertyChanged += OnConnectionPropertyChanged;
 
         // Add/Remove/Move/Reset all need to re-evaluate whether a given point
@@ -64,6 +79,21 @@ public partial class ProgramViewModel : ViewModelBase
             MoveKeyPointUpCommand.NotifyCanExecuteChanged();
             MoveKeyPointDownCommand.NotifyCanExecuteChanged();
         };
+    }
+
+    private void OnProgressTick()
+    {
+        _animElapsedSeconds += _progressTickInterval.TotalSeconds;
+        var frac = _animDurationSeconds <= 0 ? 1.0 : Math.Clamp(_animElapsedSeconds / _animDurationSeconds, 0, 1);
+        DisplayProgress = _animStartProgress + (_animTargetProgress - _animStartProgress) * frac;
+    }
+
+    private void BeginStepAnimation(double startProgress, double targetProgress, double durationSeconds)
+    {
+        _animStartProgress = startProgress;
+        _animTargetProgress = targetProgress;
+        _animDurationSeconds = durationSeconds;
+        _animElapsedSeconds = 0;
     }
 
     [RelayCommand]
@@ -520,6 +550,15 @@ public partial class ProgramViewModel : ViewModelBase
 
     partial void OnPlaybackStateChanged(PlaybackState value)
     {
+        if (value == PlaybackState.Running)
+        {
+            _progressTimer.Start(_progressTickInterval);
+        }
+        else
+        {
+            _progressTimer.Stop();
+        }
+
         Connection.IsPlaybackLocked = IsProgramLocked;
 
         if (IsProgramLocked && (_leftActive || _rightActive))
@@ -718,6 +757,7 @@ public partial class ProgramViewModel : ViewModelBase
         PlaybackState = PlaybackState.Running;
         CurrentSegmentIndex = null;
         SegmentProgress = 0;
+        DisplayProgress = 0;
         FaultedAtSegmentIndex = null;
         TotalSegments = Math.Max(0, KeyPoints.Count - 1);
 
@@ -728,8 +768,15 @@ public partial class ProgramViewModel : ViewModelBase
             dispatched[i] = (steps[i], Connection.Session!.SendGCodeAsync(line));
         }
 
+        var previousDisplayProgress = 0.0;
+
         foreach (var (step, completion) in dispatched)
         {
+            var targetProgress = TotalSegments > 0
+                ? Math.Clamp((step.SegmentIndex + step.SegmentProgress) / TotalSegments, 0, 1)
+                : 0;
+            BeginStepAnimation(previousDisplayProgress, targetProgress, step.EstimatedDurationSeconds);
+
             var result = await completion;
 
             if (PlaybackState == PlaybackState.Stopped)
@@ -746,6 +793,8 @@ public partial class ProgramViewModel : ViewModelBase
 
             CurrentSegmentIndex = step.SegmentIndex;
             SegmentProgress = step.SegmentProgress;
+            DisplayProgress = targetProgress;
+            previousDisplayProgress = targetProgress;
         }
 
         if (PlaybackState == PlaybackState.Running)
@@ -777,6 +826,7 @@ public partial class ProgramViewModel : ViewModelBase
         PlaybackState = PlaybackState.Stopped;
         CurrentSegmentIndex = null;
         SegmentProgress = 0;
+        DisplayProgress = 0;
         Connection.Session?.AbortPendingCommands();
         return Connection.Session?.FeedHoldAsync() ?? Task.CompletedTask;
     }
