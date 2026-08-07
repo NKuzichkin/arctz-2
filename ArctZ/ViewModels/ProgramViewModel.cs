@@ -913,6 +913,8 @@ public partial class ProgramViewModel : ViewModelBase
         }
 
         PlaybackState = PlaybackState.Running;
+        CurrentSegmentIndex = null;
+        SegmentProgress = 0;
         FaultedAtSegmentIndex = null;
         TotalSegments = Math.Max(0, KeyPoints.Count - 1);
 
