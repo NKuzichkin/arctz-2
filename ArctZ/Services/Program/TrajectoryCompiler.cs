@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using ArctZ.Services.Device;
@@ -23,13 +24,14 @@ public sealed class TrajectoryCompiler : ITrajectoryCompiler
             else
             {
                 var command = MoveCommand(segment.To.Pose, segment.To.FeedRateUnitsPerMin);
-                steps.Add(new CompiledStep(segment.Index, command, SegmentProgress: 1.0));
+                var duration = EstimateDuration(Distance(segment.From.Pose, segment.To.Pose), segment.To.FeedRateUnitsPerMin);
+                steps.Add(new CompiledStep(segment.Index, command, SegmentProgress: 1.0, EstimatedDurationSeconds: duration));
             }
 
             if (segment.To.StopsAtWaypoint)
             {
                 var dwellLine = $"G4 P{Format(segment.To.DwellSeconds)}";
-                steps.Add(new CompiledStep(segment.Index, new GCodeLineCommand(dwellLine), SegmentProgress: 1.0));
+                steps.Add(new CompiledStep(segment.Index, new GCodeLineCommand(dwellLine), SegmentProgress: 1.0, EstimatedDurationSeconds: segment.To.DwellSeconds));
             }
         }
 
@@ -38,12 +40,16 @@ public sealed class TrajectoryCompiler : ITrajectoryCompiler
 
     private static void CompileEased(ProgramSegment segment, List<CompiledStep> steps)
     {
+        var previousPose = segment.From.Pose;
+
         for (var i = 1; i <= EaseSubdivisions; i++)
         {
             var t = (double)i / EaseSubdivisions;
             var pose = Interpolate(segment.From.Pose, segment.To.Pose, t);
             var feed = FeedMultiplier(t) * segment.To.FeedRateUnitsPerMin;
-            steps.Add(new CompiledStep(segment.Index, MoveCommand(pose, feed), SegmentProgress: t));
+            var duration = EstimateDuration(Distance(previousPose, pose), feed);
+            steps.Add(new CompiledStep(segment.Index, MoveCommand(pose, feed), SegmentProgress: t, EstimatedDurationSeconds: duration));
+            previousPose = pose;
         }
     }
 
@@ -69,6 +75,13 @@ public sealed class TrajectoryCompiler : ITrajectoryCompiler
         Y: from.Y + (to.Y - from.Y) * t,
         Z: from.Z + (to.Z - from.Z) * t,
         A: from.A + (to.A - from.A) * t);
+
+    /// <summary>Euclidean distance across all 4 axes — a UI-facing time estimate, not a controller-accurate one.</summary>
+    private static double Distance(MachinePose a, MachinePose b) => Math.Sqrt(
+        Math.Pow(b.X - a.X, 2) + Math.Pow(b.Y - a.Y, 2) + Math.Pow(b.Z - a.Z, 2) + Math.Pow(b.A - a.A, 2));
+
+    private static double EstimateDuration(double distance, double feedUnitsPerMin) =>
+        feedUnitsPerMin > 0 ? distance / feedUnitsPerMin * 60 : 0;
 
     private static GCodeLineCommand MoveCommand(MachinePose pose, double feed) => new(
         $"G1 X{Format(pose.X)} Y{Format(pose.Y)} Z{Format(pose.Z)} A{Format(pose.A)} F{Format(feed)}");

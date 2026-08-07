@@ -49,6 +49,59 @@ public class TrajectoryCompilerTests
     }
 
     [Fact]
+    public void Compile_NoEase_EstimatesDurationFromDistanceAndFeed()
+    {
+        var to = Point(2, new MachinePose(60, 0, 0, 0), feedRateUnitsPerMin: 1000);
+        var program = SingleSegmentProgram(to);
+
+        var steps = _compiler.Compile(program);
+        var motionSteps = steps.Where(s => ((GCodeLineCommand)s.Command).Line.StartsWith("G1", StringComparison.Ordinal)).ToList();
+
+        // distance 60 (only X moves) / feed 1000 units-per-min * 60 seconds-per-min = 3.6s.
+        Assert.Equal(3.6, motionSteps[0].EstimatedDurationSeconds, 3);
+    }
+
+    [Fact]
+    public void Compile_ZeroFeed_EstimatesZeroDuration_NoDivideByZero()
+    {
+        var to = Point(2, new MachinePose(60, 0, 0, 0), feedRateUnitsPerMin: 0);
+        var program = SingleSegmentProgram(to);
+
+        var steps = _compiler.Compile(program);
+        var motionSteps = steps.Where(s => ((GCodeLineCommand)s.Command).Line.StartsWith("G1", StringComparison.Ordinal)).ToList();
+
+        Assert.Equal(0.0, motionSteps[0].EstimatedDurationSeconds);
+    }
+
+    [Fact]
+    public void Compile_EaseInOut_EstimatesPerSubstepDurationFromRampedFeed()
+    {
+        var to = Point(2, new MachinePose(60, 0, 0, 0), feedRateUnitsPerMin: 1000, ease: EaseMode.EaseInOut);
+        var program = SingleSegmentProgram(to);
+
+        var steps = _compiler.Compile(program);
+        var motionSteps = steps.Where(s => ((GCodeLineCommand)s.Command).Line.StartsWith("G1", StringComparison.Ordinal)).ToList();
+
+        // Each substep covers an equal 10-unit slice (60 / 6 subdivisions); feed ramps
+        // 650 -> 1000 -> 1000 -> 1000 -> 650 -> 300 (asserted by feed in the existing test).
+        // duration_i = 10 / feed_i * 60.
+        var roundedDurations = motionSteps.Select(s => Math.Round(s.EstimatedDurationSeconds, 3)).ToArray();
+        Assert.Equal(new[] { 0.923, 0.6, 0.6, 0.6, 0.923, 2.0 }, roundedDurations);
+    }
+
+    [Fact]
+    public void Compile_DwellPositive_EstimatesExactDwellDuration()
+    {
+        var to = Point(2, new MachinePose(60, 0, 0, 0), feedRateUnitsPerMin: 1000, dwellSeconds: 2.5, continuousBlend: true);
+        var program = SingleSegmentProgram(to);
+
+        var steps = _compiler.Compile(program);
+        var dwellStep = steps[1];
+
+        Assert.Equal(2.5, dwellStep.EstimatedDurationSeconds);
+    }
+
+    [Fact]
     public void Compile_EaseInOut_ProducesSixSubstepsWithRampedFeedAndIncreasingProgress()
     {
         var to = Point(2, new MachinePose(60, 0, 0, 0), feedRateUnitsPerMin: 1000, ease: EaseMode.EaseInOut);
