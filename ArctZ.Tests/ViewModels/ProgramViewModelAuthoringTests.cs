@@ -399,4 +399,84 @@ public class ProgramViewModelAuthoringTests
         Assert.Equal("Старое имя", vm.ProgramName);
         Assert.True(renameTask.IsCompleted);
     }
+
+    [Fact]
+    public void EditCompletionSettings_OpensEditorPrefilledFromCurrentSettings()
+    {
+        var vm = CreateViewModel(out _, out _);
+        vm.CompletionMode = ProgramCompletionMode.Loop;
+        vm.RepeatCount = 5;
+        vm.ReturnToStartOnFinish = true;
+
+        vm.EditCompletionSettingsCommand.Execute(null);
+
+        Assert.True(vm.IsEditingCompletionSettings);
+        Assert.NotNull(vm.CompletionSettingsEditor);
+        Assert.Equal(ProgramCompletionMode.Loop, vm.CompletionSettingsEditor!.Mode);
+        Assert.Equal(5, vm.CompletionSettingsEditor.RepeatCount);
+        Assert.False(vm.CompletionSettingsEditor.IsRepeatUnlimited);
+        Assert.True(vm.CompletionSettingsEditor.ReturnToStartOnFinish);
+    }
+
+    [Fact]
+    public void EditCompletionSettings_Save_UpdatesProgramViewModelAndClosesEditor()
+    {
+        var vm = CreateViewModel(out _, out _);
+
+        vm.EditCompletionSettingsCommand.Execute(null);
+        vm.CompletionSettingsEditor!.Mode = ProgramCompletionMode.Loop;
+        vm.CompletionSettingsEditor.RepeatCount = 10;
+        vm.CompletionSettingsEditor.IsRepeatUnlimited = false;
+        vm.CompletionSettingsEditor.ReturnToStartOnFinish = true;
+        vm.CompletionSettingsEditor.SaveCommand.Execute(null);
+
+        Assert.False(vm.IsEditingCompletionSettings);
+        Assert.Equal(ProgramCompletionMode.Loop, vm.CompletionMode);
+        Assert.Equal(10, vm.RepeatCount);
+        Assert.True(vm.ReturnToStartOnFinish);
+    }
+
+    [Fact]
+    public void EditCompletionSettings_Cancel_LeavesProgramViewModelUnchangedAndClosesEditor()
+    {
+        var vm = CreateViewModel(out _, out _);
+        vm.CompletionMode = ProgramCompletionMode.Stop;
+
+        vm.EditCompletionSettingsCommand.Execute(null);
+        vm.CompletionSettingsEditor!.Mode = ProgramCompletionMode.Loop;
+        vm.CompletionSettingsEditor.CancelCommand.Execute(null);
+
+        Assert.False(vm.IsEditingCompletionSettings);
+        Assert.Equal(ProgramCompletionMode.Stop, vm.CompletionMode);
+    }
+
+    [Fact]
+    public async Task SaveProgramAsync_ThenLoadProgramAsync_RoundTripsCompletionSettings()
+    {
+        var vm = CreateViewModel(out var transport, out _);
+        await vm.Connection.ConnectCommand.Execute();
+        transport.SimulateReceivedLine("<Idle|WPos:0,0,0,0|FS:0,0>");
+        vm.CaptureKeyPointCommand.Execute(null);
+        vm.ProgramName = "Тест";
+        vm.CompletionMode = ProgramCompletionMode.PingPong;
+        vm.RepeatCount = 3;
+        vm.ReturnToStartOnFinish = true;
+
+        var saveTask = vm.SaveProgramCommand.ExecuteAsync(null);
+        Assert.NotNull(vm.PendingRename);
+        vm.ConfirmRenameCommand.Execute(null);
+        await saveTask;
+
+        vm.NewProgramCommand.Execute(null);
+        Assert.Equal(ProgramCompletionMode.Stop, vm.CompletionMode);
+        Assert.False(vm.ReturnToStartOnFinish);
+        Assert.Null(vm.RepeatCount);
+
+        await vm.RefreshLibraryCommand.ExecuteAsync(null);
+        await vm.LoadProgramCommand.ExecuteAsync(vm.Library.Single(p => p.Name == "Тест"));
+
+        Assert.Equal(ProgramCompletionMode.PingPong, vm.CompletionMode);
+        Assert.Equal(3, vm.RepeatCount);
+        Assert.True(vm.ReturnToStartOnFinish);
+    }
 }

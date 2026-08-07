@@ -73,6 +73,21 @@ public partial class ProgramViewModel : ViewModelBase
     [ObservableProperty]
     private bool _isSideMenuOpen;
 
+    [ObservableProperty]
+    private ProgramCompletionMode _completionMode = ProgramCompletionMode.Stop;
+
+    [ObservableProperty]
+    private bool _returnToStartOnFinish;
+
+    [ObservableProperty]
+    private int? _repeatCount;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsEditingCompletionSettings))]
+    private CompletionSettingsViewModel? _completionSettingsEditor;
+
+    public bool IsEditingCompletionSettings => CompletionSettingsEditor is not null;
+
     /// <summary>Ack-independent visual timeline of the run: advances purely on elapsed tick time
     /// along the compiled steps' estimated durations, and is force-snapped to 1.0 when the run
     /// completes. Deliberately not derived from OverallProgress — see the note on _animLock.</summary>
@@ -193,6 +208,9 @@ public partial class ProgramViewModel : ViewModelBase
     {
         ProgramId = null;
         ProgramName = "Новая программа";
+        CompletionMode = ProgramCompletionMode.Stop;
+        ReturnToStartOnFinish = false;
+        RepeatCount = null;
         KeyPoints.Clear();
         SelectedKeyPoint = null;
     }
@@ -204,6 +222,9 @@ public partial class ProgramViewModel : ViewModelBase
 
         ProgramId = program.Id;
         ProgramName = program.Name;
+        CompletionMode = program.CompletionMode;
+        ReturnToStartOnFinish = program.ReturnToStartOnFinish;
+        RepeatCount = program.RepeatCount;
 
         KeyPoints.Clear();
         foreach (var keyPoint in program.KeyPoints)
@@ -420,6 +441,25 @@ public partial class ProgramViewModel : ViewModelBase
         var index = KeyPoints.IndexOf(KeyPoints.First(k => k.Id == updated.Id));
         KeyPoints[index] = updated;
         KeyPointEditor = null;
+    }
+
+    [RelayCommand]
+    private void EditCompletionSettings()
+    {
+        CompletionSettingsEditor = new CompletionSettingsViewModel(
+            CompletionMode,
+            RepeatCount,
+            ReturnToStartOnFinish,
+            ApplyCompletionSettingsEdit,
+            () => CompletionSettingsEditor = null);
+    }
+
+    private void ApplyCompletionSettingsEdit(ProgramCompletionMode mode, int? repeatCount, bool returnToStartOnFinish)
+    {
+        CompletionMode = mode;
+        RepeatCount = repeatCount;
+        ReturnToStartOnFinish = returnToStartOnFinish;
+        CompletionSettingsEditor = null;
     }
 
     private bool HasKnownPoseForKeyPoint(KeyPoint? _) => HasKnownPose();
@@ -823,7 +863,14 @@ public partial class ProgramViewModel : ViewModelBase
 
     private JibProgram BuildProgram()
     {
-        var program = new JibProgram { Id = ProgramId ?? Guid.NewGuid(), Name = ProgramName };
+        var program = new JibProgram
+        {
+            Id = ProgramId ?? Guid.NewGuid(),
+            Name = ProgramName,
+            CompletionMode = CompletionMode,
+            ReturnToStartOnFinish = ReturnToStartOnFinish,
+            RepeatCount = RepeatCount
+        };
         program.KeyPoints.AddRange(KeyPoints);
         return program;
     }
