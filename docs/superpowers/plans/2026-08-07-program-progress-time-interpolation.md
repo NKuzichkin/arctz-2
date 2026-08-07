@@ -754,3 +754,277 @@ Then ask, one question per changed behavior (per CLAUDE.md's "Тестирова
 git add ArctZ/Views/MainView.axaml
 git commit -m "feat: bind progress bar to the time-interpolated DisplayProgress"
 ```
+
+> **Revision note (added after the first live-UI pass):** Steps 1-4 above ran
+> once and Step 4 failed both checks — the bar still jumped, and it visibly
+> jumped backward at the point1→point2 transition. Root cause traced to
+> Tasks 2-3's core premise (see the spec's "Ревизия" section, 2026-08-07):
+> `MockDeviceTransport`/real FluidNC ack a G-code line on buffer-dequeue, not
+> on physical motion completion, so "time to ack" does not approximate motion
+> time — animating/calibrating against it cannot produce smooth motion, and
+> the calibration factor actively converges toward 0. **Task 5 below replaces
+> the ack-driven animation from Tasks 2-3 with a fully ack-independent visual
+> timeline, and must land before repeating Steps 2-4 of this task.** The XAML
+> binding above (`Value="{Binding DisplayProgress}"`) does not change — only
+> how `DisplayProgress` is computed changes.
+
+---
+
+### Task 5: Decouple `DisplayProgress` from ack timing; remove calibration; fix the timer/UI-thread race
+
+**Files:**
+- Modify: `ArctZ/ViewModels/ProgramViewModel.cs`
+- Modify: `ArctZ.Tests/ViewModels/ProgramViewModelPlaybackTests.cs`
+
+**Interfaces:**
+- Consumes: `CompiledStep.EstimatedDurationSeconds`/`.SegmentIndex`/`.SegmentProgress` (Task 1). `IPeriodicTimer`/`ManualPeriodicTimer` (Task 2 — constructor shape `ProgramViewModel(ConnectionViewModel, IProgramStorage, ITrajectoryCompiler, IPeriodicTimer, TimeSpan)` is unchanged, no test file outside `ProgramViewModelPlaybackTests.cs` needs touching).
+- Produces: `DisplayProgress` keeps its name and 0..1 meaning — Task 4's XAML binding does not change. `BeginStepAnimation` (Task 2) and `_cumulativeEstimatedSeconds`/`_cumulativeActualSeconds`/`_durationCalibrationFactor` (Task 3) are deleted — nothing else in the codebase references them (grep confirms `BeginStepAnimation` and `_durationCalibrationFactor` are private to `ProgramViewModel.cs`).
+
+- [ ] **Step 1: Write the failing tests**
+
+In `ArctZ.Tests/ViewModels/ProgramViewModelPlaybackTests.cs`, delete these two existing test methods entirely — they assert the ack-driven snapping and calibration behavior this task removes:
+- `DisplayProgress_AnimatesTowardStepTarget_BetweenDispatchAndAck_ThenSnapsOnAck`
+- `DisplayProgress_CalibratesFutureEstimates_FromActualFirstStepDuration`
+
+Add these two in their place:
+
+```csharp
+[Fact]
+public async Task DisplayProgress_ForcesTo100Percent_WhenCompleted_EvenIfAcksArrivedBeforeAnyTick()
+{
+    var vm = CreateViewModel(out var transport, out var progressTimer);
+    await vm.Connection.ConnectCommand.Execute();
+    SeedTwoSegmentProgram(vm, transport);
+
+    var playTask = vm.PlayCommand.ExecuteAsync(null);
+    Assert.Equal(0, vm.DisplayProgress);
+
+    // Ack both segments immediately, before any progressTimer tick — real ack timing
+    // reflects buffer-drain speed, not motion time, so this is the common case, not an
+    // edge case. DisplayProgress must not have anywhere else to get a value from except
+    // the explicit Completed-forced snap.
+    transport.SimulateReceivedLine("ok");
+    transport.SimulateReceivedLine("ok");
+    await playTask;
+
+    Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
+    Assert.Equal(1.0, vm.DisplayProgress);
+}
+
+[Fact]
+public async Task DisplayProgress_FollowsItsOwnTimeline_UnaffectedByAnEarlyAck()
+{
+    var vm = CreateViewModel(out var transport, out var progressTimer);
+    await vm.Connection.ConnectCommand.Execute();
+    SeedTwoSegmentProgram(vm, transport);
+
+    var playTask = vm.PlayCommand.ExecuteAsync(null);
+
+    // First segment's estimate is 1.2s = 12 ticks @ 100ms. Ack it after only 3 ticks.
+    progressTimer.RaiseElapsed();
+    progressTimer.RaiseElapsed();
+    progressTimer.RaiseElapsed();
+
+    transport.SimulateReceivedLine("ok");
+    await WaitUntilAsync(() => vm.CurrentSegmentIndex == 0, TimeSpan.FromSeconds(1));
+
+    // OverallProgress (ack-confirmed truth) jumps to 0.5 immediately — DisplayProgress must
+    // NOT snap to it, and must keep following the same first-segment animation.
+    Assert.Equal(0.5, vm.OverallProgress);
+    Assert.Equal(0.125, vm.DisplayProgress, 3); // 3/12 ticks toward the first segment's 0.5 target
+    Assert.True(vm.DisplayProgress < 0.5);
+
+    // A 4th tick continues the SAME first-segment animation — the ack that already arrived
+    // changes nothing about its pace.
+    progressTimer.RaiseElapsed();
+    Assert.Equal(4.0 / 12 * 0.5, vm.DisplayProgress, 3);
+
+    transport.SimulateReceivedLine("ok");
+    await playTask;
+
+    Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
+    Assert.Equal(1.0, vm.DisplayProgress);
+}
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `dotnet test ArctZ.Tests/ArctZ.Tests.csproj --filter "FullyQualifiedName~ProgramViewModelPlaybackTests"`
+Expected: FAIL — with the current (Task 2/3) implementation, `DisplayProgress` snaps to `0.5` the instant the ack arrives (3 ticks in), so `Assert.Equal(0.125, vm.DisplayProgress, 3)` fails, and the calibration factor changes the second segment's pacing, so the `4.0/12*0.5` assertion also fails.
+
+- [ ] **Step 3: Replace the field block, constructor body, and `OnProgressTick`/`BeginStepAnimation`**
+
+In `ArctZ/ViewModels/ProgramViewModel.cs`, add `using System.Collections.Generic;` to the top of the file (needed for the `IReadOnlyList<CompiledStep>` field below) — insert it after `using System;` (currently line 1), before `using System.ComponentModel;`.
+
+Replace the field block (currently lines 19-34, from `private readonly IProgramStorage _storage;` through `private double _durationCalibrationFactor = 1.0;`):
+
+```csharp
+    private readonly IProgramStorage _storage;
+    private readonly ITrajectoryCompiler _compiler;
+    private readonly IPeriodicTimer _progressTimer;
+    private readonly TimeSpan _progressTickInterval;
+    private JoystickAxisInput _leftInput;
+    private JoystickAxisInput _rightInput;
+    private bool _leftActive;
+    private bool _rightActive;
+
+    // Guards the fields below AND DisplayProgress: OnProgressTick fires on a raw
+    // System.Threading.Timer callback (a ThreadPool thread, unsynchronized with the UI
+    // thread), while OnPlaybackStateChanged's Completed-forced snap runs on whatever thread
+    // PlayAsync's `await` resumes on. Without this lock a stale tick — already queued to the
+    // ThreadPool before Completed fired, computed from now-superseded field values — can
+    // execute after the Completed snap and overwrite DisplayProgress with a lower value: a
+    // visible backward jump. The lock removes the race outright rather than narrowing it.
+    private readonly object _animLock = new();
+    private IReadOnlyList<CompiledStep> _visualSteps = Array.Empty<CompiledStep>();
+    private int _visualStepIndex;
+    private double _animStartProgress;
+    private double _animTargetProgress;
+    private double _animDurationSeconds;
+    private double _animElapsedSeconds;
+```
+
+Replace the constructor body's timer subscription line and the `OnProgressTick`/`BeginStepAnimation` methods that follow the constructor (currently lines 68-100, from `public ProgramViewModel(...)` through the closing `}` of `BeginStepAnimation`):
+
+```csharp
+    public ProgramViewModel(ConnectionViewModel connection, IProgramStorage storage, ITrajectoryCompiler compiler, IPeriodicTimer progressTimer, TimeSpan progressTickInterval)
+    {
+        Connection = connection;
+        _storage = storage;
+        _compiler = compiler;
+        _progressTimer = progressTimer;
+        _progressTickInterval = progressTickInterval;
+        _progressTimer.Elapsed += OnProgressTick;
+        Connection.PropertyChanged += OnConnectionPropertyChanged;
+
+        // Add/Remove/Move/Reset all need to re-evaluate whether a given point
+        // is still first/last, which MoveKeyPointUp/Down's CanExecute depends on.
+        KeyPoints.CollectionChanged += (_, _) =>
+        {
+            MoveKeyPointUpCommand.NotifyCanExecuteChanged();
+            MoveKeyPointDownCommand.NotifyCanExecuteChanged();
+        };
+    }
+
+    /// <summary>Advances DisplayProgress along the precomputed visual timeline by however much
+    /// real time has passed — entirely independent of ack arrival (see the class-level note on
+    /// _animLock for why acks cannot drive this: ack timing reflects buffer-drain speed, not
+    /// physical motion time).</summary>
+    private void OnProgressTick()
+    {
+        lock (_animLock)
+        {
+            _animElapsedSeconds += _progressTickInterval.TotalSeconds;
+
+            while (_animElapsedSeconds >= _animDurationSeconds && _visualStepIndex < _visualSteps.Count - 1)
+            {
+                _animElapsedSeconds -= _animDurationSeconds;
+                _visualStepIndex++;
+                _animStartProgress = _animTargetProgress;
+                _animTargetProgress = StepOverallProgress(_visualSteps[_visualStepIndex]);
+                _animDurationSeconds = _visualSteps[_visualStepIndex].EstimatedDurationSeconds;
+            }
+
+            var frac = _animDurationSeconds <= 0 ? 1.0 : Math.Clamp(_animElapsedSeconds / _animDurationSeconds, 0, 1);
+            DisplayProgress = _animStartProgress + (_animTargetProgress - _animStartProgress) * frac;
+        }
+    }
+
+    private double StepOverallProgress(CompiledStep step) => TotalSegments > 0
+        ? Math.Clamp((step.SegmentIndex + step.SegmentProgress) / TotalSegments, 0, 1)
+        : 0;
+```
+
+- [ ] **Step 4: Force `DisplayProgress` to 1.0 on Completed, seed the visual timeline in `PlayAsync`, revert the dispatch loop, and stop touching animation state in `StopAsync`**
+
+In `ArctZ/ViewModels/ProgramViewModel.cs`, find `partial void OnPlaybackStateChanged(PlaybackState value)` and insert this immediately after the existing `if (value == PlaybackState.Running) { _progressTimer.Start(...); } else { _progressTimer.Stop(); }` block, before `Connection.IsPlaybackLocked = IsProgramLocked;`:
+
+```csharp
+
+        if (value == PlaybackState.Completed)
+        {
+            lock (_animLock)
+            {
+                DisplayProgress = 1.0;
+            }
+        }
+```
+
+In `PlayAsync`, replace the reset block (currently the lines from `PlaybackState = PlaybackState.Running;` through `_durationCalibrationFactor = 1.0;`):
+
+```csharp
+        PlaybackState = PlaybackState.Running;
+        CurrentSegmentIndex = null;
+        SegmentProgress = 0;
+        DisplayProgress = 0;
+        FaultedAtSegmentIndex = null;
+        TotalSegments = Math.Max(0, KeyPoints.Count - 1);
+
+        lock (_animLock)
+        {
+            _visualSteps = steps;
+            _visualStepIndex = 0;
+            _animStartProgress = 0;
+            _animTargetProgress = StepOverallProgress(steps[0]);
+            _animDurationSeconds = steps[0].EstimatedDurationSeconds;
+            _animElapsedSeconds = 0;
+        }
+```
+
+Then replace the dispatch loop (currently from `var previousDisplayProgress = 0.0;` through the loop's closing `}`) with the ack loop reverted to touching only ack-confirmed state:
+
+```csharp
+        foreach (var (step, completion) in dispatched)
+        {
+            var result = await completion;
+
+            if (PlaybackState == PlaybackState.Stopped)
+            {
+                return;
+            }
+
+            if (result.Outcome != CommandOutcome.Acknowledged)
+            {
+                PlaybackState = PlaybackState.Faulted;
+                FaultedAtSegmentIndex = step.SegmentIndex;
+                return;
+            }
+
+            CurrentSegmentIndex = step.SegmentIndex;
+            SegmentProgress = step.SegmentProgress;
+        }
+```
+
+In `StopAsync`, replace `DisplayProgress = 0;` with:
+
+```csharp
+            lock (_animLock)
+            {
+                DisplayProgress = 0;
+            }
+```
+
+(keep it positioned exactly where the current unguarded `DisplayProgress = 0;` line sits, between `SegmentProgress = 0;` and `Connection.Session?.AbortPendingCommands();`).
+
+- [ ] **Step 5: Run tests to verify they pass**
+
+Run: `dotnet test ArctZ.Tests/ArctZ.Tests.csproj --filter "FullyQualifiedName~ProgramViewModelPlaybackTests"`
+Expected: PASS — all tests in the file, including the two new ones.
+
+Then run the full suite:
+
+Run: `dotnet test ArctZ.Tests/ArctZ.Tests.csproj`
+Expected: PASS.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add ArctZ/ViewModels/ProgramViewModel.cs ArctZ.Tests/ViewModels/ProgramViewModelPlaybackTests.cs
+git commit -m "fix: decouple progress-bar animation from ack timing, drop calibration, fix timer race"
+```
+
+---
+
+### Task 4 (resume): re-run the live UI verification
+
+After Task 5 lands, repeat Task 4's Steps 2-5 (build `ArctZ.Desktop`, run it, ask the user the same three questions, commit the XAML binding change alongside Task 5's fix if not already committed). Do not mark Task 4 complete until both "moves continuously" and "never jumps backward" get a yes.
