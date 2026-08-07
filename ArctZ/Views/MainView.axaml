@@ -344,11 +344,10 @@
                     </Border>
                 </Border>
 
-                <Border IsVisible="{Binding Connection.IsGCodeLogOpen}" Background="{x:Null}" IsHitTestVisible="False">
+                <Border IsVisible="{Binding Connection.IsGCodeLogOpen}" Background="{x:Null}">
                     <Border MaxWidth="420" MaxHeight="480" Margin="16" Background="{StaticResource HudPanelElevatedBrush}"
                             BorderBrush="{StaticResource HudBorderStrongBrush}" BorderThickness="1"
-                            Padding="20" HorizontalAlignment="Right" VerticalAlignment="Top"
-                            IsHitTestVisible="True">
+                            Padding="20" HorizontalAlignment="Right" VerticalAlignment="Top">
                         <DockPanel>
                             <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
                                 <TextBlock Grid.Column="0" Classes="section-heading" Text="ЛОГ G-CODE" VerticalAlignment="Center" />
