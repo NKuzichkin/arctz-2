@@ -205,13 +205,14 @@
                                 </ItemsControl>
                             </StackPanel>
 
-                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" Margin="0,12,0,0"
-                                  IsVisible="{Binding IsProgramLocked}">
-                                <TextBlock Grid.Row="0" Grid.Column="0" Classes="section-heading" Text="СЕГМЕНТ" VerticalAlignment="Center" Margin="0,0,12,0" />
-                                <TextBlock Grid.Row="0" Grid.Column="1" Classes="telemetry" FontSize="16" Text="{Binding SegmentProgressLabel}" />
-                                <ProgressBar Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,8,0,0"
-                                             Minimum="0" Maximum="1" Value="{Binding SegmentProgress}" />
-                            </Grid>
+                            <ProgressBar Margin="0,12,0,0" IsVisible="{Binding IsProgramLocked}"
+                                         HorizontalAlignment="Stretch" Minimum="0" Maximum="1" Value="{Binding OverallProgress}">
+                                <ProgressBar.Transitions>
+                                    <Transitions>
+                                        <DoubleTransition Property="Value" Duration="0:0:0.3" Easing="CubicEaseOut" />
+                                    </Transitions>
+                                </ProgressBar.Transitions>
+                            </ProgressBar>
 
                             <Border IsVisible="{Binding FaultedAtSegmentIndex, Converter={x:Static ObjectConverters.IsNotNull}}"
                                     Background="{StaticResource HudWarningDimBrush}" BorderBrush="{StaticResource HudWarningBrush}"

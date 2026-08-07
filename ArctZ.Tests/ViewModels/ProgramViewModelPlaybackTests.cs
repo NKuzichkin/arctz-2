@@ -60,12 +60,16 @@ public class ProgramViewModelPlaybackTests
         Assert.Equal(2, transport.SentLines.Count(l => l.StartsWith("G1", StringComparison.Ordinal)));
 
         transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.CurrentSegmentIndex == 0, TimeSpan.FromSeconds(1));
+        Assert.Equal(0.5, vm.OverallProgress);
+
         transport.SimulateReceivedLine("ok");
         await playTask;
 
         Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
         Assert.Equal(1, vm.CurrentSegmentIndex);
         Assert.Equal(1.0, vm.SegmentProgress);
+        Assert.Equal(1.0, vm.OverallProgress);
     }
 
     [Fact]

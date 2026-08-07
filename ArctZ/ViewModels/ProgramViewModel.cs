@@ -564,16 +564,16 @@ public partial class ProgramViewModel : ViewModelBase
     }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(SegmentProgressLabel))]
+    [NotifyPropertyChangedFor(nameof(OverallProgress))]
     [NotifyPropertyChangedFor(nameof(CurrentlyExecutingKeyPointId))]
     private int? _currentSegmentIndex;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(SegmentProgressLabel))]
+    [NotifyPropertyChangedFor(nameof(OverallProgress))]
     private double _segmentProgress;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(SegmentProgressLabel))]
+    [NotifyPropertyChangedFor(nameof(OverallProgress))]
     private int _totalSegments;
 
     [ObservableProperty]
@@ -588,9 +588,14 @@ public partial class ProgramViewModel : ViewModelBase
         ? $"Ошибка на сегменте {index + 1} из {TotalSegments}. «Пуск» запустит программу заново с начала."
         : null;
 
-    public string SegmentProgressLabel => CurrentSegmentIndex is { } index && TotalSegments > 0
-        ? $"{index + 1} из {TotalSegments}  ({SegmentProgress:P0})"
-        : "—";
+    // CurrentSegmentIndex/SegmentProgress track a single in-flight segment (the
+    // move between two adjacent key points), not the whole program — combining
+    // them here is what turns "segment N is 100% done" into "the program overall
+    // is at X%", so the bar keeps climbing across the whole run instead of
+    // reading 100% the instant any one segment's step is acknowledged.
+    public double OverallProgress => TotalSegments > 0 && CurrentSegmentIndex is { } index
+        ? Math.Clamp((index + SegmentProgress) / TotalSegments, 0, 1)
+        : 0;
 
     public Guid? CurrentlyExecutingKeyPointId
     {
