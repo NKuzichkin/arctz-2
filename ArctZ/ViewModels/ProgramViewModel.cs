@@ -947,6 +947,14 @@ public partial class ProgramViewModel : ViewModelBase
             {
                 break;
             }
+
+            if (CompletionMode == ProgramCompletionMode.Loop)
+            {
+                if (!await RunReturnToStartMoveAsync())
+                {
+                    return;
+                }
+            }
         }
 
         if (PlaybackState != PlaybackState.Running)
@@ -967,6 +975,26 @@ public partial class ProgramViewModel : ViewModelBase
         var reversed = new JibProgram { Id = source.Id, Name = source.Name };
         reversed.KeyPoints.AddRange(source.KeyPoints.AsEnumerable().Reverse());
         return reversed;
+    }
+
+    private async Task<bool> RunReturnToStartMoveAsync()
+    {
+        var start = KeyPoints[0];
+        var line = $"G1 X{FormatAxis(start.Pose.X)} Y{FormatAxis(start.Pose.Y)} Z{FormatAxis(start.Pose.Z)} A{FormatAxis(start.Pose.A)} F{FormatAxis(start.FeedRateUnitsPerMin)}";
+        var result = await Connection.Session!.SendGCodeAsync(line);
+
+        if (PlaybackState == PlaybackState.Stopped)
+        {
+            return false;
+        }
+
+        if (result.Outcome != CommandOutcome.Acknowledged)
+        {
+            PlaybackState = PlaybackState.Faulted;
+            return false;
+        }
+
+        return PlaybackState == PlaybackState.Running;
     }
 
     private async Task<bool> RunPassAsync(IReadOnlyList<CompiledStep> steps, bool backward)

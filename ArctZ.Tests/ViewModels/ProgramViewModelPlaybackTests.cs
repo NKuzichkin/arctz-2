@@ -604,4 +604,82 @@ public class ProgramViewModelPlaybackTests
         Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
         Assert.Equal(8, transport.SentLines.Count(l => l.StartsWith("G1", StringComparison.Ordinal)));
     }
+
+    [Fact]
+    public async Task PlayAsync_LoopMode_SendsReturnToStartMoveBetweenCyclesButNotAfterTheLastOne()
+    {
+        var vm = CreateViewModel(out var transport);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+        vm.CompletionMode = ProgramCompletionMode.Loop;
+        vm.RepeatCount = 2;
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+
+        // Cycle 1: 2 forward G1 lines.
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+
+        // The implicit return-to-start move is dispatched right after cycle 1's acks.
+        await WaitUntilAsync(
+            () => transport.SentLines.Contains("G1 X0 Y0 Z0 A0 F500"),
+            TimeSpan.FromSeconds(1));
+        Assert.False(vm.IsAwaitingMotionIdle, "the return-to-start move between cycles must not wait for physical idle");
+
+        transport.SimulateReceivedLine("ok"); // acks the return-to-start move
+
+        // Cycle 2 (the last one, RepeatCount == 2): 2 more forward G1 lines, no further return move.
+        await WaitUntilAsync(
+            () => transport.SentLines.Count(l => l.StartsWith("G1", StringComparison.Ordinal)) == 5,
+            TimeSpan.FromSeconds(1));
+
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
+        await playTask;
+
+        Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
+        Assert.Equal(5, transport.SentLines.Count(l => l.StartsWith("G1", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public async Task PlayAsync_LoopMode_UnlimitedRepeatCount_KeepsRunningUntilStopped()
+    {
+        var vm = CreateViewModel(out var transport);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+        vm.CompletionMode = ProgramCompletionMode.Loop;
+        vm.RepeatCount = null;
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+
+        // Run through 3 full cycles (2 forward acks + 1 return-move ack each) without ever completing.
+        for (var i = 0; i < 3; i++)
+        {
+            // The forward pass for this cycle is only dispatched once the previous cycle's
+            // return-to-start move ack has been processed and control has looped back around
+            // (an async gap after the first cycle) — wait for its G1 lines to appear before
+            // acking them, or the "ok"s race the dispatch and get dropped (BufferAwareCommandQueue.Complete
+            // no-ops when nothing is in-flight yet).
+            await WaitUntilAsync(
+                () => transport.SentLines.Count(l => l.StartsWith("G1", StringComparison.Ordinal)) == (3 * i) + 2,
+                TimeSpan.FromSeconds(1));
+            transport.SimulateReceivedLine("ok");
+            transport.SimulateReceivedLine("ok");
+            await WaitUntilAsync(
+                () => transport.SentLines.Count(l => l == "G1 X0 Y0 Z0 A0 F500") == i + 1,
+                TimeSpan.FromSeconds(1));
+            transport.SimulateReceivedLine("ok");
+        }
+
+        Assert.False(playTask.IsCompleted);
+        Assert.Equal(PlaybackState.Running, vm.PlaybackState);
+
+        await vm.StopCommand.ExecuteAsync(null);
+        transport.SimulateReceivedLine("ok"); // resolves the command already in flight
+        await playTask;
+
+        Assert.Equal(PlaybackState.Stopped, vm.PlaybackState);
+    }
 }
