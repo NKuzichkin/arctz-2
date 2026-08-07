@@ -514,4 +514,94 @@ public class ProgramViewModelPlaybackTests
 
         Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
     }
+
+    [Fact]
+    public async Task PlayAsync_PingPongMode_RunsForwardThenBackward_HighlightingPointsInReverseOnTheReturnLeg()
+    {
+        var vm = CreateViewModel(out var transport);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+        vm.CompletionMode = ProgramCompletionMode.PingPong;
+        vm.RepeatCount = 1;
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+        Assert.Equal(vm.KeyPoints[0].Id, vm.CurrentlyExecutingKeyPointId);
+
+        // Forward leg: 2 acks, no idle wait in between passes.
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.CurrentSegmentIndex == 0, TimeSpan.FromSeconds(1));
+        Assert.Equal(vm.KeyPoints[1].Id, vm.CurrentlyExecutingKeyPointId);
+
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(
+            () => transport.SentLines.Count(l => l.StartsWith("G1", StringComparison.Ordinal)) == 4,
+            TimeSpan.FromSeconds(1));
+        Assert.False(vm.IsAwaitingMotionIdle, "no physical-idle wait should happen between the forward and backward legs");
+
+        // Backward leg: highlight now counts down from the last key point.
+        Assert.Equal(vm.KeyPoints[2].Id, vm.CurrentlyExecutingKeyPointId);
+
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.CurrentSegmentIndex == 0 && vm.SegmentProgress == 1.0, TimeSpan.FromSeconds(1));
+        Assert.Equal(vm.KeyPoints[1].Id, vm.CurrentlyExecutingKeyPointId);
+
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+        Assert.Equal(vm.KeyPoints[0].Id, vm.CurrentlyExecutingKeyPointId);
+
+        transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
+        await playTask;
+
+        Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
+        Assert.Null(vm.CurrentlyExecutingKeyPointId);
+    }
+
+    [Fact]
+    public async Task PlayAsync_PingPongMode_RepeatsForwardBackwardPairUpToRepeatCount()
+    {
+        var vm = CreateViewModel(out var transport);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+        vm.CompletionMode = ProgramCompletionMode.PingPong;
+        vm.RepeatCount = 2;
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+
+        // First pair, forward leg (2 acks) — backward leg is only dispatched once the forward
+        // pass's own RunPassAsync call returns, so wait for its G1 lines to appear before
+        // acking them (acking blind would race the dispatch and the "ok" would be dropped:
+        // BufferAwareCommandQueue.Complete no-ops when nothing is in-flight yet).
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(
+            () => transport.SentLines.Count(l => l.StartsWith("G1", StringComparison.Ordinal)) == 4,
+            TimeSpan.FromSeconds(1));
+
+        // First pair, backward leg (2 acks) — completes cycle 1. Not the last cycle
+        // (RepeatCount = 2), so the second pair's forward leg dispatches immediately after,
+        // with no idle wait in between.
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(
+            () => transport.SentLines.Count(l => l.StartsWith("G1", StringComparison.Ordinal)) == 6,
+            TimeSpan.FromSeconds(1));
+
+        // Second pair, forward leg (2 acks) — its own backward leg dispatches right after.
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(
+            () => transport.SentLines.Count(l => l.StartsWith("G1", StringComparison.Ordinal)) == 8,
+            TimeSpan.FromSeconds(1));
+
+        // Second (last) pair, backward leg (2 acks) — cycle 2 reaches RepeatCount, so the run
+        // now waits for real motion to finish instead of dispatching a third pair.
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
+        await playTask;
+
+        Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
+        Assert.Equal(8, transport.SentLines.Count(l => l.StartsWith("G1", StringComparison.Ordinal)));
+    }
 }

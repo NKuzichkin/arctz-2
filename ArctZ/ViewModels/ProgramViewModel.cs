@@ -906,11 +906,16 @@ public partial class ProgramViewModel : ViewModelBase
             await Connection.Session.ResumeAsync();
         }
 
-        var steps = _compiler.Compile(BuildProgram());
-        if (steps.Count == 0)
+        var forwardProgram = BuildProgram();
+        var forwardSteps = _compiler.Compile(forwardProgram);
+        if (forwardSteps.Count == 0)
         {
             return;
         }
+
+        var backwardSteps = CompletionMode == ProgramCompletionMode.PingPong
+            ? _compiler.Compile(ReversedProgram(forwardProgram))
+            : null;
 
         PlaybackState = PlaybackState.Running;
         CurrentSegmentIndex = null;
@@ -918,7 +923,33 @@ public partial class ProgramViewModel : ViewModelBase
         FaultedAtSegmentIndex = null;
         TotalSegments = Math.Max(0, KeyPoints.Count - 1);
 
-        if (!await RunPassAsync(steps, backward: false))
+        var cycle = 0;
+        while (true)
+        {
+            if (!await RunPassAsync(forwardSteps, backward: false))
+            {
+                return;
+            }
+
+            if (backwardSteps is not null)
+            {
+                if (!await RunPassAsync(backwardSteps, backward: true))
+                {
+                    return;
+                }
+            }
+
+            cycle++;
+
+            var isLastCycle = CompletionMode == ProgramCompletionMode.Stop
+                || (RepeatCount is int repeatLimit && cycle >= repeatLimit);
+            if (isLastCycle)
+            {
+                break;
+            }
+        }
+
+        if (PlaybackState != PlaybackState.Running)
         {
             return;
         }
@@ -929,6 +960,13 @@ public partial class ProgramViewModel : ViewModelBase
         {
             PlaybackState = PlaybackState.Completed;
         }
+    }
+
+    private static JibProgram ReversedProgram(JibProgram source)
+    {
+        var reversed = new JibProgram { Id = source.Id, Name = source.Name };
+        reversed.KeyPoints.AddRange(source.KeyPoints.AsEnumerable().Reverse());
+        return reversed;
     }
 
     private async Task<bool> RunPassAsync(IReadOnlyList<CompiledStep> steps, bool backward)
