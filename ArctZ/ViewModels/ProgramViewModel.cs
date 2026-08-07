@@ -29,6 +29,9 @@ public partial class ProgramViewModel : ViewModelBase
     private double _animTargetProgress;
     private double _animDurationSeconds;
     private double _animElapsedSeconds;
+    private double _cumulativeEstimatedSeconds;
+    private double _cumulativeActualSeconds;
+    private double _durationCalibrationFactor = 1.0;
 
     public ConnectionViewModel Connection { get; }
 
@@ -760,6 +763,9 @@ public partial class ProgramViewModel : ViewModelBase
         DisplayProgress = 0;
         FaultedAtSegmentIndex = null;
         TotalSegments = Math.Max(0, KeyPoints.Count - 1);
+        _cumulativeEstimatedSeconds = 0;
+        _cumulativeActualSeconds = 0;
+        _durationCalibrationFactor = 1.0;
 
         var dispatched = new (CompiledStep Step, Task<CommandResult> Completion)[steps.Count];
         for (var i = 0; i < steps.Count; i++)
@@ -775,7 +781,8 @@ public partial class ProgramViewModel : ViewModelBase
             var targetProgress = TotalSegments > 0
                 ? Math.Clamp((step.SegmentIndex + step.SegmentProgress) / TotalSegments, 0, 1)
                 : 0;
-            BeginStepAnimation(previousDisplayProgress, targetProgress, step.EstimatedDurationSeconds);
+            var correctedDuration = step.EstimatedDurationSeconds * _durationCalibrationFactor;
+            BeginStepAnimation(previousDisplayProgress, targetProgress, correctedDuration);
 
             var result = await completion;
 
@@ -790,6 +797,12 @@ public partial class ProgramViewModel : ViewModelBase
                 FaultedAtSegmentIndex = step.SegmentIndex;
                 return;
             }
+
+            _cumulativeEstimatedSeconds += step.EstimatedDurationSeconds;
+            _cumulativeActualSeconds += _animElapsedSeconds;
+            _durationCalibrationFactor = _cumulativeEstimatedSeconds > 0
+                ? _cumulativeActualSeconds / _cumulativeEstimatedSeconds
+                : 1.0;
 
             CurrentSegmentIndex = step.SegmentIndex;
             SegmentProgress = step.SegmentProgress;

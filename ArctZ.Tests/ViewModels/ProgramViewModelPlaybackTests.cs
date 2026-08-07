@@ -107,6 +107,42 @@ public class ProgramViewModelPlaybackTests
     }
 
     [Fact]
+    public async Task DisplayProgress_CalibratesFutureEstimates_FromActualFirstStepDuration()
+    {
+        var vm = CreateViewModel(out var transport, out var progressTimer);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+
+        // First segment's estimate is 12 ticks (1.2s @ 100ms). Let it actually take 24 ticks
+        // (2x slower) before the ack arrives.
+        for (var i = 0; i < 24; i++)
+        {
+            progressTimer.RaiseElapsed();
+        }
+
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.CurrentSegmentIndex == 0, TimeSpan.FromSeconds(1));
+        Assert.Equal(0.5, vm.DisplayProgress);
+
+        // Second segment's raw estimate is also 12 ticks, but the calibration factor from the
+        // first step (actual 2.4s / estimated 1.2s = 2.0) doubles it to 24 ticks. After 12 ticks
+        // it should be roughly halfway from 0.5 to 1.0, not already there.
+        for (var i = 0; i < 12; i++)
+        {
+            progressTimer.RaiseElapsed();
+        }
+
+        Assert.Equal(0.75, vm.DisplayProgress, 3);
+
+        transport.SimulateReceivedLine("ok");
+        await playTask;
+
+        Assert.Equal(1.0, vm.DisplayProgress);
+    }
+
+    [Fact]
     public async Task PlayAsync_ErrorOnFirstStep_MarksFaultedWithItsSegmentIndex()
     {
         var vm = CreateViewModel(out var transport);
