@@ -26,9 +26,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ProgramViewModel>(sp => new ProgramViewModel(
             sp.GetRequiredService<ConnectionViewModel>(),
             sp.GetRequiredService<IProgramStorage>(),
-            sp.GetRequiredService<ITrajectoryCompiler>(),
-            new SystemPeriodicTimer(),
-            TimeSpan.FromMilliseconds(100)));
+            sp.GetRequiredService<ITrajectoryCompiler>()));
         return services;
     }
 }

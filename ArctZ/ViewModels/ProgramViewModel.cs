@@ -19,40 +19,10 @@ public partial class ProgramViewModel : ViewModelBase
 {
     private readonly IProgramStorage _storage;
     private readonly ITrajectoryCompiler _compiler;
-    private readonly IPeriodicTimer _progressTimer;
-    private readonly TimeSpan _progressTickInterval;
     private JoystickAxisInput _leftInput;
     private JoystickAxisInput _rightInput;
     private bool _leftActive;
     private bool _rightActive;
-
-    // Guards the fields below AND DisplayProgress: OnProgressTick fires on a raw
-    // System.Threading.Timer callback (a ThreadPool thread, unsynchronized with the UI
-    // thread), while OnPlaybackStateChanged's Completed-forced snap runs on whatever thread
-    // PlayAsync's `await` resumes on. The lock only gives mutual exclusion, not ordering: it
-    // cannot by itself stop a tick that was already queued to the ThreadPool before Completed
-    // fired from running after the Completed snap and overwriting DisplayProgress with a lower,
-    // now-stale value — a visible backward jump. IPeriodicTimer.Stop() (Timer.Change(Infinite,
-    // Infinite) underneath) does not cancel a callback already dispatched to the ThreadPool, so
-    // ordering has to be enforced from inside the tick itself: _animActive is state the tick
-    // checks before doing anything. A queued tick that lands after the run ended observes
-    // _animActive == false and returns without touching DisplayProgress.
-    private readonly object _animLock = new();
-    private IReadOnlyList<CompiledStep> _visualSteps = Array.Empty<CompiledStep>();
-    private int _visualStepIndex;
-    private double _animStartProgress;
-    private double _animTargetProgress;
-    private double _animDurationSeconds;
-    private double _animElapsedSeconds;
-    private bool _animActive;
-
-    // How the current pass's segment progress maps onto the visible DisplayProgress bar. For a
-    // finite-length run (known total pass count) these span the whole run, so the bar climbs
-    // continuously across repeats/legs instead of resetting to 0% at every pass boundary.
-    // Left at "one pass" width (offset 0, span = TotalSegments) when the run is unbounded
-    // (unlimited repeats), since there is no whole to measure progress against.
-    private double _visualPassOffsetSegments;
-    private double _visualTotalSegmentsSpan;
 
     public ConnectionViewModel Connection { get; }
 
@@ -96,20 +66,11 @@ public partial class ProgramViewModel : ViewModelBase
 
     public bool IsEditingCompletionSettings => CompletionSettingsEditor is not null;
 
-    /// <summary>Ack-independent visual timeline of the run: advances purely on elapsed tick time
-    /// along the compiled steps' estimated durations, and is force-snapped to 1.0 when the run
-    /// completes. Deliberately not derived from OverallProgress — see the note on _animLock.</summary>
-    [ObservableProperty]
-    private double _displayProgress;
-
-    public ProgramViewModel(ConnectionViewModel connection, IProgramStorage storage, ITrajectoryCompiler compiler, IPeriodicTimer progressTimer, TimeSpan progressTickInterval)
+    public ProgramViewModel(ConnectionViewModel connection, IProgramStorage storage, ITrajectoryCompiler compiler)
     {
         Connection = connection;
         _storage = storage;
         _compiler = compiler;
-        _progressTimer = progressTimer;
-        _progressTickInterval = progressTickInterval;
-        _progressTimer.Elapsed += OnProgressTick;
         Connection.PropertyChanged += OnConnectionPropertyChanged;
 
         // Add/Remove/Move/Reset all need to re-evaluate whether a given point
@@ -120,39 +81,6 @@ public partial class ProgramViewModel : ViewModelBase
             MoveKeyPointDownCommand.NotifyCanExecuteChanged();
         };
     }
-
-    /// <summary>Advances DisplayProgress along the precomputed visual timeline by however much
-    /// real time has passed — entirely independent of ack arrival (see the class-level note on
-    /// _animLock for why acks cannot drive this: ack timing reflects buffer-drain speed, not
-    /// physical motion time).</summary>
-    private void OnProgressTick()
-    {
-        lock (_animLock)
-        {
-            if (!_animActive)
-            {
-                return;
-            }
-
-            _animElapsedSeconds += _progressTickInterval.TotalSeconds;
-
-            while (_animElapsedSeconds >= _animDurationSeconds && _visualStepIndex < _visualSteps.Count - 1)
-            {
-                _animElapsedSeconds -= _animDurationSeconds;
-                _visualStepIndex++;
-                _animStartProgress = _animTargetProgress;
-                _animTargetProgress = StepOverallProgress(_visualSteps[_visualStepIndex]);
-                _animDurationSeconds = _visualSteps[_visualStepIndex].EstimatedDurationSeconds;
-            }
-
-            var frac = _animDurationSeconds <= 0 ? 1.0 : Math.Clamp(_animElapsedSeconds / _animDurationSeconds, 0, 1);
-            DisplayProgress = _animStartProgress + (_animTargetProgress - _animStartProgress) * frac;
-        }
-    }
-
-    private double StepOverallProgress(CompiledStep step) => _visualTotalSegmentsSpan > 0
-        ? Math.Clamp((_visualPassOffsetSegments + step.SegmentIndex + step.SegmentProgress) / _visualTotalSegmentsSpan, 0, 1)
-        : 0;
 
     [RelayCommand]
     private async Task RefreshLibraryAsync()
@@ -646,30 +574,12 @@ public partial class ProgramViewModel : ViewModelBase
 
     partial void OnPlaybackStateChanged(PlaybackState value)
     {
-        if (value == PlaybackState.Running)
-        {
-            _progressTimer.Start(_progressTickInterval);
-        }
-        else
-        {
-            _progressTimer.Stop();
-        }
-
         // Stop/Faulted abandon the run outright, so nothing is left to wait for. Paused is
         // deliberately absent: a held machine reports Hold rather than Idle, so the same wait
         // simply continues once the operator resumes — no resume-side bookkeeping needed.
         if (value is PlaybackState.Stopped or PlaybackState.Faulted)
         {
             _motionIdleSignal?.TrySetResult(false);
-        }
-
-        if (value == PlaybackState.Completed)
-        {
-            lock (_animLock)
-            {
-                _animActive = false;
-                DisplayProgress = 1.0;
-            }
         }
 
         Connection.IsPlaybackLocked = IsProgramLocked;
@@ -702,9 +612,9 @@ public partial class ProgramViewModel : ViewModelBase
     /// The controller acknowledges a G-code line when it buffers it, not when the move finishes,
     /// so the last ack can land tens of seconds before the machine physically stops. Waiting for
     /// the first status report that says Idle is what makes PlaybackState.Completed mean "the
-    /// program actually finished" — the progress bar's visibility, its final 100%, and the
-    /// joystick unlock all key off it. No timeout: any timeout would declare Completed while the
-    /// machine might still be moving, which is the exact defect this fixes. The escape hatches
+    /// program actually finished" — the joystick unlock keys off it. No timeout: any timeout
+    /// would declare Completed while the machine might still be moving, which is the exact
+    /// defect this fixes. The escape hatches
     /// are Stop (enabled throughout the wait) and the link-loss path, which faults the run.
     /// </summary>
     private async Task WaitForMotionToFinishAsync()
@@ -931,34 +841,20 @@ public partial class ProgramViewModel : ViewModelBase
         FaultedAtSegmentIndex = null;
         TotalSegments = Math.Max(0, KeyPoints.Count - 1);
 
-        // The visible progress bar spans the whole run (not just one pass) whenever the run has
-        // a known finite length, so it climbs continuously across repeats/legs instead of
-        // resetting to 0% at every pass boundary. Stop mode is always exactly 1 pass; Loop/PingPong
-        // are only "known length" when RepeatCount is finite — an unlimited run has no whole to
-        // measure against, so RunPassAsync falls back to per-pass (0..1) display in that case.
-        var passesPerCycle = backwardSteps is null ? 1 : 2;
-        var totalCyclesForProgress = CompletionMode == ProgramCompletionMode.Stop ? 1 : RepeatCount;
-        var totalPassesInRun = totalCyclesForProgress is int totalCycles ? totalCycles * passesPerCycle : (int?)null;
-        var passIndex = 0;
-
         var cycle = 0;
         while (true)
         {
-            if (!await RunPassAsync(forwardSteps, backward: false, passIndex, totalPassesInRun))
+            if (!await RunPassAsync(forwardSteps, backward: false))
             {
                 return;
             }
 
-            passIndex++;
-
             if (backwardSteps is not null)
             {
-                if (!await RunPassAsync(backwardSteps, backward: true, passIndex, totalPassesInRun))
+                if (!await RunPassAsync(backwardSteps, backward: true))
                 {
                     return;
                 }
-
-                passIndex++;
             }
 
             cycle++;
@@ -1036,30 +932,11 @@ public partial class ProgramViewModel : ViewModelBase
         return PlaybackState == PlaybackState.Running;
     }
 
-    private async Task<bool> RunPassAsync(IReadOnlyList<CompiledStep> steps, bool backward, int passIndex, int? totalPassesInRun)
+    private async Task<bool> RunPassAsync(IReadOnlyList<CompiledStep> steps, bool backward)
     {
         _currentPassBackward = backward;
         CurrentSegmentIndex = null;
         SegmentProgress = 0;
-
-        lock (_animLock)
-        {
-            _visualPassOffsetSegments = totalPassesInRun is int ? passIndex * TotalSegments : 0;
-            _visualTotalSegmentsSpan = totalPassesInRun is int total ? TotalSegments * total : TotalSegments;
-
-            var passStartProgress = _visualTotalSegmentsSpan > 0
-                ? _visualPassOffsetSegments / _visualTotalSegmentsSpan
-                : 0;
-
-            DisplayProgress = passStartProgress;
-            _visualSteps = steps;
-            _visualStepIndex = 0;
-            _animStartProgress = passStartProgress;
-            _animTargetProgress = StepOverallProgress(steps[0]);
-            _animDurationSeconds = steps[0].EstimatedDurationSeconds;
-            _animElapsedSeconds = 0;
-            _animActive = true;
-        }
 
         var dispatched = new (CompiledStep Step, Task<CommandResult> Completion)[steps.Count];
         for (var i = 0; i < steps.Count; i++)
@@ -1114,11 +991,6 @@ public partial class ProgramViewModel : ViewModelBase
         PlaybackState = PlaybackState.Stopped;
         CurrentSegmentIndex = null;
         SegmentProgress = 0;
-        lock (_animLock)
-        {
-            _animActive = false;
-            DisplayProgress = 0;
-        }
         Connection.Session?.AbortPendingCommands();
         return Connection.Session?.FeedHoldAsync() ?? Task.CompletedTask;
     }

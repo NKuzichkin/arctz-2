@@ -16,7 +16,7 @@ public class ProgramViewModelStatusLabelTests
         transport = new FakeDeviceTransport();
         var storage = new FakeProgramStorage();
         var connection = new ConnectionViewModel(transport, () => new FakeDeviceTransport(), new DeviceSessionFactory(MachineLimits.Default));
-        return new ProgramViewModel(connection, storage, new TrajectoryCompiler(), new ManualPeriodicTimer(), TimeSpan.FromMilliseconds(100));
+        return new ProgramViewModel(connection, storage, new TrajectoryCompiler());
     }
 
     private static void SeedTwoSegmentProgram(ProgramViewModel vm, FakeDeviceTransport transport)

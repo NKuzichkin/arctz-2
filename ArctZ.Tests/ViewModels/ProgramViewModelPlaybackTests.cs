@@ -12,16 +12,12 @@ namespace ArctZ.Tests.ViewModels;
 
 public class ProgramViewModelPlaybackTests
 {
-    private static ProgramViewModel CreateViewModel(out FakeDeviceTransport transport) =>
-        CreateViewModel(out transport, out _);
-
-    private static ProgramViewModel CreateViewModel(out FakeDeviceTransport transport, out ManualPeriodicTimer progressTimer)
+    private static ProgramViewModel CreateViewModel(out FakeDeviceTransport transport)
     {
         transport = new FakeDeviceTransport();
         var storage = new FakeProgramStorage();
         var connection = new ConnectionViewModel(transport, () => new FakeDeviceTransport(), new DeviceSessionFactory(MachineLimits.Default));
-        progressTimer = new ManualPeriodicTimer();
-        return new ProgramViewModel(connection, storage, new TrajectoryCompiler(), progressTimer, TimeSpan.FromMilliseconds(100));
+        return new ProgramViewModel(connection, storage, new TrajectoryCompiler());
     }
 
     /// <summary>3 key points, 2 continuous-blend segments -> 2 compiled G1 steps, no G4.</summary>
@@ -63,73 +59,6 @@ public class ProgramViewModelPlaybackTests
         Assert.Equal(1, vm.CurrentSegmentIndex);
         Assert.Equal(1.0, vm.SegmentProgress);
         Assert.Equal(1.0, vm.OverallProgress);
-    }
-
-    [Fact]
-    public async Task DisplayProgress_ForcesTo100Percent_WhenCompleted_EvenIfAcksArrivedBeforeAnyTick()
-    {
-        var vm = CreateViewModel(out var transport, out _);
-        await vm.Connection.ConnectCommand.Execute();
-        SeedTwoSegmentProgram(vm, transport);
-
-        var playTask = vm.PlayCommand.ExecuteAsync(null);
-        Assert.Equal(0, vm.DisplayProgress);
-
-        // Ack both segments immediately, before any progressTimer tick — real ack timing
-        // reflects buffer-drain speed, not motion time, so this is the common case, not an
-        // edge case. DisplayProgress must not have anywhere else to get a value from except
-        // the explicit Completed-forced snap.
-        transport.SimulateReceivedLine("ok");
-        transport.SimulateReceivedLine("ok");
-        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
-        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
-        await playTask;
-
-        Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
-        Assert.Equal(1.0, vm.DisplayProgress);
-    }
-
-    [Fact]
-    public async Task DisplayProgress_FollowsItsOwnTimeline_UnaffectedByAnEarlyAck()
-    {
-        var vm = CreateViewModel(out var transport, out var progressTimer);
-        await vm.Connection.ConnectCommand.Execute();
-        SeedTwoSegmentProgram(vm, transport);
-
-        var playTask = vm.PlayCommand.ExecuteAsync(null);
-
-        // First segment's estimate is 1.2s = 12 ticks @ 100ms. Ack it after only 3 ticks.
-        progressTimer.RaiseElapsed();
-        progressTimer.RaiseElapsed();
-        progressTimer.RaiseElapsed();
-
-        transport.SimulateReceivedLine("ok");
-        await WaitUntilAsync(() => vm.CurrentSegmentIndex == 0, TimeSpan.FromSeconds(1));
-
-        // OverallProgress (ack-confirmed truth) jumps to 0.5 immediately — DisplayProgress must
-        // NOT snap to it, and must keep following the same first-segment animation.
-        Assert.Equal(0.5, vm.OverallProgress);
-        Assert.Equal(0.125, vm.DisplayProgress, 3); // 3/12 ticks toward the first segment's 0.5 target
-        Assert.True(vm.DisplayProgress < 0.5);
-
-        // A 4th tick continues the SAME first-segment animation — the ack that already arrived
-        // changes nothing about its pace.
-        progressTimer.RaiseElapsed();
-        Assert.Equal(4.0 / 12 * 0.5, vm.DisplayProgress, 3);
-
-        transport.SimulateReceivedLine("ok");
-        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
-        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
-        await playTask;
-
-        Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
-        Assert.Equal(1.0, vm.DisplayProgress);
-
-        // A tick already queued to the ThreadPool when the run ended must not overwrite the
-        // final 1.0 with a stale mid-timeline value — IPeriodicTimer.Stop() cannot cancel a
-        // callback that has already been dispatched.
-        progressTimer.RaiseElapsed();
-        Assert.Equal(1.0, vm.DisplayProgress);
     }
 
     [Fact]
@@ -365,7 +294,7 @@ public class ProgramViewModelPlaybackTests
     [Fact]
     public async Task PlayAsync_DoesNotComplete_UntilTheMachineReportsIdleAfterTheLastAck()
     {
-        var vm = CreateViewModel(out var transport, out _);
+        var vm = CreateViewModel(out var transport);
         await vm.Connection.ConnectCommand.Execute();
         SeedTwoSegmentProgram(vm, transport);
 
@@ -387,13 +316,12 @@ public class ProgramViewModelPlaybackTests
         await playTask;
 
         Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
-        Assert.Equal(1.0, vm.DisplayProgress);
     }
 
     [Fact]
     public async Task Stop_DuringTheMotionTail_EndsTheRunWithoutWaitingForIdle()
     {
-        var vm = CreateViewModel(out var transport, out _);
+        var vm = CreateViewModel(out var transport);
         await vm.Connection.ConnectCommand.Execute();
         SeedTwoSegmentProgram(vm, transport);
 
@@ -416,7 +344,7 @@ public class ProgramViewModelPlaybackTests
     [Fact]
     public async Task Pause_DuringTheMotionTail_DoesNotCancelTheWait_AndResumeCompletesTheRun()
     {
-        var vm = CreateViewModel(out var transport, out _);
+        var vm = CreateViewModel(out var transport);
         await vm.Connection.ConnectCommand.Execute();
         SeedTwoSegmentProgram(vm, transport);
 
@@ -446,7 +374,7 @@ public class ProgramViewModelPlaybackTests
     [Fact]
     public async Task LinkLoss_DuringTheMotionTail_FaultsTheRunAndResolvesTheWait()
     {
-        var vm = CreateViewModel(out var transport, out _);
+        var vm = CreateViewModel(out var transport);
         await vm.Connection.ConnectCommand.Execute();
         SeedTwoSegmentProgram(vm, transport);
         transport.ConnectFailuresRemaining = 10;
@@ -471,7 +399,7 @@ public class ProgramViewModelPlaybackTests
     [Fact]
     public async Task PlayAsync_Completes_WhenTheProgramNeverLeavesIdle_AndTheFinalReportRepeatsTheStartingOne()
     {
-        var vm = CreateViewModel(out var transport, out _);
+        var vm = CreateViewModel(out var transport);
         await vm.Connection.ConnectCommand.Execute();
 
         // All three key points share one pose (the user's saved program that motivated this test
@@ -603,76 +531,6 @@ public class ProgramViewModelPlaybackTests
 
         Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
         Assert.Equal(8, transport.SentLines.Count(l => l.StartsWith("G1", StringComparison.Ordinal)));
-    }
-
-    [Fact]
-    public async Task DisplayProgress_PingPongMode_ContinuesAcrossPasses_InsteadOfResettingToZero()
-    {
-        var vm = CreateViewModel(out var transport);
-        await vm.Connection.ConnectCommand.Execute();
-        SeedTwoSegmentProgram(vm, transport);
-        vm.CompletionMode = ProgramCompletionMode.PingPong;
-        vm.RepeatCount = 1;
-
-        var playTask = vm.PlayCommand.ExecuteAsync(null);
-
-        transport.SimulateReceivedLine("ok");
-        transport.SimulateReceivedLine("ok");
-        await WaitUntilAsync(
-            () => transport.SentLines.Count(l => l.StartsWith("G1", StringComparison.Ordinal)) == 4,
-            TimeSpan.FromSeconds(1));
-
-        // The backward leg's own RunPassAsync call has already run its setup by the time its G1
-        // lines appear (dispatch happens synchronously at the start of the method, before any
-        // await). The run has a known finite length (1 forward + 1 backward pass), so
-        // DisplayProgress must pick up exactly where the forward leg left off (half of the whole
-        // 2-pass run) instead of resetting to 0 at the pass boundary.
-        Assert.Equal(0.5, vm.DisplayProgress, 3);
-
-        transport.SimulateReceivedLine("ok");
-        transport.SimulateReceivedLine("ok");
-        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
-        transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
-        await playTask;
-
-        Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
-        Assert.Equal(1.0, vm.DisplayProgress);
-    }
-
-    [Fact]
-    public async Task DisplayProgress_LoopModeUnlimited_ResetsPerPass_SinceRunHasNoKnownWholeLength()
-    {
-        var vm = CreateViewModel(out var transport);
-        await vm.Connection.ConnectCommand.Execute();
-        SeedTwoSegmentProgram(vm, transport);
-        vm.CompletionMode = ProgramCompletionMode.Loop;
-        vm.RepeatCount = null;
-
-        var playTask = vm.PlayCommand.ExecuteAsync(null);
-
-        // First forward pass (2 acks), then the implicit return-to-start move dispatches.
-        transport.SimulateReceivedLine("ok");
-        transport.SimulateReceivedLine("ok");
-        await WaitUntilAsync(
-            () => transport.SentLines.Contains("G1 X0 Y0 Z0 A0 F500"),
-            TimeSpan.FromSeconds(1));
-
-        transport.SimulateReceivedLine("ok"); // acks the return-to-start move
-        await WaitUntilAsync(
-            () => transport.SentLines.Count(l => l.StartsWith("G1", StringComparison.Ordinal)) == 5,
-            TimeSpan.FromSeconds(1));
-
-        // Second forward pass has just started dispatching. RunPassAsync's setup assigns
-        // DisplayProgress synchronously at pass entry (independent of any timer tick): an
-        // unlimited run has no known whole length to span, so it resets to 0 for this pass
-        // rather than trying to divide by an unknown total.
-        Assert.Equal(0, vm.DisplayProgress);
-
-        await vm.StopCommand.ExecuteAsync(null);
-        transport.SimulateReceivedLine("ok");
-        await playTask;
-
-        Assert.Equal(PlaybackState.Stopped, vm.PlaybackState);
     }
 
     [Fact]

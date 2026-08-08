@@ -1,4 +1,3 @@
-using System;
 using ArctZ.Services.Device;
 using ArctZ.Services.Program;
 using ArctZ.Tests.Services.Device;
@@ -14,7 +13,7 @@ public class ProgramViewModelSideMenuTests
         var transport = new FakeDeviceTransport();
         var storage = new FakeProgramStorage();
         var connection = new ConnectionViewModel(transport, () => new FakeDeviceTransport(), new DeviceSessionFactory(MachineLimits.Default));
-        return new ProgramViewModel(connection, storage, new TrajectoryCompiler(), new ManualPeriodicTimer(), TimeSpan.FromMilliseconds(100));
+        return new ProgramViewModel(connection, storage, new TrajectoryCompiler());
     }
 
     [Fact]
