@@ -653,4 +653,146 @@ public class ProgramViewModelPlaybackTests
         Assert.Equal(PlaybackState.Stopped, vm.PlaybackState);
         Assert.DoesNotContain("G1 X0 Y0 Z0 A0 F500", transport.SentLines);
     }
+
+    /// <summary>
+    /// Drives a Loop-mode run up to the point where cycle 1's forward pass has had every ack
+    /// processed while PlaybackState is Paused — the pass boundary. The cycle loop must be parked
+    /// there (not abandoned), so playTask is still pending and the return-to-start move has not
+    /// been dispatched.
+    /// </summary>
+    private static async Task ParkAtPausedPassBoundaryAsync(ProgramViewModel vm, FakeDeviceTransport transport)
+    {
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.CurrentSegmentIndex == 0, TimeSpan.FromSeconds(1));
+
+        // Pause is legal here (still Running) and lands before the pass's last ack is processed,
+        // so the boundary check at the end of the pass observes Paused deterministically — no
+        // dependence on winning a race against the continuation thread.
+        await vm.PauseCommand.ExecuteAsync(null);
+        Assert.Equal(PlaybackState.Paused, vm.PlaybackState);
+
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(
+            () => vm.CurrentSegmentIndex == 1 && vm.SegmentProgress == 1.0,
+            TimeSpan.FromSeconds(1));
+
+        // Give the continuation thread room to run past the boundary if it were going to.
+        await Task.Delay(100);
+    }
+
+    [Fact]
+    public async Task Pause_AtAPassBoundary_ParksTheRunInsteadOfAbandoningIt_AndPlayResumesTheCycleLoop()
+    {
+        var vm = CreateViewModel(out var transport);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+        vm.CompletionMode = ProgramCompletionMode.Loop;
+        vm.RepeatCount = 2;
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+        await ParkAtPausedPassBoundaryAsync(vm, transport);
+
+        // Before the fix the pass helper returned "PlaybackState == Running" here, which is false
+        // while Paused, so PlayAsync returned outright: the run was silently abandoned with
+        // PlaybackState stuck on Paused, IsProgramLocked never clearing, and no coroutine left for
+        // a later Play click to resume.
+        Assert.False(playTask.IsCompleted, "a Pause at the pass boundary must park the run, not abandon it");
+        Assert.Equal(PlaybackState.Paused, vm.PlaybackState);
+        Assert.True(vm.IsProgramLocked);
+        Assert.DoesNotContain("G1 X0 Y0 Z0 A0 F500", transport.SentLines);
+
+        // The resume click must actually wake the parked cycle loop.
+        await vm.PlayCommand.ExecuteAsync(null);
+        Assert.Equal(PlaybackState.Running, vm.PlaybackState);
+
+        await WaitUntilAsync(() => transport.SentLines.Contains("G1 X0 Y0 Z0 A0 F500"), TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("ok"); // acks the return-to-start move
+
+        // Cycle 2's forward pass: 2 more G1 lines (5 in total, incl. the return move).
+        await WaitUntilAsync(
+            () => transport.SentLines.Count(l => l.StartsWith("G1", StringComparison.Ordinal)) == 5,
+            TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
+        await playTask;
+
+        Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
+        Assert.Equal(5, transport.SentLines.Count(l => l.StartsWith("G1", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public async Task Stop_WhileParkedAtAPausedPassBoundary_EndsTheRunWithoutDispatchingAnotherMove()
+    {
+        var vm = CreateViewModel(out var transport);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+        vm.CompletionMode = ProgramCompletionMode.Loop;
+        vm.RepeatCount = 2;
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+        await ParkAtPausedPassBoundaryAsync(vm, transport);
+
+        Assert.False(playTask.IsCompleted, "a Pause at the pass boundary must park the run, not abandon it");
+
+        // Stop must wake the parked boundary wait too, not only a resume — otherwise the run
+        // would hang there forever. And once aborted, nothing further may be dispatched to a
+        // controller that was just told to abort: those lines survive the abort and would execute
+        // on the next Play's ResumeAsync().
+        await vm.StopCommand.ExecuteAsync(null);
+
+        await WaitUntilAsync(() => playTask.IsCompleted, TimeSpan.FromSeconds(2));
+        await playTask;
+
+        Assert.Equal(PlaybackState.Stopped, vm.PlaybackState);
+        Assert.False(vm.IsProgramLocked);
+        Assert.DoesNotContain("G1 X0 Y0 Z0 A0 F500", transport.SentLines);
+        Assert.Equal(2, transport.SentLines.Count(l => l.StartsWith("G1", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public async Task Pause_AtACycleBoundary_AfterTheReturnToStartAck_ParksTheRunAndPlayResumesIt()
+    {
+        var vm = CreateViewModel(out var transport);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+        vm.CompletionMode = ProgramCompletionMode.Loop;
+        vm.RepeatCount = 2;
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+
+        // Cycle 1's forward pass, then the implicit return-to-start move it triggers.
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => transport.SentLines.Contains("G1 X0 Y0 Z0 A0 F500"), TimeSpan.FromSeconds(1));
+
+        // Pause while the return-to-start move is still in flight, so its own boundary check —
+        // a different call site from the pass helper's — observes Paused once the ack lands.
+        await vm.PauseCommand.ExecuteAsync(null);
+        Assert.Equal(PlaybackState.Paused, vm.PlaybackState);
+
+        transport.SimulateReceivedLine("ok"); // acks the return-to-start move
+        await Task.Delay(100);
+
+        Assert.False(playTask.IsCompleted, "a Pause at the cycle boundary must park the run, not abandon it");
+        Assert.Equal(PlaybackState.Paused, vm.PlaybackState);
+        Assert.Equal(3, transport.SentLines.Count(l => l.StartsWith("G1", StringComparison.Ordinal)));
+
+        await vm.PlayCommand.ExecuteAsync(null);
+
+        // Cycle 2's forward pass only dispatches if the parked cycle loop actually woke up.
+        await WaitUntilAsync(
+            () => transport.SentLines.Count(l => l.StartsWith("G1", StringComparison.Ordinal)) == 5,
+            TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
+        await playTask;
+
+        Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
+    }
 }

@@ -514,6 +514,14 @@ public partial class ProgramViewModel : ViewModelBase
     // reference from a write on the other thread.
     private volatile TaskCompletionSource<bool>? _motionIdleSignal;
 
+    // Written on the PlayAsync continuation thread (armed inside ResolveRunningStateAsync when a
+    // pass/cycle boundary observes Paused) and resolved by OnPlaybackStateChanged on every
+    // subsequent transition. Mirrors _motionIdleSignal's role but for a different gap: a boundary
+    // Paused has no pending await keeping PlayAsync's coroutine alive, unlike a mid-pass Pause
+    // (which the already-in-flight ack await absorbs for free — see
+    // Pause_DuringTheMotionTail_DoesNotCancelTheWait_AndResumeCompletesTheRun).
+    private volatile TaskCompletionSource<bool>? _pauseResumeSignal;
+
     /// <summary>
     /// Test hook: true once PlayAsync is waiting for the machine to report Idle. Tests drive a fake
     /// transport with no status poller behind it, so a status report fired before the wait is armed
@@ -574,6 +582,8 @@ public partial class ProgramViewModel : ViewModelBase
 
     partial void OnPlaybackStateChanged(PlaybackState value)
     {
+        _pauseResumeSignal?.TrySetResult(true);
+
         // Stop/Faulted abandon the run outright, so nothing is left to wait for. Paused is
         // deliberately absent: a held machine reports Hold rather than Idle, so the same wait
         // simply continues once the operator resumes — no resume-side bookkeeping needed.
@@ -912,8 +922,44 @@ public partial class ProgramViewModel : ViewModelBase
         return reversed;
     }
 
+    /// <summary>
+    /// Called at the start and end of every pass/return-move dispatch to decide whether the cycle
+    /// loop should keep going. Stopped/Faulted resolve immediately to false — the run is
+    /// abandoned, nothing to wait for. Paused means the operator clicked Pause exactly at this
+    /// boundary, where — unlike mid-pass — there is no pending await to keep this coroutine alive
+    /// naturally; returning false here would silently strand the run (PlaybackState stuck on
+    /// Paused, IsProgramLocked never clears, no coroutine left for a later Play click's resume
+    /// branch to wake). So this waits for whatever ends the pause instead: a resume (a fresh Play
+    /// click's resume branch sets PlaybackState back to Running) or an abandon (Stop/Fault).
+    /// OnPlaybackStateChanged resolves _pauseResumeSignal on every transition, so the signal is
+    /// armed before being checked — any transition either lands before arming (caught by the
+    /// PlaybackState re-check right after arming) or after (caught by the resolve).
+    /// </summary>
+    private async Task<bool> ResolveRunningStateAsync()
+    {
+        while (PlaybackState == PlaybackState.Paused)
+        {
+            var signal = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _pauseResumeSignal = signal;
+
+            if (PlaybackState != PlaybackState.Paused)
+            {
+                break;
+            }
+
+            await signal.Task;
+        }
+
+        return PlaybackState == PlaybackState.Running;
+    }
+
     private async Task<bool> RunReturnToStartMoveAsync()
     {
+        if (!await ResolveRunningStateAsync())
+        {
+            return false;
+        }
+
         var start = KeyPoints[0];
         var line = $"G1 X{FormatAxis(start.Pose.X)} Y{FormatAxis(start.Pose.Y)} Z{FormatAxis(start.Pose.Z)} A{FormatAxis(start.Pose.A)} F{FormatAxis(start.FeedRateUnitsPerMin)}";
         var result = await Connection.Session!.SendGCodeAsync(line);
@@ -929,11 +975,16 @@ public partial class ProgramViewModel : ViewModelBase
             return false;
         }
 
-        return PlaybackState == PlaybackState.Running;
+        return await ResolveRunningStateAsync();
     }
 
     private async Task<bool> RunPassAsync(IReadOnlyList<CompiledStep> steps, bool backward)
     {
+        if (!await ResolveRunningStateAsync())
+        {
+            return false;
+        }
+
         _currentPassBackward = backward;
         CurrentSegmentIndex = null;
         SegmentProgress = 0;
@@ -965,7 +1016,7 @@ public partial class ProgramViewModel : ViewModelBase
             SegmentProgress = step.SegmentProgress;
         }
 
-        return PlaybackState == PlaybackState.Running;
+        return await ResolveRunningStateAsync();
     }
 
     [RelayCommand(CanExecute = nameof(CanPause))]

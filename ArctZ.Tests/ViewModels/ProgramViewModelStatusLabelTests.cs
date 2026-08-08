@@ -71,8 +71,12 @@ public class ProgramViewModelStatusLabelTests
 
         Assert.Equal("Пауза", vm.StatusLabel);
 
+        // Раньше прогон завершался сам: последний ack приходил в состоянии Paused, и проход
+        // возвращал false, молча бросая программу. Теперь он паркуется на границе прохода и ждёт
+        // возобновления или отмены, поэтому прогон здесь нужно завершить явно.
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
+        await vm.StopCommand.ExecuteAsync(null);
         await playTask;
     }
 
