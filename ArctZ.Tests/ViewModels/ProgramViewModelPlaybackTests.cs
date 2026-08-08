@@ -606,6 +606,76 @@ public class ProgramViewModelPlaybackTests
     }
 
     [Fact]
+    public async Task DisplayProgress_PingPongMode_ContinuesAcrossPasses_InsteadOfResettingToZero()
+    {
+        var vm = CreateViewModel(out var transport);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+        vm.CompletionMode = ProgramCompletionMode.PingPong;
+        vm.RepeatCount = 1;
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(
+            () => transport.SentLines.Count(l => l.StartsWith("G1", StringComparison.Ordinal)) == 4,
+            TimeSpan.FromSeconds(1));
+
+        // The backward leg's own RunPassAsync call has already run its setup by the time its G1
+        // lines appear (dispatch happens synchronously at the start of the method, before any
+        // await). The run has a known finite length (1 forward + 1 backward pass), so
+        // DisplayProgress must pick up exactly where the forward leg left off (half of the whole
+        // 2-pass run) instead of resetting to 0 at the pass boundary.
+        Assert.Equal(0.5, vm.DisplayProgress, 3);
+
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
+        await playTask;
+
+        Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
+        Assert.Equal(1.0, vm.DisplayProgress);
+    }
+
+    [Fact]
+    public async Task DisplayProgress_LoopModeUnlimited_ResetsPerPass_SinceRunHasNoKnownWholeLength()
+    {
+        var vm = CreateViewModel(out var transport);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+        vm.CompletionMode = ProgramCompletionMode.Loop;
+        vm.RepeatCount = null;
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+
+        // First forward pass (2 acks), then the implicit return-to-start move dispatches.
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(
+            () => transport.SentLines.Contains("G1 X0 Y0 Z0 A0 F500"),
+            TimeSpan.FromSeconds(1));
+
+        transport.SimulateReceivedLine("ok"); // acks the return-to-start move
+        await WaitUntilAsync(
+            () => transport.SentLines.Count(l => l.StartsWith("G1", StringComparison.Ordinal)) == 5,
+            TimeSpan.FromSeconds(1));
+
+        // Second forward pass has just started dispatching. RunPassAsync's setup assigns
+        // DisplayProgress synchronously at pass entry (independent of any timer tick): an
+        // unlimited run has no known whole length to span, so it resets to 0 for this pass
+        // rather than trying to divide by an unknown total.
+        Assert.Equal(0, vm.DisplayProgress);
+
+        await vm.StopCommand.ExecuteAsync(null);
+        transport.SimulateReceivedLine("ok");
+        await playTask;
+
+        Assert.Equal(PlaybackState.Stopped, vm.PlaybackState);
+    }
+
+    [Fact]
     public async Task PlayAsync_LoopMode_SendsReturnToStartMoveBetweenCyclesButNotAfterTheLastOne()
     {
         var vm = CreateViewModel(out var transport);

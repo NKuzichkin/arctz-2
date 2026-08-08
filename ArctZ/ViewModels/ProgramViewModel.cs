@@ -46,6 +46,14 @@ public partial class ProgramViewModel : ViewModelBase
     private double _animElapsedSeconds;
     private bool _animActive;
 
+    // How the current pass's segment progress maps onto the visible DisplayProgress bar. For a
+    // finite-length run (known total pass count) these span the whole run, so the bar climbs
+    // continuously across repeats/legs instead of resetting to 0% at every pass boundary.
+    // Left at "one pass" width (offset 0, span = TotalSegments) when the run is unbounded
+    // (unlimited repeats), since there is no whole to measure progress against.
+    private double _visualPassOffsetSegments;
+    private double _visualTotalSegmentsSpan;
+
     public ConnectionViewModel Connection { get; }
 
     [ObservableProperty]
@@ -142,8 +150,8 @@ public partial class ProgramViewModel : ViewModelBase
         }
     }
 
-    private double StepOverallProgress(CompiledStep step) => TotalSegments > 0
-        ? Math.Clamp((step.SegmentIndex + step.SegmentProgress) / TotalSegments, 0, 1)
+    private double StepOverallProgress(CompiledStep step) => _visualTotalSegmentsSpan > 0
+        ? Math.Clamp((_visualPassOffsetSegments + step.SegmentIndex + step.SegmentProgress) / _visualTotalSegmentsSpan, 0, 1)
         : 0;
 
     [RelayCommand]
@@ -923,20 +931,34 @@ public partial class ProgramViewModel : ViewModelBase
         FaultedAtSegmentIndex = null;
         TotalSegments = Math.Max(0, KeyPoints.Count - 1);
 
+        // The visible progress bar spans the whole run (not just one pass) whenever the run has
+        // a known finite length, so it climbs continuously across repeats/legs instead of
+        // resetting to 0% at every pass boundary. Stop mode is always exactly 1 pass; Loop/PingPong
+        // are only "known length" when RepeatCount is finite — an unlimited run has no whole to
+        // measure against, so RunPassAsync falls back to per-pass (0..1) display in that case.
+        var passesPerCycle = backwardSteps is null ? 1 : 2;
+        var totalCyclesForProgress = CompletionMode == ProgramCompletionMode.Stop ? 1 : RepeatCount;
+        var totalPassesInRun = totalCyclesForProgress is int totalCycles ? totalCycles * passesPerCycle : (int?)null;
+        var passIndex = 0;
+
         var cycle = 0;
         while (true)
         {
-            if (!await RunPassAsync(forwardSteps, backward: false))
+            if (!await RunPassAsync(forwardSteps, backward: false, passIndex, totalPassesInRun))
             {
                 return;
             }
 
+            passIndex++;
+
             if (backwardSteps is not null)
             {
-                if (!await RunPassAsync(backwardSteps, backward: true))
+                if (!await RunPassAsync(backwardSteps, backward: true, passIndex, totalPassesInRun))
                 {
                     return;
                 }
+
+                passIndex++;
             }
 
             cycle++;
@@ -1014,7 +1036,7 @@ public partial class ProgramViewModel : ViewModelBase
         return PlaybackState == PlaybackState.Running;
     }
 
-    private async Task<bool> RunPassAsync(IReadOnlyList<CompiledStep> steps, bool backward)
+    private async Task<bool> RunPassAsync(IReadOnlyList<CompiledStep> steps, bool backward, int passIndex, int? totalPassesInRun)
     {
         _currentPassBackward = backward;
         CurrentSegmentIndex = null;
@@ -1022,10 +1044,17 @@ public partial class ProgramViewModel : ViewModelBase
 
         lock (_animLock)
         {
-            DisplayProgress = 0;
+            _visualPassOffsetSegments = totalPassesInRun is int ? passIndex * TotalSegments : 0;
+            _visualTotalSegmentsSpan = totalPassesInRun is int total ? TotalSegments * total : TotalSegments;
+
+            var passStartProgress = _visualTotalSegmentsSpan > 0
+                ? _visualPassOffsetSegments / _visualTotalSegmentsSpan
+                : 0;
+
+            DisplayProgress = passStartProgress;
             _visualSteps = steps;
             _visualStepIndex = 0;
-            _animStartProgress = 0;
+            _animStartProgress = passStartProgress;
             _animTargetProgress = StepOverallProgress(steps[0]);
             _animDurationSeconds = steps[0].EstimatedDurationSeconds;
             _animElapsedSeconds = 0;
