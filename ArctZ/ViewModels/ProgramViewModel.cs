@@ -61,6 +61,11 @@ public partial class ProgramViewModel : ViewModelBase
     private int? _repeatCount;
 
     [ObservableProperty]
+    private bool _isDirty;
+
+    private bool _suppressDirtyTracking;
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsEditingCompletionSettings))]
     private CompletionSettingsViewModel? _completionSettingsEditor;
 
@@ -79,8 +84,25 @@ public partial class ProgramViewModel : ViewModelBase
         {
             MoveKeyPointUpCommand.NotifyCanExecuteChanged();
             MoveKeyPointDownCommand.NotifyCanExecuteChanged();
+            MarkDirtyIfTracking();
         };
     }
+
+    private void MarkDirtyIfTracking()
+    {
+        if (!_suppressDirtyTracking)
+        {
+            IsDirty = true;
+        }
+    }
+
+    partial void OnProgramNameChanged(string value) => MarkDirtyIfTracking();
+
+    partial void OnCompletionModeChanged(ProgramCompletionMode value) => MarkDirtyIfTracking();
+
+    partial void OnReturnToStartOnFinishChanged(bool value) => MarkDirtyIfTracking();
+
+    partial void OnRepeatCountChanged(int? value) => MarkDirtyIfTracking();
 
     [RelayCommand]
     private async Task RefreshLibraryAsync()
@@ -142,13 +164,23 @@ public partial class ProgramViewModel : ViewModelBase
     [RelayCommand]
     private void NewProgram()
     {
-        ProgramId = null;
-        ProgramName = "Новая программа";
-        CompletionMode = ProgramCompletionMode.Stop;
-        ReturnToStartOnFinish = false;
-        RepeatCount = null;
-        KeyPoints.Clear();
-        SelectedKeyPoint = null;
+        _suppressDirtyTracking = true;
+        try
+        {
+            ProgramId = null;
+            ProgramName = "Новая программа";
+            CompletionMode = ProgramCompletionMode.Stop;
+            ReturnToStartOnFinish = false;
+            RepeatCount = null;
+            KeyPoints.Clear();
+            SelectedKeyPoint = null;
+        }
+        finally
+        {
+            _suppressDirtyTracking = false;
+        }
+
+        IsDirty = false;
     }
 
     [RelayCommand]
@@ -156,19 +188,29 @@ public partial class ProgramViewModel : ViewModelBase
     {
         var program = await _storage.LoadAsync(summary.Id);
 
-        ProgramId = program.Id;
-        ProgramName = program.Name;
-        CompletionMode = program.CompletionMode;
-        ReturnToStartOnFinish = program.ReturnToStartOnFinish;
-        RepeatCount = program.RepeatCount;
-
-        KeyPoints.Clear();
-        foreach (var keyPoint in program.KeyPoints)
+        _suppressDirtyTracking = true;
+        try
         {
-            KeyPoints.Add(keyPoint);
+            ProgramId = program.Id;
+            ProgramName = program.Name;
+            CompletionMode = program.CompletionMode;
+            ReturnToStartOnFinish = program.ReturnToStartOnFinish;
+            RepeatCount = program.RepeatCount;
+
+            KeyPoints.Clear();
+            foreach (var keyPoint in program.KeyPoints)
+            {
+                KeyPoints.Add(keyPoint);
+            }
+
+            SelectedKeyPoint = null;
+        }
+        finally
+        {
+            _suppressDirtyTracking = false;
         }
 
-        SelectedKeyPoint = null;
+        IsDirty = false;
         IsLibraryOpen = false;
     }
 
@@ -259,6 +301,11 @@ public partial class ProgramViewModel : ViewModelBase
             }
         }
 
+        await PersistProgramAsync();
+    }
+
+    private async Task<bool> PersistProgramAsync()
+    {
         var hasNameCollision = Library.Any(item =>
             item.Id != ProgramId && string.Equals(item.Name.Trim(), ProgramName.Trim(), StringComparison.OrdinalIgnoreCase));
 
@@ -268,14 +315,45 @@ public partial class ProgramViewModel : ViewModelBase
                 $"В библиотеке уже есть программа с именем «{ProgramName}». Сохранить ещё одну с таким же именем?");
             if (!confirmed)
             {
-                return;
+                return false;
             }
         }
 
         var program = BuildProgram();
         await _storage.SaveAsync(program);
         ProgramId = program.Id;
+        IsDirty = false;
         await RefreshLibraryAsync();
+        return true;
+    }
+
+    private async Task<bool> EnsureProgramSavedAsync()
+    {
+        if (ProgramId is null)
+        {
+            var name = await RequestNameAsync(ProgramName);
+            if (name is null)
+            {
+                return false;
+            }
+
+            ProgramName = name;
+            return await PersistProgramAsync();
+        }
+
+        if (IsDirty)
+        {
+            var confirmed = await ConfirmAsync(
+                $"В программе «{ProgramName}» есть несохранённые изменения. Сохранить перед запуском?");
+            if (!confirmed)
+            {
+                return false;
+            }
+
+            return await PersistProgramAsync();
+        }
+
+        return true;
     }
 
     private bool HasKnownPose() => Connection.Session?.DeviceStatus?.WPos is not null;
@@ -784,8 +862,11 @@ public partial class ProgramViewModel : ViewModelBase
         PlayCommand.NotifyCanExecuteChanged();
     }
 
+    private bool _startingPlayback;
+
     private bool CanPlay() =>
         Connection.Session is not null &&
+        !_startingPlayback &&
         PlaybackState != PlaybackState.Running &&
         (PlaybackState != PlaybackState.Paused || !_pausedForLinkLoss || Connection.Session.ConnectionState == ConnectionState.Connected);
 
@@ -827,25 +908,44 @@ public partial class ProgramViewModel : ViewModelBase
             return;
         }
 
-        // A prior StopAsync issues a feed hold; clear it before dispatching a
-        // fresh program so the controller isn't left ignoring motion commands.
-        if (Connection.Session!.ConnectionState == ConnectionState.Connected)
+        _startingPlayback = true;
+        PlayCommand.NotifyCanExecuteChanged();
+
+        IReadOnlyList<CompiledStep> forwardSteps;
+        IReadOnlyList<CompiledStep>? backwardSteps;
+        try
         {
-            await Connection.Session.ResumeAsync();
+            if (!await EnsureProgramSavedAsync())
+            {
+                return;
+            }
+
+            // A prior StopAsync issues a feed hold; clear it before dispatching a
+            // fresh program so the controller isn't left ignoring motion commands.
+            if (Connection.Session!.ConnectionState == ConnectionState.Connected)
+            {
+                await Connection.Session.ResumeAsync();
+            }
+
+            var forwardProgram = BuildProgram();
+            forwardSteps = _compiler.Compile(forwardProgram);
+            if (forwardSteps.Count == 0)
+            {
+                return;
+            }
+
+            backwardSteps = CompletionMode == ProgramCompletionMode.PingPong
+                ? _compiler.Compile(ReversedProgram(forwardProgram))
+                : null;
+
+            PlaybackState = PlaybackState.Running;
+        }
+        finally
+        {
+            _startingPlayback = false;
+            PlayCommand.NotifyCanExecuteChanged();
         }
 
-        var forwardProgram = BuildProgram();
-        var forwardSteps = _compiler.Compile(forwardProgram);
-        if (forwardSteps.Count == 0)
-        {
-            return;
-        }
-
-        var backwardSteps = CompletionMode == ProgramCompletionMode.PingPong
-            ? _compiler.Compile(ReversedProgram(forwardProgram))
-            : null;
-
-        PlaybackState = PlaybackState.Running;
         CurrentSegmentIndex = null;
         SegmentProgress = 0;
         FaultedAtSegmentIndex = null;
