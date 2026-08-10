@@ -33,6 +33,11 @@ public class ProgramViewModelPlaybackTests
         {
             vm.KeyPoints[i] = vm.KeyPoints[i] with { FeedRateUnitsPerMin = 500, DwellSeconds = 0, Ease = EaseMode.None, ContinuousBlend = true };
         }
+
+        // Play now requires a saved, clean program (EnsureProgramSavedAsync); mark it
+        // saved here so playback tests don't block forever on the unanswered save dialog.
+        vm.ProgramId = Guid.NewGuid();
+        vm.IsDirty = false;
     }
 
     [Fact]
@@ -420,6 +425,11 @@ public class ProgramViewModelPlaybackTests
             vm.KeyPoints[i] = vm.KeyPoints[i] with { FeedRateUnitsPerMin = 500, DwellSeconds = 0, Ease = EaseMode.None, ContinuousBlend = true };
         }
 
+        // Play now requires a saved, clean program (EnsureProgramSavedAsync); mark it saved
+        // here so this test doesn't block forever on the unanswered save dialog.
+        vm.ProgramId = Guid.NewGuid();
+        vm.IsDirty = false;
+
         var playTask = vm.PlayCommand.ExecuteAsync(null);
 
         // Don't hard-code the compiled step count — derive it from what the transport actually
@@ -451,6 +461,7 @@ public class ProgramViewModelPlaybackTests
         SeedTwoSegmentProgram(vm, transport);
         vm.CompletionMode = ProgramCompletionMode.PingPong;
         vm.RepeatCount = 1;
+        vm.IsDirty = false; // completion-settings changes above must not re-trigger the save gate
 
         var playTask = vm.PlayCommand.ExecuteAsync(null);
         Assert.Equal(vm.KeyPoints[0].Id, vm.CurrentlyExecutingKeyPointId);
@@ -492,6 +503,7 @@ public class ProgramViewModelPlaybackTests
         SeedTwoSegmentProgram(vm, transport);
         vm.CompletionMode = ProgramCompletionMode.PingPong;
         vm.RepeatCount = 2;
+        vm.IsDirty = false; // completion-settings changes above must not re-trigger the save gate
 
         var playTask = vm.PlayCommand.ExecuteAsync(null);
 
@@ -541,6 +553,7 @@ public class ProgramViewModelPlaybackTests
         SeedTwoSegmentProgram(vm, transport);
         vm.CompletionMode = ProgramCompletionMode.Loop;
         vm.RepeatCount = 2;
+        vm.IsDirty = false; // completion-settings changes above must not re-trigger the save gate
 
         var playTask = vm.PlayCommand.ExecuteAsync(null);
 
@@ -579,6 +592,7 @@ public class ProgramViewModelPlaybackTests
         SeedTwoSegmentProgram(vm, transport);
         vm.CompletionMode = ProgramCompletionMode.Loop;
         vm.RepeatCount = null;
+        vm.IsDirty = false; // completion-settings changes above must not re-trigger the save gate
 
         var playTask = vm.PlayCommand.ExecuteAsync(null);
 
@@ -618,6 +632,7 @@ public class ProgramViewModelPlaybackTests
         await vm.Connection.ConnectCommand.Execute();
         SeedTwoSegmentProgram(vm, transport);
         vm.ReturnToStartOnFinish = true;
+        vm.IsDirty = false; // completion-settings change above must not re-trigger the save gate
 
         var playTask = vm.PlayCommand.ExecuteAsync(null);
 
@@ -644,6 +659,7 @@ public class ProgramViewModelPlaybackTests
         await vm.Connection.ConnectCommand.Execute();
         SeedTwoSegmentProgram(vm, transport);
         vm.ReturnToStartOnFinish = true;
+        vm.IsDirty = false; // completion-settings change above must not re-trigger the save gate
 
         var playTask = vm.PlayCommand.ExecuteAsync(null);
         await vm.StopCommand.ExecuteAsync(null);
@@ -688,6 +704,7 @@ public class ProgramViewModelPlaybackTests
         SeedTwoSegmentProgram(vm, transport);
         vm.CompletionMode = ProgramCompletionMode.Loop;
         vm.RepeatCount = 2;
+        vm.IsDirty = false; // completion-settings changes above must not re-trigger the save gate
 
         var playTask = vm.PlayCommand.ExecuteAsync(null);
         await ParkAtPausedPassBoundaryAsync(vm, transport);
@@ -731,6 +748,7 @@ public class ProgramViewModelPlaybackTests
         SeedTwoSegmentProgram(vm, transport);
         vm.CompletionMode = ProgramCompletionMode.Loop;
         vm.RepeatCount = 2;
+        vm.IsDirty = false; // completion-settings changes above must not re-trigger the save gate
 
         var playTask = vm.PlayCommand.ExecuteAsync(null);
         await ParkAtPausedPassBoundaryAsync(vm, transport);
@@ -760,6 +778,7 @@ public class ProgramViewModelPlaybackTests
         SeedTwoSegmentProgram(vm, transport);
         vm.CompletionMode = ProgramCompletionMode.Loop;
         vm.RepeatCount = 2;
+        vm.IsDirty = false; // completion-settings changes above must not re-trigger the save gate
 
         var playTask = vm.PlayCommand.ExecuteAsync(null);
 

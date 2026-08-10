@@ -31,6 +31,11 @@ public class ProgramViewModelStatusLabelTests
         {
             vm.KeyPoints[i] = vm.KeyPoints[i] with { FeedRateUnitsPerMin = 500, DwellSeconds = 0, Ease = EaseMode.None, ContinuousBlend = true };
         }
+
+        // Play now requires a saved, clean program (EnsureProgramSavedAsync); mark it
+        // saved here so playback tests don't block forever on the unanswered save dialog.
+        vm.ProgramId = Guid.NewGuid();
+        vm.IsDirty = false;
     }
 
     [Fact]
