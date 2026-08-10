@@ -1,6 +1,7 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="using:ArctZ"
+             xmlns:materialIcons="using:Material.Icons.Avalonia"
              x:Class="ArctZ.App"
              RequestedThemeVariant="Dark">
              <!-- Fixed to Dark: the HUD cockpit palette is designed against a near-black
@@ -64,6 +65,7 @@
         <FluentTheme />
         <StyleInclude Source="avares://ArctZ/Themes/HudControls.axaml" />
         <StyleInclude Source="avares://ArctZ/Themes/VirtualJoystick.axaml" />
+        <materialIcons:MaterialIconStyles />
 
         <!-- DynamicResource, not StaticResource: Setter values in Application.Styles are
              resolved once when AvaloniaXamlLoader.Load builds this style tree, which runs
