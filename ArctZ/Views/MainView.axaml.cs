@@ -15,6 +15,7 @@ namespace ArctZ.Views
         private const double MinRadius = 50;
         private const double MaxRadius = 110;
         private const double CenterGap = 24;
+        private const double NarrowLayoutWidthThreshold = 700;
 
         // Border(reveal-3).Margin(12→12+12=24 верт.) + BorderThickness(1+1=2)
         private const double ContentBorderVerticalChrome = 26;
@@ -81,6 +82,8 @@ namespace ArctZ.Views
 
             return Math.Clamp(Math.Min(widthRadius, heightRadius), MinRadius, MaxRadius);
         }
+
+        internal static bool ComputeIsNarrowLayout(double mainViewWidth) => mainViewWidth < NarrowLayoutWidthThreshold;
 
         private void OnLeftJoystickDown(object? sender, JoystickEventArgs e) => ViewModel?.OnLeftJoystickDown(e);
 
