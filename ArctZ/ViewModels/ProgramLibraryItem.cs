@@ -10,7 +10,11 @@ public partial class ProgramLibraryItem : ObservableObject
 
     public string Name { get; }
 
+    public DateTimeOffset CreatedAt { get; }
+
     public DateTimeOffset ModifiedAt { get; }
+
+    public bool ShowModifiedAt { get; }
 
     [ObservableProperty]
     private bool _isLoaded;
@@ -19,7 +23,9 @@ public partial class ProgramLibraryItem : ObservableObject
     {
         Id = summary.Id;
         Name = summary.Name;
+        CreatedAt = summary.CreatedAt;
         ModifiedAt = summary.ModifiedAt;
+        ShowModifiedAt = CreatedAt.ToString("dd.MM.yyyy") != ModifiedAt.ToString("dd.MM.yyyy");
         _isLoaded = isLoaded;
     }
 }

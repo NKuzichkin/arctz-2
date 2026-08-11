@@ -50,6 +50,16 @@ Run tests: `dotnet test ArctZ.Tests/ArctZ.Tests.csproj`
 3. Попросить пользователя проверить функции приложения самостоятельно.
 4. Задать пользователю вопросы по работе каждой проверяемой функции по задаче — через инструмент `AskUserQuestion`, по одному вопросу на каждое изменённое поведение/элемент, а не один общий вопрос "выглядит нормально?".
 
+## Иконки (Material.Icons.Avalonia)
+
+Пакет `Material.Icons.Avalonia` уже подключён (`ArctZ/ArctZ.csproj`, версия закреплена в `Directory.Packages.props`), но пока нигде не используется и не зарегистрирован в `App.axaml`. Перед первым использованием иконки в проекте:
+
+1. Зарегистрировать стили контрола в `App.axaml`: добавить `xmlns:materialIcons="using:Material.Icons.Avalonia"` в корневой тег `Application`, затем `<materialIcons:MaterialIconStyles />` внутрь `Application.Styles`. Без этого шага `ControlTheme` контрола не найден и иконка не отрисуется. Устаревший вариант из старых примеров в интернете — `<StyleInclude Source="avares://Material.Icons.Avalonia/App.xaml"/>` — не использовать, актуальная версия пакета ожидает именно `MaterialIconStyles`.
+2. В разметке подключать так же, через `xmlns:materialIcons="using:Material.Icons.Avalonia"`, и использовать `<materialIcons:MaterialIcon Kind="Home" />`. Значение `Kind` — член `Material.Icons.MaterialIconKind` (enum из транзитивного пакета `Material.Icons`); имена иконок ищите на pictogrammers.com/library/mdi или в IDE-автодополнении по строковому литералу.
+3. Цвет задаётся через `Foreground` (наследуется как у текста, поддерживает `DynamicResource`) — использовать те же кисти HUD-палитры, что и для текста рядом (`Themes/Colors.axaml`), не хардкодить цвет напрямую в `MaterialIcon`.
+4. Размер: приоритет `IconSize` (double) → `Width`/`Height` → `FontSize`, если остальное не задано. Для растяжения по контейнеру — `Classes="Fill"`.
+5. Если `Kind` биндится из ViewModel (compiled bindings, `x:DataType`), тип свойства должен быть `Material.Icons.MaterialIconKind` (или nullable), а для enum-литералов в самой разметке нужен доп. `xmlns:material="using:Material.Icons"`. Строковый литерал `Kind="Home"` конвертируется type-converter'ом и с compiled bindings совместим без дополнительного namespace.
+
 ## Architecture
 
 Avalonia UI cross-platform solution (.NET 10, MVVM via `CommunityToolkit.Mvvm`, compiled bindings). One shared core project plus four thin platform heads, all referencing the core:

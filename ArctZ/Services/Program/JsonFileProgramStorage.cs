@@ -37,7 +37,7 @@ public sealed class JsonFileProgramStorage : IProgramStorage
             var program = await JsonSerializer.DeserializeAsync<JibProgram>(stream, Options, cancellationToken).ConfigureAwait(false);
             if (program is not null)
             {
-                summaries.Add(new ProgramSummary(program.Id, program.Name, File.GetLastWriteTimeUtc(file)));
+                summaries.Add(new ProgramSummary(program.Id, program.Name, File.GetCreationTimeUtc(file), File.GetLastWriteTimeUtc(file)));
             }
         }
 
