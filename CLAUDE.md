@@ -31,6 +31,8 @@ Android/iOS build requirements (already set up on this machine):
 
 Run tests: `dotnet test ArctZ.Tests/ArctZ.Tests.csproj`
 
+Generate screenshot gallery (all 11 screens, rewrites `screenshots/`): `dotnet test ArctZ.Tests.Screenshots/ArctZ.Tests.Screenshots.csproj`
+
 ## Асинхронные диалоги-"ворота" в командах ViewModel и тесты
 
 В `ArctZ`-ViewModel'ях диалоги пользователю (подтверждение, ввод имени и т.п.) реализованы через `TaskCompletionSource`, который разрешается только соответствующей `[RelayCommand]`-командой отклика (например, `ConfirmYes`/`ConfirmNo`/`ConfirmRename`/`CancelRename` в `ProgramViewModel`, см. `ConfirmAsync`/`RequestNameAsync`). Если такой диалог добавляется как новая асинхронная проверка внутри уже существующей команды (например, `EnsureProgramSavedAsync()` внутри `PlayAsync`), то любой тест, вызывающий эту команду и не эмулирующий ответ на диалог, **зависает навсегда** — TCS никогда не резолвится, а `await` на результате команды блокируется без таймаута. Это не "медленный" тест, а бесконечное зависание, которое останавливает весь прогон `dotnet test`.

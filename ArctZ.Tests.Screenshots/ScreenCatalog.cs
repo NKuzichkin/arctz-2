@@ -11,6 +11,10 @@ namespace ArctZ.Tests.Screenshots;
 /// <summary>
 /// One entry per screen. Setup puts ProgramViewModel/ConnectionViewModel
 /// into that screen's state; Teardown reverts it before the next entry runs.
+/// Entries run in order and are not independently reorderable: in particular
+/// "main"'s Setup connects and loads the demo program, and its Teardown is
+/// deliberately a no-op so that connected/loaded state stays live for every
+/// later entry (e.g. "keypoint-editor", "rename", "confirm-delete") to build on.
 /// Both always return a Task (Task.CompletedTask for synchronous work) so the
 /// driver loop in ScreenshotGalleryTests can treat every entry uniformly,
 /// including the ones (rename/confirm-delete) whose Setup deliberately stays
@@ -93,7 +97,13 @@ public static class ScreenCatalog
         new ScreenDefinition(
             "gcode-log",
             "Лог G-code",
-            Setup: vm => vm.Connection.ToggleGCodeLogCommand.Execute().ToTask(),
+            Setup: vm =>
+            {
+                vm.Connection.SentGCodeLines.Add("$H");
+                vm.Connection.SentGCodeLines.Add("G1 X120.500 Y45.250 Z80.000 A15.000 F500");
+                vm.Connection.SentGCodeLines.Add("ok");
+                return vm.Connection.ToggleGCodeLogCommand.Execute().ToTask();
+            },
             Teardown: vm => vm.Connection.ToggleGCodeLogCommand.Execute().ToTask()),
 
         new ScreenDefinition(
