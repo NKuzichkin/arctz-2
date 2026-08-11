@@ -30,15 +30,15 @@ dotnet test ArctZ.Tests.Screenshots/ArctZ.Tests.Screenshots.csproj
 
 ## Демо-данные и подключение
 
-DI собирается вручную (`ServiceCollection` + `AddArctZCore()`), как это делают платформенные `Program.cs`:
-- `IDeviceTransport` (real-слот) и demo-транспорт — оба через `Simulation.MockDeviceTransport` (тот же тип, что и в проде для Demo-режима); real-слот не используется, т.к. подключение всегда идёт через Demo-эндпоинт.
+Вью-модели собираются напрямую через `new` (тот же приём, что уже использует `ArctZ.Tests.ViewModels.ProgramViewModelSideMenuTests.CreateViewModel()` — `new ConnectionViewModel(transport, () => demoTransport, new DeviceSessionFactory(MachineLimits.Default))` → `new ProgramViewModel(connection, storage, new TrajectoryCompiler())`), без контейнера DI:
+- `IDeviceTransport` (real-слот) и demo-транспорт — оба через простой `IDeviceTransport`-фейк без таймеров (аналог `ArctZ.Tests.Services.Device.FakeDeviceTransport`: `ConnectAsync` мгновенно ставит `IsConnected=true`, `SimulateReceivedLine(string)` синхронно поднимает `LineReceived`), продублированный в новом проекте. Real-слот не используется, т.к. подключение всегда идёт через Demo-эндпоинт.
 - `IProgramStorage` — минимальная in-memory реализация (аналог `ArctZ.Tests.Services.Program.FakeProgramStorage`, продублированная в новом проекте, чтобы не тянуть `ArctZ.Tests` как зависимость), заранее засеянная одной `JibProgram` (2 точки с разными позициями).
 - ReactiveUI бутстрап (`RxAppBuilder...BuildApp()` + `RxSchedulers.MainThreadScheduler = ImmediateScheduler.Instance`) — копия `ArctZ.Tests/ReactiveUIBootstrap.cs`, нужен `ConnectionViewModel` (наследник `ReactiveViewModelBase`).
 
 Перед основным циклом скриншотов тест:
 1. Создаёт `MainView` с `DataContext = ProgramViewModel` из DI, оборачивает в `Window`, `Show()`.
 2. Снимает экран **`connection`** (см. каталог ниже) — единственный экран, снимаемый до подключения.
-3. `Connection.SelectedEndpoint = AvailableEndpoints[Demo]`; `await Connection.ConnectCommand.Execute();` — ждёт, пока `Connection.DeviceStatus` не станет заполнен (первый статус-пул через `MockDeviceTransport`/`SystemPeriodicTimer`, короткий поллинг с таймаутом), чтобы телеметрия на "main" экране была реалистичной.
+3. `Connection.SelectedEndpoint = AvailableEndpoints[Demo]`; `await Connection.ConnectCommand.Execute();`, затем `demoTransport.SimulateReceivedLine("<Idle|WPos:120.500,45.250,80.000,15.000|FS:0,0>")` — синхронно поднимает `Connection.DeviceStatus`, без реального ожидания поллинга (тот же приём, что уже используют `ProgramViewModelAuthoringTests`), чтобы телеметрия на "main" экране была реалистичной.
 4. `await RefreshLibraryCommand.ExecuteAsync(null)` → `await LoadProgramCommand.ExecuteAsync(Library[0])` — грузит засеянную программу (имя, точки) в `ProgramViewModel`.
 5. Снимает оставшиеся 10 экранов по каталогу.
 
@@ -50,7 +50,7 @@ DI собирается вручную (`ServiceCollection` + `AddArctZCore()`),
 |---|----|----|----|----|
 | 1 | `connection` | Модалка подключения | (стартовое состояние, до Connect) | — |
 | 2 | `main` | Главный экран (программа/точки/джойстики) | после Connect + LoadProgram, без оверлеев | — |
-| 3 | `alarm` | Модалка аварии | `Connection.TriggerMockAlarmCommand.Execute()` | `Connection.LastAlarmCode = null` |
+| 3 | `alarm` | Модалка аварии | `Connection.LastAlarmCode = 1` (напрямую — `TriggerMockAlarmCommand` работает только через `IMockDeviceControl`, которым намеренно простой `IDeviceTransport`-фейк для скриншотов не является) | `Connection.LastAlarmCode = null` |
 | 4 | `library` | Библиотека программ | `await OpenLibraryCommand.ExecuteAsync(null)` | `CloseLibraryCommand.Execute(null)` |
 | 5 | `keypoint-editor` | Редактор точки | `EditKeyPointCommand.Execute(KeyPoints[0])` | `KeyPointEditor = null` |
 | 6 | `completion-settings` | Настройки завершения | `EditCompletionSettingsCommand.Execute(null)` | `CompletionSettingsEditor = null` |
