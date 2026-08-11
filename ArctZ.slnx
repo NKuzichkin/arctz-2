@@ -9,4 +9,5 @@
   </Project>
   <Project Path="ArctZ/ArctZ.csproj" />
   <Project Path="ArctZ.Tests/ArctZ.Tests.csproj" />
+  <Project Path="ArctZ.Tests.Screenshots/ArctZ.Tests.Screenshots.csproj" />
 </Solution>
