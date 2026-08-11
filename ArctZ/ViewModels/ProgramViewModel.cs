@@ -24,6 +24,12 @@ public partial class ProgramViewModel : ViewModelBase
     private bool _leftActive;
     private bool _rightActive;
 
+    [ObservableProperty]
+    private double _joystickSpeedPercent = 100;
+
+    [ObservableProperty]
+    private bool _isNarrowJoystickLayout;
+
     public ConnectionViewModel Connection { get; }
 
     [ObservableProperty]
@@ -558,7 +564,7 @@ public partial class ProgramViewModel : ViewModelBase
             _rightInput = input;
         }
 
-        Connection.Session?.UpdateJog(new DualJoystickState(_leftInput, _rightInput));
+        Connection.Session?.UpdateJog(new DualJoystickState(ScaledLeftInput(), ScaledRightInput()));
     }
 
     private void OnStickUp(bool isLeft)
@@ -580,9 +586,21 @@ public partial class ProgramViewModel : ViewModelBase
         }
         else
         {
-            Connection.Session?.UpdateJog(new DualJoystickState(_leftInput, _rightInput));
+            Connection.Session?.UpdateJog(new DualJoystickState(ScaledLeftInput(), ScaledRightInput()));
         }
     }
+
+    partial void OnJoystickSpeedPercentChanged(double value)
+    {
+        if (_leftActive || _rightActive)
+        {
+            Connection.Session?.UpdateJog(new DualJoystickState(ScaledLeftInput(), ScaledRightInput()));
+        }
+    }
+
+    private JoystickAxisInput ScaledLeftInput() => JoystickSpeedScaler.Scale(_leftInput, JoystickSpeedPercent);
+
+    private JoystickAxisInput ScaledRightInput() => JoystickSpeedScaler.Scale(_rightInput, JoystickSpeedPercent);
 
     private bool _pausedForLinkLoss;
     private bool _currentPassBackward;
