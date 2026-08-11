@@ -66,6 +66,11 @@ namespace ArctZ.Views
             var radius = ComputeJoystickRadius(Bounds.Width, Bounds.Height, HeaderBorder.Bounds.Height);
             LeftJoystick.Radius = radius;
             RightJoystick.Radius = radius;
+
+            if (ViewModel is { } vm)
+            {
+                vm.IsNarrowJoystickLayout = ComputeIsNarrowLayout(Bounds.Width);
+            }
         }
 
         internal static double ComputeJoystickRadius(double mainViewWidth, double mainViewHeight, double headerHeight)
