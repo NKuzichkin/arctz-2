@@ -585,16 +585,40 @@
                         <TextBlock TextWrapping="Wrap" Foreground="{StaticResource HudWarningBrush}"
                                    Text="Web Serial API не поддерживается этим браузером. Доступен только режим «Демо»." />
                     </Border>
-                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                        <Ellipse Width="8" Height="8" VerticalAlignment="Center"
-                                 Fill="{Binding ConnectionState, Converter={StaticResource StateToBrush}}" />
-                        <TextBlock VerticalAlignment="Center"
-                                   Text="{Binding ConnectionStateLabel}" />
-                    </StackPanel>
-                    <ComboBox ItemsSource="{Binding AvailableEndpoints}"
-                              SelectedItem="{Binding SelectedEndpoint}"
-                              DisplayMemberBinding="{Binding DisplayName}"
-                              HorizontalAlignment="Stretch" />
+                    <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <Ellipse Width="8" Height="8" VerticalAlignment="Center"
+                                     Fill="{Binding ConnectionState, Converter={StaticResource StateToBrush}}" />
+                            <TextBlock VerticalAlignment="Center"
+                                       Text="{Binding ConnectionStateLabel}" />
+                        </StackPanel>
+                        <Button Grid.Column="1" IsVisible="{Binding IsDiscoverySupported}" Command="{Binding ScanCommand}">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <materialIcons:MaterialIcon Kind="BluetoothSearching" Width="16" Height="16" VerticalAlignment="Center" />
+                                <TextBlock Text="Поиск" IsVisible="{Binding !IsScanning}" VerticalAlignment="Center" />
+                                <TextBlock Text="Стоп" IsVisible="{Binding IsScanning}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+                    <ListBox ItemsSource="{Binding AvailableEndpoints}"
+                             SelectedItem="{Binding SelectedEndpoint}"
+                             MaxHeight="180">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ConnectionEndpoint">
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                    <TextBlock Grid.Column="0" Text="{Binding DisplayName}" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="{Binding StatusLabel}" VerticalAlignment="Center"
+                                               FontSize="12" Foreground="{StaticResource HudTextSecondaryBrush}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <Border IsVisible="{Binding HasEndpointError}"
+                            Background="{StaticResource HudWarningDimBrush}"
+                            BorderBrush="{StaticResource HudWarningBrush}" BorderThickness="1" Padding="10,6">
+                        <TextBlock TextWrapping="Wrap" Foreground="{StaticResource HudWarningBrush}"
+                                   Text="{Binding EndpointError}" />
+                    </Border>
                     <Button Classes="primary" Command="{Binding ConnectCommand}" HorizontalAlignment="Stretch">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <materialIcons:MaterialIcon Kind="Bluetooth" Width="16" Height="16" VerticalAlignment="Center" />
