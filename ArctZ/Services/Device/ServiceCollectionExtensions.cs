@@ -16,6 +16,7 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddArctZCore(this IServiceCollection services)
     {
         services.AddSingleton(MachineLimits.Default);
+        services.AddSingleton<IDeviceEndpointProvider, SingleRealDeviceEndpointProvider>();
         services.AddSingleton<IDeviceSessionFactory, DeviceSessionFactory>();
         services.AddSingleton<Func<IDeviceTransport>>(sp => () => new Simulation.MockDeviceTransport(
             sp.GetRequiredService<MachineLimits>(),

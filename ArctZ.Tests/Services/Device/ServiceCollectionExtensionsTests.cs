@@ -67,4 +67,14 @@ public class ServiceCollectionExtensionsTests
         Assert.NotSame(first, second);
         Assert.IsType<MockDeviceTransport>(first);
     }
+
+    [Fact]
+    public void AddArctZCore_RegistersDefaultDeviceEndpointProvider()
+    {
+        using var provider = BuildProvider();
+
+        var endpointProvider = provider.GetRequiredService<IDeviceEndpointProvider>();
+
+        Assert.IsType<SingleRealDeviceEndpointProvider>(endpointProvider);
+    }
 }
