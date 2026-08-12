@@ -40,7 +40,8 @@ public class ScreenshotGalleryTests
         var connection = new ConnectionViewModel(
             realTransport,
             () => demoTransport,
-            new DeviceSessionFactory(MachineLimits.Default));
+            new DeviceSessionFactory(MachineLimits.Default),
+            new SingleRealDeviceEndpointProvider());
         var programViewModel = new ProgramViewModel(connection, storage, new TrajectoryCompiler());
 
         var mainView = new MainView { DataContext = programViewModel };

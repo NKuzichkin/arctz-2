@@ -10,13 +10,29 @@ namespace ArctZ.Tests.ViewModels;
 
 public class ConnectionViewModelTests
 {
-    private static ConnectionViewModel CreateVm(IDeviceTransport realTransport, IDeviceTransport? demoTransport = null) =>
-        new(realTransport, () => demoTransport ?? new FakeDeviceTransport(), new DeviceSessionFactory(MachineLimits.Default));
+    private static FakeDeviceEndpointProvider DefaultEndpointProvider() => new()
+    {
+        KnownEndpoints = { new DeviceEndpointInfo("real", "Устройство", true) },
+    };
+
+    private static async Task<ConnectionViewModel> CreateVmAsync(
+        IDeviceTransport realTransport,
+        IDeviceTransport? demoTransport = null,
+        IDeviceEndpointProvider? endpointProvider = null)
+    {
+        var vm = new ConnectionViewModel(
+            realTransport,
+            () => demoTransport ?? new FakeDeviceTransport(),
+            new DeviceSessionFactory(MachineLimits.Default),
+            endpointProvider ?? DefaultEndpointProvider());
+        await vm.RefreshEndpointsCommand.Execute();
+        return vm;
+    }
 
     [Fact]
-    public void Constructor_RealTransportSupported_ListsRealAndDemoAndDoesNotFlagUnsupported()
+    public async Task Constructor_RealTransportSupported_ListsRealAndDemoAndDoesNotFlagUnsupported()
     {
-        var vm = CreateVm(new FakeDeviceTransport());
+        var vm = await CreateVmAsync(new FakeDeviceTransport());
 
         Assert.Equal(2, vm.AvailableEndpoints.Count);
         Assert.Contains(vm.AvailableEndpoints, e => e.Kind == ConnectionEndpointKind.RealDevice);
@@ -26,10 +42,10 @@ public class ConnectionViewModelTests
     }
 
     [Fact]
-    public void Constructor_RealTransportUnsupported_OnlyListsDemoAndFlagsUnsupported()
+    public async Task Constructor_RealTransportUnsupported_OnlyListsDemoAndFlagsUnsupported()
     {
         var realTransport = new FakeDeviceTransport { IsSupported = false };
-        var vm = CreateVm(realTransport);
+        var vm = await CreateVmAsync(realTransport);
 
         Assert.Single(vm.AvailableEndpoints);
         Assert.Equal(ConnectionEndpointKind.Demo, vm.AvailableEndpoints[0].Kind);
@@ -42,7 +58,7 @@ public class ConnectionViewModelTests
     {
         var realTransport = new FakeDeviceTransport();
         var demoTransport = new FakeDeviceTransport();
-        var vm = CreateVm(realTransport, demoTransport);
+        var vm = await CreateVmAsync(realTransport, demoTransport);
         vm.SelectedEndpoint = vm.AvailableEndpoints.Single(e => e.Kind == ConnectionEndpointKind.Demo);
 
         await vm.ConnectCommand.Execute();
@@ -56,7 +72,7 @@ public class ConnectionViewModelTests
     public async Task ConnectCommand_RealDeviceSelected_ConnectsUsingRealTransport()
     {
         var realTransport = new FakeDeviceTransport();
-        var vm = CreateVm(realTransport);
+        var vm = await CreateVmAsync(realTransport);
 
         await vm.ConnectCommand.Execute();
 
@@ -67,7 +83,7 @@ public class ConnectionViewModelTests
     public async Task DisconnectCommand_DisconnectsActiveSessionAndClearsIt()
     {
         var realTransport = new FakeDeviceTransport();
-        var vm = CreateVm(realTransport);
+        var vm = await CreateVmAsync(realTransport);
         await vm.ConnectCommand.Execute();
 
         await vm.DisconnectCommand.Execute();
@@ -80,7 +96,7 @@ public class ConnectionViewModelTests
     public async Task ConnectCommand_WhileAlreadyConnected_DisconnectsPreviousSessionBeforeCreatingNewOne()
     {
         var realTransport = new FakeDeviceTransport();
-        var vm = CreateVm(realTransport);
+        var vm = await CreateVmAsync(realTransport);
         await vm.ConnectCommand.Execute();
         var firstSession = vm.Session;
 
@@ -98,7 +114,7 @@ public class ConnectionViewModelTests
     {
         var realTransport = new FakeDeviceTransport();
         var demoTransport = new FakeDeviceTransport();
-        var vm = CreateVm(realTransport, demoTransport);
+        var vm = await CreateVmAsync(realTransport, demoTransport);
         await vm.ConnectCommand.Execute();
 
         vm.SelectedEndpoint = vm.AvailableEndpoints.Single(e => e.Kind == ConnectionEndpointKind.Demo);
@@ -112,7 +128,7 @@ public class ConnectionViewModelTests
     [Fact]
     public async Task IsConnectionModalVisible_TracksSessionLifecycle()
     {
-        var vm = CreateVm(new FakeDeviceTransport());
+        var vm = await CreateVmAsync(new FakeDeviceTransport());
 
         Assert.True(vm.IsConnectionModalVisible);
 
@@ -127,7 +143,7 @@ public class ConnectionViewModelTests
     public async Task ConnectCommand_TransportThrows_ResetsSessionAndReenablesRetry()
     {
         var realTransport = new FakeDeviceTransport { ConnectFailuresRemaining = 1 };
-        var vm = CreateVm(realTransport);
+        var vm = await CreateVmAsync(realTransport);
 
         await vm.ConnectCommand.Execute();
 
@@ -153,7 +169,7 @@ public class ConnectionViewModelTests
     public async Task UnsolicitedDisconnect_TransitionsToReconnectingAndShowsModal()
     {
         var realTransport = new FakeDeviceTransport();
-        var vm = CreateVm(realTransport);
+        var vm = await CreateVmAsync(realTransport);
         await vm.ConnectCommand.Execute();
 
         // ConnectFailuresRemaining is set only after the initial connect succeeds, so the
@@ -174,7 +190,7 @@ public class ConnectionViewModelTests
     public async Task ConnectionStateChanged_OnAReplacedSession_DoesNotAffectTheViewModel()
     {
         var realTransport = new FakeDeviceTransport();
-        var vm = CreateVm(realTransport);
+        var vm = await CreateVmAsync(realTransport);
         await vm.ConnectCommand.Execute();
         var session1 = vm.Session;
 
@@ -203,7 +219,7 @@ public class ConnectionViewModelTests
     public async Task SendGCode_AfterConnect_AppendsLineToSentGCodeLines()
     {
         var realTransport = new FakeDeviceTransport();
-        var vm = CreateVm(realTransport);
+        var vm = await CreateVmAsync(realTransport);
         await vm.ConnectCommand.Execute();
 
         _ = vm.Session!.SendGCodeAsync("G1 X10 Y20 F500");
@@ -215,7 +231,7 @@ public class ConnectionViewModelTests
     public async Task ConnectCommand_Reconnecting_ClearsPreviousSentGCodeLines()
     {
         var realTransport = new FakeDeviceTransport();
-        var vm = CreateVm(realTransport);
+        var vm = await CreateVmAsync(realTransport);
         await vm.ConnectCommand.Execute();
         _ = vm.Session!.SendGCodeAsync("G1 X10");
         Assert.Single(vm.SentGCodeLines);
@@ -229,7 +245,7 @@ public class ConnectionViewModelTests
     public async Task SendGCode_Over200Lines_DropsOldestNotNewest()
     {
         var realTransport = new FakeDeviceTransport();
-        var vm = CreateVm(realTransport);
+        var vm = await CreateVmAsync(realTransport);
         await vm.ConnectCommand.Execute();
 
         for (var i = 0; i < 205; i++)
@@ -247,7 +263,7 @@ public class ConnectionViewModelTests
     public async Task DisconnectCommand_StopsAppendingToSentGCodeLines()
     {
         var realTransport = new FakeDeviceTransport();
-        var vm = CreateVm(realTransport);
+        var vm = await CreateVmAsync(realTransport);
         await vm.ConnectCommand.Execute();
         var session = vm.Session!;
 
@@ -258,9 +274,9 @@ public class ConnectionViewModelTests
     }
 
     [Fact]
-    public void ToggleGCodeLogCommand_TogglesIsGCodeLogOpen()
+    public async Task ToggleGCodeLogCommand_TogglesIsGCodeLogOpen()
     {
-        var vm = CreateVm(new FakeDeviceTransport());
+        var vm = await CreateVmAsync(new FakeDeviceTransport());
         Assert.False(vm.IsGCodeLogOpen);
 
         vm.ToggleGCodeLogCommand.Execute(null);
@@ -274,7 +290,7 @@ public class ConnectionViewModelTests
     public async Task IsAlarmModalVisible_TracksAlarmTriggerAndReset()
     {
         var realTransport = new FakeDeviceTransport();
-        var vm = CreateVm(realTransport);
+        var vm = await CreateVmAsync(realTransport);
         await vm.ConnectCommand.Execute();
         Assert.False(vm.IsAlarmModalVisible);
         Assert.False(vm.IsAnyModalVisible);
@@ -315,7 +331,7 @@ public class ConnectionViewModelTests
         // because it depends on a live link to get an "ok" back. ConnectionViewModel now favors
         // the connection modal whenever both conditions are true.
         var realTransport = new FakeDeviceTransport();
-        var vm = CreateVm(realTransport);
+        var vm = await CreateVmAsync(realTransport);
         await vm.ConnectCommand.Execute();
 
         realTransport.SimulateReceivedLine("ALARM:1");
@@ -336,9 +352,9 @@ public class ConnectionViewModelTests
     }
 
     [Fact]
-    public void ToggleMockSettingsCommand_TogglesIsMockSettingsOpen()
+    public async Task ToggleMockSettingsCommand_TogglesIsMockSettingsOpen()
     {
-        var vm = CreateVm(new FakeDeviceTransport());
+        var vm = await CreateVmAsync(new FakeDeviceTransport());
         Assert.False(vm.IsMockSettingsOpen);
 
         vm.ToggleMockSettingsCommand.Execute(null);
@@ -354,7 +370,7 @@ public class ConnectionViewModelTests
         // The default demo transport in these tests is FakeDeviceTransport, which does not
         // implement IMockDeviceControl — this exercises the cast-miss no-op path, not just
         // "never connected".
-        var vm = CreateVm(new FakeDeviceTransport());
+        var vm = await CreateVmAsync(new FakeDeviceTransport());
         vm.SelectedEndpoint = vm.AvailableEndpoints.Single(e => e.Kind == ConnectionEndpointKind.Demo);
         await vm.ConnectCommand.Execute();
 
@@ -370,7 +386,7 @@ public class ConnectionViewModelTests
     {
         var realTransport = new FakeDeviceTransport();
         var mockTransport = new MockDeviceTransport(MachineLimits.Default, new ManualPeriodicTimer(), TimeSpan.FromMilliseconds(100));
-        var vm = CreateVm(realTransport, mockTransport);
+        var vm = await CreateVmAsync(realTransport, mockTransport);
         vm.SelectedEndpoint = vm.AvailableEndpoints.Single(e => e.Kind == ConnectionEndpointKind.Demo);
         await vm.ConnectCommand.Execute();
         Assert.False(vm.IsAlarmModalVisible);
@@ -387,7 +403,7 @@ public class ConnectionViewModelTests
         var realTransport = new FakeDeviceTransport();
         var ticker = new ManualPeriodicTimer();
         var mockTransport = new MockDeviceTransport(MachineLimits.Default, ticker, TimeSpan.FromMilliseconds(100));
-        var vm = CreateVm(realTransport, mockTransport);
+        var vm = await CreateVmAsync(realTransport, mockTransport);
         vm.SelectedEndpoint = vm.AvailableEndpoints.Single(e => e.Kind == ConnectionEndpointKind.Demo);
         await vm.ConnectCommand.Execute();
 
@@ -401,5 +417,57 @@ public class ConnectionViewModelTests
         ticker.RaiseElapsed();
 
         Assert.True(sendTask.IsCompletedSuccessfully);
+    }
+
+    [Fact]
+    public async Task AvailableEndpoints_MultipleKnownDevices_RealDevicesListedBeforeDemo()
+    {
+        var provider = new FakeDeviceEndpointProvider
+        {
+            KnownEndpoints =
+            {
+                new DeviceEndpointInfo("aa:bb", "FluidNC-1", true),
+                new DeviceEndpointInfo("cc:dd", "FluidNC-2", true),
+            },
+        };
+        var vm = await CreateVmAsync(new FakeDeviceTransport(), endpointProvider: provider);
+
+        Assert.Equal(3, vm.AvailableEndpoints.Count);
+        Assert.Equal("aa:bb", vm.AvailableEndpoints[0].Id);
+        Assert.Equal("cc:dd", vm.AvailableEndpoints[1].Id);
+        Assert.Equal(ConnectionEndpointKind.Demo, vm.AvailableEndpoints[2].Kind);
+    }
+
+    [Fact]
+    public async Task RefreshEndpointsCommand_PreservesManuallySelectedEndpointById()
+    {
+        var provider = new FakeDeviceEndpointProvider
+        {
+            KnownEndpoints = { new DeviceEndpointInfo("aa:bb", "FluidNC-1", true) },
+        };
+        var vm = await CreateVmAsync(new FakeDeviceTransport(), endpointProvider: provider);
+        vm.SelectedEndpoint = vm.AvailableEndpoints.Single(e => e.Kind == ConnectionEndpointKind.Demo);
+
+        await vm.RefreshEndpointsCommand.Execute();
+
+        Assert.Equal(ConnectionEndpointKind.Demo, vm.SelectedEndpoint!.Kind);
+    }
+
+    [Fact]
+    public async Task RefreshEndpointsCommand_ProviderThrows_SetsEndpointErrorAndKeepsExistingList()
+    {
+        var provider = new FakeDeviceEndpointProvider
+        {
+            KnownEndpoints = { new DeviceEndpointInfo("aa:bb", "FluidNC-1", true) },
+        };
+        var vm = await CreateVmAsync(new FakeDeviceTransport(), endpointProvider: provider);
+        Assert.Equal(2, vm.AvailableEndpoints.Count);
+
+        provider.GetKnownEndpointsException = new InvalidOperationException("Нет разрешения на Bluetooth");
+        await vm.RefreshEndpointsCommand.Execute();
+
+        Assert.Equal("Нет разрешения на Bluetooth", vm.EndpointError);
+        Assert.True(vm.HasEndpointError);
+        Assert.Equal(2, vm.AvailableEndpoints.Count);
     }
 }

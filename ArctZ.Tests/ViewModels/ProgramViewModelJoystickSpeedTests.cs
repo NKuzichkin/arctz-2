@@ -13,7 +13,7 @@ public class ProgramViewModelJoystickSpeedTests
     {
         var transport = new FakeDeviceTransport();
         var storage = new FakeProgramStorage();
-        var connection = new ConnectionViewModel(transport, () => new FakeDeviceTransport(), new DeviceSessionFactory(MachineLimits.Default));
+        var connection = new ConnectionViewModel(transport, () => new FakeDeviceTransport(), new DeviceSessionFactory(MachineLimits.Default), new SingleRealDeviceEndpointProvider());
         var session = new FakeDeviceSession();
         connection.Session = session;
         var vm = new ProgramViewModel(connection, storage, new TrajectoryCompiler());

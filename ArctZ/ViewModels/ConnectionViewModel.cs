@@ -1,5 +1,6 @@
 using System;
 using System.Collections.ObjectModel;
+using System.Linq;
 using System.Reactive;
 using System.Reactive.Disposables.Fluent;
 using System.Reactive.Linq;
@@ -16,6 +17,8 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
     private readonly IDeviceTransport _realTransport;
     private readonly Func<IDeviceTransport> _createDemoTransport;
     private readonly IDeviceSessionFactory _sessionFactory;
+    private readonly IDeviceEndpointProvider _endpointProvider;
+    private static readonly ConnectionEndpoint DemoEndpoint = new("demo", "Демо", ConnectionEndpointKind.Demo);
     private IDisposable? _sentGCodeSubscription;
     private IMockDeviceControl? _currentMockControl;
     private const int MaxSentGCodeLines = 200;
@@ -44,6 +47,12 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
     // (ProgramViewModel.PlayAsync captures Connection.Session per step), so it
     // must be unavailable while a program is Running/Paused.
     [Reactive] private bool isPlaybackLocked;
+
+    [Reactive] private string? endpointError;
+
+    public bool HasEndpointError => !string.IsNullOrEmpty(EndpointError);
+
+    public bool IsDiscoverySupported => _realTransport.IsSupported && _endpointProvider.SupportsDiscovery;
 
     // Mirrors Session.DeviceStatus the same way ConnectionState mirrors
     // Session.ConnectionState — see the comment above for why a direct
@@ -102,6 +111,7 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
     public IEnhancedCommand<Unit> ConnectCommand { get; }
     public IEnhancedCommand<Unit> DisconnectCommand { get; }
     public IEnhancedCommand<Unit> ResetAlarmCommand { get; }
+    public IEnhancedCommand<Unit> RefreshEndpointsCommand { get; }
     public IEnhancedCommand<Unit> ToggleGCodeLogCommand { get; }
     public IEnhancedCommand<Unit> ToggleMockSettingsCommand { get; }
     public IEnhancedCommand<Unit> TriggerMockErrorCommand { get; }
@@ -110,19 +120,16 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
     public ConnectionViewModel(
         IDeviceTransport realTransport,
         Func<IDeviceTransport> createDemoTransport,
-        IDeviceSessionFactory sessionFactory)
+        IDeviceSessionFactory sessionFactory,
+        IDeviceEndpointProvider endpointProvider)
     {
         _realTransport = realTransport;
         _createDemoTransport = createDemoTransport;
         _sessionFactory = sessionFactory;
+        _endpointProvider = endpointProvider;
 
-        if (_realTransport.IsSupported)
-        {
-            AvailableEndpoints.Add(new ConnectionEndpoint("real", "Устройство", ConnectionEndpointKind.RealDevice));
-        }
-
-        AvailableEndpoints.Add(new ConnectionEndpoint("demo", "Демо", ConnectionEndpointKind.Demo));
-        SelectedEndpoint = AvailableEndpoints[0];
+        AvailableEndpoints.Add(DemoEndpoint);
+        SelectedEndpoint = _realTransport.IsSupported ? null : DemoEndpoint;
 
         var canConnect = this.WhenAnyValue(
             x => x.SelectedEndpoint,
@@ -140,6 +147,8 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
             .Enhance(text: "Отключить", name: "DisconnectCommand"));
         ResetAlarmCommand = Track(ReactiveCommand.CreateFromTask(ResetAlarmAsync)
             .Enhance(text: "Сброс аварии", name: "ResetAlarmCommand"));
+        RefreshEndpointsCommand = Track(ReactiveCommand.CreateFromTask(RefreshEndpointsAsync)
+            .Enhance(text: "Обновить список", name: "RefreshEndpointsCommand"));
         ToggleGCodeLogCommand = Track(ReactiveCommand.Create(() => { IsGCodeLogOpen = !IsGCodeLogOpen; })
             .Enhance(text: "Лог G-code", name: "ToggleGCodeLogCommand"));
         ToggleMockSettingsCommand = Track(ReactiveCommand.Create(() => { IsMockSettingsOpen = !IsMockSettingsOpen; })
@@ -203,8 +212,8 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
         // properties (no ObservableAsPropertyHelper) — re-raise their
         // INotifyPropertyChanged notifications whenever a dependency changes,
         // same intent as CommunityToolkit's [NotifyPropertyChangedFor] before.
-        this.WhenAnyValue(x => x.Session, x => x.ConnectionState, x => x.DeviceStatus, x => x.LastError, x => x.LastAlarmCode,
-                (s, cs, ds, le, ac) => (s, cs, ds, le, ac))
+        this.WhenAnyValue(x => x.Session, x => x.ConnectionState, x => x.DeviceStatus, x => x.LastError, x => x.LastAlarmCode, x => x.EndpointError,
+                (s, cs, ds, le, ac, ee) => (s, cs, ds, le, ac, ee))
             .Subscribe(_ =>
             {
                 this.RaisePropertyChanged(nameof(IsConnectionModalVisible));
@@ -214,12 +223,15 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
                 this.RaisePropertyChanged(nameof(PositionLabel));
                 this.RaisePropertyChanged(nameof(HasError));
                 this.RaisePropertyChanged(nameof(ErrorMessage));
+                this.RaisePropertyChanged(nameof(HasEndpointError));
             })
             .DisposeWith(Disposables);
 
         this.WhenAnyValue(x => x.MockResponseDelayMs)
             .Subscribe(ms => _currentMockControl?.SetResponseDelay(TimeSpan.FromMilliseconds(ms)))
             .DisposeWith(Disposables);
+
+        RefreshEndpointsCommand.Execute().Subscribe().DisposeWith(Disposables);
     }
 
     private async Task ConnectAsync()
@@ -316,5 +328,42 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
         await Session.ResetAlarmAsync();
         LastAlarmCode = null;
         LastError = null;
+    }
+
+    private async Task RefreshEndpointsAsync()
+    {
+        if (!_realTransport.IsSupported)
+        {
+            return;
+        }
+
+        var previousSelectedId = SelectedEndpoint?.Id;
+
+        try
+        {
+            var known = await _endpointProvider.GetKnownEndpointsAsync();
+            EndpointError = null;
+
+            var realEndpoints = known
+                .Select(info => new ConnectionEndpoint(info.Id, info.Name, ConnectionEndpointKind.RealDevice, info.IsPaired))
+                .ToList();
+
+            AvailableEndpoints.Clear();
+            foreach (var endpoint in realEndpoints)
+            {
+                AvailableEndpoints.Add(endpoint);
+            }
+
+            AvailableEndpoints.Add(DemoEndpoint);
+
+            SelectedEndpoint =
+                AvailableEndpoints.FirstOrDefault(e => e.Id == previousSelectedId) ??
+                realEndpoints.FirstOrDefault() ??
+                DemoEndpoint;
+        }
+        catch (Exception ex)
+        {
+            EndpointError = ex.Message;
+        }
     }
 }

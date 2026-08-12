@@ -34,7 +34,8 @@ public class DataTypeViewLocatorTests
         var vm = new ConnectionViewModel(
             new FakeDeviceTransport(),
             () => new FakeDeviceTransport(),
-            new DeviceSessionFactory(MachineLimits.Default));
+            new DeviceSessionFactory(MachineLimits.Default),
+            new SingleRealDeviceEndpointProvider());
 
         Assert.True(locator.Match(vm));
         Assert.IsType<ConnectionView>(locator.Build(vm));

@@ -35,7 +35,7 @@ public static class ScreenCatalog
         new ScreenDefinition(
             "connection",
             "Модалка подключения",
-            Setup: _ => Task.CompletedTask,
+            Setup: vm => vm.Connection.RefreshEndpointsCommand.Execute().ToTask(),
             Teardown: _ => Task.CompletedTask),
 
         new ScreenDefinition(
