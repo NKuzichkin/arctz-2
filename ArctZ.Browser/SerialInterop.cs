@@ -16,7 +16,9 @@ internal static partial class SerialInterop
     /// <summary>Must be awaited once, before any other member of this class is used.</summary>
     public static async Task InitializeAsync()
     {
-        await JSHost.ImportAsync(ModuleName, "./serial.js");
+        // Path is relative to _framework/ (where dotnet.js resides), so ../ navigates back to app root
+        // where serial.js is actually served (http://localhost:5235/serial.js, not _framework/serial.js).
+        await JSHost.ImportAsync(ModuleName, "../serial.js");
     }
 
     [JSImport("isSupported", ModuleName)]
