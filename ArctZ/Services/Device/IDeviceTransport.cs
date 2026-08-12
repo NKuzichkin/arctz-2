@@ -9,6 +9,12 @@ public interface IDeviceTransport
 {
     bool IsConnected { get; }
 
+    /// <summary>
+    /// Whether this transport can actually run in the current environment (e.g. false in a
+    /// browser without Web Serial support). Platforms that are always usable don't override this.
+    /// </summary>
+    bool IsSupported => true;
+
     /// <summary>Raised for every line the device sends, newline already stripped.</summary>
     event Action<string>? LineReceived;
 

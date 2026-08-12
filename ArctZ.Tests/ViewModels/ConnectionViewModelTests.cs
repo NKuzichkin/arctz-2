@@ -14,7 +14,7 @@ public class ConnectionViewModelTests
         new(realTransport, () => demoTransport ?? new FakeDeviceTransport(), new DeviceSessionFactory(MachineLimits.Default));
 
     [Fact]
-    public void Constructor_DefaultsToFirstEndpointAndListsRealAndDemo()
+    public void Constructor_RealTransportSupported_ListsRealAndDemoAndDoesNotFlagUnsupported()
     {
         var vm = CreateVm(new FakeDeviceTransport());
 
@@ -22,6 +22,19 @@ public class ConnectionViewModelTests
         Assert.Contains(vm.AvailableEndpoints, e => e.Kind == ConnectionEndpointKind.RealDevice);
         Assert.Contains(vm.AvailableEndpoints, e => e.Kind == ConnectionEndpointKind.Demo);
         Assert.Equal(ConnectionEndpointKind.RealDevice, vm.SelectedEndpoint!.Kind);
+        Assert.False(vm.IsRealDeviceUnsupported);
+    }
+
+    [Fact]
+    public void Constructor_RealTransportUnsupported_OnlyListsDemoAndFlagsUnsupported()
+    {
+        var realTransport = new FakeDeviceTransport { IsSupported = false };
+        var vm = CreateVm(realTransport);
+
+        Assert.Single(vm.AvailableEndpoints);
+        Assert.Equal(ConnectionEndpointKind.Demo, vm.AvailableEndpoints[0].Kind);
+        Assert.Equal(ConnectionEndpointKind.Demo, vm.SelectedEndpoint!.Kind);
+        Assert.True(vm.IsRealDeviceUnsupported);
     }
 
     [Fact]

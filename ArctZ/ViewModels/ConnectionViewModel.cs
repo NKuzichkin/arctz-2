@@ -93,11 +93,9 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
         ? $"X {status.WPos.X:0.00}  Y {status.WPos.Y:0.00}  Z {status.WPos.Z:0.00}  A {status.WPos.A:0.00}"
         : "—";
 
-    public ObservableCollection<ConnectionEndpoint> AvailableEndpoints { get; } = new()
-    {
-        new ConnectionEndpoint("real", "Устройство", ConnectionEndpointKind.RealDevice),
-        new ConnectionEndpoint("demo", "Демо", ConnectionEndpointKind.Demo),
-    };
+    public ObservableCollection<ConnectionEndpoint> AvailableEndpoints { get; } = new();
+
+    public bool IsRealDeviceUnsupported => !_realTransport.IsSupported;
 
     public ObservableCollection<string> SentGCodeLines { get; } = new();
 
@@ -117,6 +115,13 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
         _realTransport = realTransport;
         _createDemoTransport = createDemoTransport;
         _sessionFactory = sessionFactory;
+
+        if (_realTransport.IsSupported)
+        {
+            AvailableEndpoints.Add(new ConnectionEndpoint("real", "Устройство", ConnectionEndpointKind.RealDevice));
+        }
+
+        AvailableEndpoints.Add(new ConnectionEndpoint("demo", "Демо", ConnectionEndpointKind.Demo));
         SelectedEndpoint = AvailableEndpoints[0];
 
         var canConnect = this.WhenAnyValue(

@@ -11,6 +11,7 @@ public sealed class FakeDeviceTransport : IDeviceTransport
     public List<string> SentLines { get; } = new();
     public List<byte> SentRawBytes { get; } = new();
     public bool IsConnected { get; private set; }
+    public bool IsSupported { get; set; } = true;
 
     /// <summary>Number of upcoming ConnectAsync calls that should throw before one succeeds — used to simulate flaky reconnects.</summary>
     public int ConnectFailuresRemaining { get; set; }
