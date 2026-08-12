@@ -455,3 +455,9 @@ $RECYCLE.BIN/
 
 # Local git worktrees (agent-created isolated workspaces)
 .worktrees/
+
+# Generated PDF export of docs/user-guide.md (regenerate via docs/export-user-guide-pdf.ps1)
+docs/user-guide.pdf
+
+# Dependencies the PDF export script installs on first run (~140 MB)
+docs/tools/pdf-export/node_modules/

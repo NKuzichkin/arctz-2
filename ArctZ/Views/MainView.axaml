@@ -100,7 +100,9 @@
                     Padding="12,10">
                 <StackPanel x:Name="HeaderPanel" Spacing="8">
                     <Grid ColumnDefinitions="Auto,*" VerticalAlignment="Center">
-                        <Button Grid.Column="0" Classes="icon-action" Content="☰" Command="{Binding ToggleSideMenuCommand}" Margin="0,0,8,0" />
+                        <Button Grid.Column="0" Classes="icon-action" Command="{Binding ToggleSideMenuCommand}" Margin="0,0,8,0">
+                            <materialIcons:MaterialIcon Kind="Menu" />
+                        </Button>
                         <Border x:Name="HeaderStatusRow" Grid.Column="1" Background="{StaticResource HudPanelElevatedBrush}" BorderBrush="{StaticResource HudBorderStrongBrush}"
                                 BorderThickness="1" Padding="10,6">
                             <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" VerticalAlignment="Center">
@@ -109,10 +111,7 @@
                                 <TextBlock Grid.Column="2" Classes="telemetry" FontSize="14" VerticalAlignment="Center" Text="{Binding StatusLabel}" />
                                 <Border Grid.Column="3" Classes="header-divider" />
                                 <Button Grid.Column="4" Classes="icon-action" Command="{Binding Connection.DisconnectCommand}" ToolTip.Tip="Отключить">
-                                    <Path Width="18" Height="18" Stretch="Uniform"
-                                          Stroke="{DynamicResource HudTextPrimaryBrush}" StrokeThickness="2"
-                                          StrokeLineCap="Round" StrokeJoin="Round"
-                                          Data="M18.36,6.64 A9,9 0 1 1 5.64,6.64 M12,2 L12,12" />
+                                    <materialIcons:MaterialIcon Kind="PowerPlugOff" />
                                 </Button>
                             </Grid>
                         </Border>
@@ -120,9 +119,24 @@
                     <ScrollViewer x:Name="HeaderActionsScroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
                                   IsEnabled="{Binding !IsSideMenuOpen}">
                         <StackPanel x:Name="HeaderActions" Orientation="Horizontal" Spacing="8">
-                            <Button Classes="primary header-action" Content="Пуск" Command="{Binding PlayCommand}" />
-                            <Button Classes="header-action" Content="Пауза" Command="{Binding PauseCommand}" />
-                            <Button Classes="danger header-action" Content="Стоп" Command="{Binding StopCommand}" />
+                            <Button Classes="primary header-action" Command="{Binding PlayCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <materialIcons:MaterialIcon Kind="Play" Width="16" Height="16" VerticalAlignment="Center" />
+                                    <TextBlock Text="Пуск" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                            <Button Classes="header-action" Command="{Binding PauseCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <materialIcons:MaterialIcon Kind="Pause" Width="16" Height="16" VerticalAlignment="Center" />
+                                    <TextBlock Text="Пауза" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                            <Button Classes="danger header-action" Command="{Binding StopCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <materialIcons:MaterialIcon Kind="Stop" Width="16" Height="16" VerticalAlignment="Center" />
+                                    <TextBlock Text="Стоп" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
                         </StackPanel>
                     </ScrollViewer>
                 </StackPanel>
@@ -151,14 +165,35 @@
                                 <Grid ColumnDefinitions="*,Auto">
                                     <TextBlock Grid.Column="0" Classes="telemetry" FontSize="16" VerticalAlignment="Center"
                                                TextTrimming="CharacterEllipsis" Text="{Binding ProgramName}" />
-                                    <Button Grid.Column="1" Content="⋮" Padding="8,2" VerticalAlignment="Center">
+                                    <Button Grid.Column="1" Padding="8,2" VerticalAlignment="Center">
+                                        <materialIcons:MaterialIcon Kind="DotsVertical" />
                                         <Button.Flyout>
                                             <MenuFlyout>
-                                                <MenuItem Header="Переименовать" Command="{Binding RenameProgramCommand}" />
-                                                <MenuItem Header="Новая" Command="{Binding NewProgramCommand}" />
-                                                <MenuItem Header="Сохранить" Command="{Binding SaveProgramCommand}" />
-                                                <MenuItem Header="Настройки завершения" Command="{Binding EditCompletionSettingsCommand}" />
-                                                <MenuItem Header="Библиотека" Command="{Binding OpenLibraryCommand}" />
+                                                <MenuItem Header="Переименовать" Command="{Binding RenameProgramCommand}">
+                                                    <MenuItem.Icon>
+                                                        <materialIcons:MaterialIcon Kind="Pencil" />
+                                                    </MenuItem.Icon>
+                                                </MenuItem>
+                                                <MenuItem Header="Новая" Command="{Binding NewProgramCommand}">
+                                                    <MenuItem.Icon>
+                                                        <materialIcons:MaterialIcon Kind="FileDocumentPlusOutline" />
+                                                    </MenuItem.Icon>
+                                                </MenuItem>
+                                                <MenuItem Header="Сохранить" Command="{Binding SaveProgramCommand}">
+                                                    <MenuItem.Icon>
+                                                        <materialIcons:MaterialIcon Kind="ContentSave" />
+                                                    </MenuItem.Icon>
+                                                </MenuItem>
+                                                <MenuItem Header="Настройки завершения" Command="{Binding EditCompletionSettingsCommand}">
+                                                    <MenuItem.Icon>
+                                                        <materialIcons:MaterialIcon Kind="FlagCheckered" />
+                                                    </MenuItem.Icon>
+                                                </MenuItem>
+                                                <MenuItem Header="Библиотека" Command="{Binding OpenLibraryCommand}">
+                                                    <MenuItem.Icon>
+                                                        <materialIcons:MaterialIcon Kind="Bookshelf" />
+                                                    </MenuItem.Icon>
+                                                </MenuItem>
                                             </MenuFlyout>
                                         </Button.Flyout>
                                     </Button>
@@ -181,17 +216,41 @@
                                                     <Button.Flyout>
                                                         <MenuFlyout>
                                                             <MenuItem Header="На точку" CommandParameter="{Binding}"
-                                                                      Command="{Binding ((vm:ProgramViewModel)DataContext).MoveMachineToKeyPointCommand, ElementName=KeyPointsList}" />
+                                                                      Command="{Binding ((vm:ProgramViewModel)DataContext).MoveMachineToKeyPointCommand, ElementName=KeyPointsList}">
+                                                                <MenuItem.Icon>
+                                                                    <materialIcons:MaterialIcon Kind="Crosshairs" />
+                                                                </MenuItem.Icon>
+                                                            </MenuItem>
                                                             <MenuItem Header="Изменить" CommandParameter="{Binding}"
-                                                                      Command="{Binding ((vm:ProgramViewModel)DataContext).EditKeyPointCommand, ElementName=KeyPointsList}" />
+                                                                      Command="{Binding ((vm:ProgramViewModel)DataContext).EditKeyPointCommand, ElementName=KeyPointsList}">
+                                                                <MenuItem.Icon>
+                                                                    <materialIcons:MaterialIcon Kind="Pencil" />
+                                                                </MenuItem.Icon>
+                                                            </MenuItem>
                                                             <MenuItem Header="Из машины" CommandParameter="{Binding}"
-                                                                      Command="{Binding ((vm:ProgramViewModel)DataContext).FillKeyPointFromCurrentPositionCommand, ElementName=KeyPointsList}" />
+                                                                      Command="{Binding ((vm:ProgramViewModel)DataContext).FillKeyPointFromCurrentPositionCommand, ElementName=KeyPointsList}">
+                                                                <MenuItem.Icon>
+                                                                    <materialIcons:MaterialIcon Kind="Import" />
+                                                                </MenuItem.Icon>
+                                                            </MenuItem>
                                                             <MenuItem Header="Переместить вверх" CommandParameter="{Binding}"
-                                                                      Command="{Binding ((vm:ProgramViewModel)DataContext).MoveKeyPointUpCommand, ElementName=KeyPointsList}" />
+                                                                      Command="{Binding ((vm:ProgramViewModel)DataContext).MoveKeyPointUpCommand, ElementName=KeyPointsList}">
+                                                                <MenuItem.Icon>
+                                                                    <materialIcons:MaterialIcon Kind="ArrowUp" />
+                                                                </MenuItem.Icon>
+                                                            </MenuItem>
                                                             <MenuItem Header="Переместить вниз" CommandParameter="{Binding}"
-                                                                      Command="{Binding ((vm:ProgramViewModel)DataContext).MoveKeyPointDownCommand, ElementName=KeyPointsList}" />
+                                                                      Command="{Binding ((vm:ProgramViewModel)DataContext).MoveKeyPointDownCommand, ElementName=KeyPointsList}">
+                                                                <MenuItem.Icon>
+                                                                    <materialIcons:MaterialIcon Kind="ArrowDown" />
+                                                                </MenuItem.Icon>
+                                                            </MenuItem>
                                                             <MenuItem Header="Удалить" CommandParameter="{Binding}"
-                                                                      Command="{Binding ((vm:ProgramViewModel)DataContext).RemoveKeyPointCommand, ElementName=KeyPointsList}" />
+                                                                      Command="{Binding ((vm:ProgramViewModel)DataContext).RemoveKeyPointCommand, ElementName=KeyPointsList}">
+                                                                <MenuItem.Icon>
+                                                                    <materialIcons:MaterialIcon Kind="TrashCanOutline" />
+                                                                </MenuItem.Icon>
+                                                            </MenuItem>
                                                         </MenuFlyout>
                                                     </Button.Flyout>
                                                     <TextBlock Classes="telemetry" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
@@ -279,8 +338,18 @@
                                 <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding DwellSeconds}" />
                             </Grid>
                             <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,6,0,0">
-                                <Button Content="Отмена" Command="{Binding CancelCommand}" />
-                                <Button Classes="primary" Content="Сохранить" Command="{Binding SaveCommand}" />
+                                <Button Command="{Binding CancelCommand}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <materialIcons:MaterialIcon Kind="Close" Width="16" Height="16" VerticalAlignment="Center" />
+                                        <TextBlock Text="Отмена" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Classes="primary" Command="{Binding SaveCommand}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <materialIcons:MaterialIcon Kind="ContentSave" Width="16" Height="16" VerticalAlignment="Center" />
+                                        <TextBlock Text="Сохранить" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
                             </StackPanel>
                         </StackPanel>
                     </Border>
@@ -310,8 +379,18 @@
                                       IsChecked="{Binding ReturnToStartOnFinish}" />
 
                             <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,6,0,0">
-                                <Button Content="Отмена" Command="{Binding CancelCommand}" />
-                                <Button Classes="primary" Content="Сохранить" Command="{Binding SaveCommand}" />
+                                <Button Command="{Binding CancelCommand}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <materialIcons:MaterialIcon Kind="Close" Width="16" Height="16" VerticalAlignment="Center" />
+                                        <TextBlock Text="Отмена" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Classes="primary" Command="{Binding SaveCommand}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <materialIcons:MaterialIcon Kind="ContentSave" Width="16" Height="16" VerticalAlignment="Center" />
+                                        <TextBlock Text="Сохранить" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
                             </StackPanel>
                         </StackPanel>
                     </Border>
@@ -326,8 +405,18 @@
                             <TextBlock Classes="section-heading" Text="ИМЯ ПРОГРАММЫ" />
                             <TextBox Text="{Binding Name}" PlaceholderText="Имя программы" />
                             <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
-                                <Button Content="Отмена" Command="{Binding ((vm:ProgramViewModel)DataContext).CancelRenameCommand, ElementName=RootPanel}" />
-                                <Button Classes="primary" Content="Сохранить" Command="{Binding ((vm:ProgramViewModel)DataContext).ConfirmRenameCommand, ElementName=RootPanel}" />
+                                <Button Command="{Binding ((vm:ProgramViewModel)DataContext).CancelRenameCommand, ElementName=RootPanel}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <materialIcons:MaterialIcon Kind="Close" Width="16" Height="16" VerticalAlignment="Center" />
+                                        <TextBlock Text="Отмена" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Classes="primary" Command="{Binding ((vm:ProgramViewModel)DataContext).ConfirmRenameCommand, ElementName=RootPanel}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <materialIcons:MaterialIcon Kind="ContentSave" Width="16" Height="16" VerticalAlignment="Center" />
+                                        <TextBlock Text="Сохранить" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
                             </StackPanel>
                         </StackPanel>
                     </Border>
@@ -341,8 +430,18 @@
                         <StackPanel Spacing="14">
                             <TextBlock Text="{Binding Message}" TextWrapping="Wrap" />
                             <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
-                                <Button Content="Нет" Command="{Binding ((vm:ProgramViewModel)DataContext).ConfirmNoCommand, ElementName=RootPanel}" />
-                                <Button Classes="primary" Content="Да" Command="{Binding ((vm:ProgramViewModel)DataContext).ConfirmYesCommand, ElementName=RootPanel}" />
+                                <Button Command="{Binding ((vm:ProgramViewModel)DataContext).ConfirmNoCommand, ElementName=RootPanel}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <materialIcons:MaterialIcon Kind="Close" Width="16" Height="16" VerticalAlignment="Center" />
+                                        <TextBlock Text="Нет" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Classes="primary" Command="{Binding ((vm:ProgramViewModel)DataContext).ConfirmYesCommand, ElementName=RootPanel}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <materialIcons:MaterialIcon Kind="Check" Width="16" Height="16" VerticalAlignment="Center" />
+                                        <TextBlock Text="Да" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
                             </StackPanel>
                         </StackPanel>
                     </Border>
@@ -355,7 +454,9 @@
                         <DockPanel>
                             <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
                                 <TextBlock Grid.Column="0" Classes="section-heading" Text="БИБЛИОТЕКА" VerticalAlignment="Center" />
-                                <Button Grid.Column="1" Content="✕" Padding="8,2" Command="{Binding CloseLibraryCommand}" />
+                                <Button Grid.Column="1" Padding="8,2" Command="{Binding CloseLibraryCommand}">
+                                    <materialIcons:MaterialIcon Kind="Close" Width="16" Height="16" />
+                                </Button>
                             </Grid>
                             <Grid DockPanel.Dock="Top" ColumnDefinitions="*,70,70" ColumnSpacing="10" Margin="8,0,8,4">
                                 <TextBlock Grid.Column="0" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource HudTextSecondaryBrush}" Text="Название" />
@@ -389,13 +490,25 @@
                         <DockPanel>
                             <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,14">
                                 <TextBlock Grid.Column="0" Classes="section-heading" Text="МЕНЮ" VerticalAlignment="Center" />
-                                <Button Grid.Column="1" Content="✕" Padding="8,2" Command="{Binding CloseSideMenuCommand}" />
+                                <Button Grid.Column="1" Padding="8,2" Command="{Binding CloseSideMenuCommand}">
+                                    <materialIcons:MaterialIcon Kind="Close" Width="16" Height="16" />
+                                </Button>
                             </Grid>
                             <StackPanel Spacing="8">
                                 <Button Classes="header-action" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
-                                        Content="Лог G-code" Command="{Binding OpenGCodeLogCommand}" />
+                                        Command="{Binding OpenGCodeLogCommand}">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <materialIcons:MaterialIcon Kind="ScriptTextOutline" Width="16" Height="16" VerticalAlignment="Center" />
+                                        <TextBlock Text="Лог G-code" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
                                 <Button Classes="header-action" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
-                                        Content="Настройки мока" Command="{Binding OpenMockSettingsCommand}" />
+                                        Command="{Binding OpenMockSettingsCommand}">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <materialIcons:MaterialIcon Kind="Flask" Width="16" Height="16" VerticalAlignment="Center" />
+                                        <TextBlock Text="Настройки мока" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
                             </StackPanel>
                         </DockPanel>
                     </Border>
@@ -408,7 +521,9 @@
                         <DockPanel>
                             <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
                                 <TextBlock Grid.Column="0" Classes="section-heading" Text="ЛОГ G-CODE" VerticalAlignment="Center" />
-                                <Button Grid.Column="1" Content="✕" Padding="8,2" Command="{Binding Connection.ToggleGCodeLogCommand}" />
+                                <Button Grid.Column="1" Padding="8,2" Command="{Binding Connection.ToggleGCodeLogCommand}">
+                                    <materialIcons:MaterialIcon Kind="Close" Width="16" Height="16" />
+                                </Button>
                             </Grid>
                             <ListBox x:Name="GCodeLogList" ItemsSource="{Binding Connection.SentGCodeLines}">
                                 <ListBox.Styles>
@@ -430,12 +545,22 @@
                         <StackPanel Spacing="14">
                             <Grid ColumnDefinitions="*,Auto">
                                 <TextBlock Grid.Column="0" Classes="section-heading" Text="НАСТРОЙКИ МОКА" VerticalAlignment="Center" />
-                                <Button Grid.Column="1" Content="✕" Padding="8,2" Command="{Binding Connection.ToggleMockSettingsCommand}" />
+                                <Button Grid.Column="1" Padding="8,2" Command="{Binding Connection.ToggleMockSettingsCommand}">
+                                    <materialIcons:MaterialIcon Kind="Close" Width="16" Height="16" />
+                                </Button>
                             </Grid>
-                            <Button Content="Смоделировать ошибку" Command="{Binding Connection.TriggerMockErrorCommand}"
-                                    HorizontalAlignment="Stretch" />
-                            <Button Content="Смоделировать аварию" Command="{Binding Connection.TriggerMockAlarmCommand}"
-                                    HorizontalAlignment="Stretch" />
+                            <Button Command="{Binding Connection.TriggerMockErrorCommand}" HorizontalAlignment="Stretch">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <materialIcons:MaterialIcon Kind="AlertCircleOutline" Width="16" Height="16" VerticalAlignment="Center" />
+                                    <TextBlock Text="Смоделировать ошибку" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                            <Button Command="{Binding Connection.TriggerMockAlarmCommand}" HorizontalAlignment="Stretch">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <materialIcons:MaterialIcon Kind="AlertOctagon" Width="16" Height="16" VerticalAlignment="Center" />
+                                    <TextBlock Text="Смоделировать аварию" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
                             <StackPanel Spacing="4">
                                 <TextBlock Text="{Binding Connection.MockResponseDelayMs, StringFormat='Задержка ответа: {0} мс'}" />
                                 <Slider Minimum="0" Maximum="5000" TickFrequency="250" IsSnapToTickEnabled="True"
@@ -470,8 +595,12 @@
                               SelectedItem="{Binding SelectedEndpoint}"
                               DisplayMemberBinding="{Binding DisplayName}"
                               HorizontalAlignment="Stretch" />
-                    <Button Classes="primary" Content="Подключить" Command="{Binding ConnectCommand}"
-                            HorizontalAlignment="Stretch" />
+                    <Button Classes="primary" Command="{Binding ConnectCommand}" HorizontalAlignment="Stretch">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <materialIcons:MaterialIcon Kind="Bluetooth" Width="16" Height="16" VerticalAlignment="Center" />
+                            <TextBlock Text="Подключить" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
             </Border>
         </Border>
@@ -484,8 +613,12 @@
                 <StackPanel Spacing="14">
                     <TextBlock Classes="section-heading" Text="АВАРИЯ" />
                     <TextBlock TextWrapping="Wrap" Text="{Binding ErrorMessage}" />
-                    <Button Classes="danger" Content="Сброс аварии" Command="{Binding ResetAlarmCommand}"
-                            HorizontalAlignment="Stretch" />
+                    <Button Classes="danger" Command="{Binding ResetAlarmCommand}" HorizontalAlignment="Stretch">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <materialIcons:MaterialIcon Kind="Restore" Width="16" Height="16" VerticalAlignment="Center" />
+                            <TextBlock Text="Сброс аварии" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
             </Border>
         </Border>
