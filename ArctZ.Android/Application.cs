@@ -24,6 +24,7 @@ namespace ArctZ.Android
             var permissions = new AndroidPermissions();
             services.AddSingleton(permissions);
             services.AddSingleton<IDeviceTransport>(new AndroidBluetoothTransport(permissions));
+            services.AddSingleton<IDeviceEndpointProvider>(new AndroidBluetoothEndpointProvider(permissions));
             services.AddSingleton<IProgramStorage>(_ => new JsonFileProgramStorage(
                 Path.Combine(global::Android.App.Application.Context.FilesDir!.AbsolutePath, "ArctZ", "Programs")));
             App.Services = services.BuildServiceProvider();
