@@ -54,6 +54,30 @@ public sealed class AndroidBluetoothEndpointProvider : IDeviceEndpointProvider
             return () => { };
         }
 
+        // StartDiscovery() требует BLUETOOTH_SCAN/ACCESS_FINE_LOCATION, а сам метод
+        // Observable.Create синхронный — запрос разрешения и остальная работа уходят
+        // в фоновую задачу, отмена подписки коммуницируется через cts.
+        var cts = new CancellationTokenSource();
+        _ = StartDiscoveryAsync(observer, adapter, cts.Token);
+        return () => cts.Cancel();
+    });
+
+    private async Task StartDiscoveryAsync(IObserver<DeviceEndpointInfo> observer, BluetoothAdapter adapter, CancellationToken cancellationToken)
+    {
+        var granted = await _permissions.RequestAsync(ScanPermissions()).ConfigureAwait(false);
+        if (cancellationToken.IsCancellationRequested)
+        {
+            // подписчик уже отписался, пока висел запрос разрешения — ни регистрировать
+            // receiver, ни стартовать скан не нужно.
+            return;
+        }
+
+        if (!granted)
+        {
+            observer.OnError(new InvalidOperationException("Нет разрешения на поиск Bluetooth-устройств."));
+            return;
+        }
+
         var context = global::Android.App.Application.Context;
         var receiver = new DiscoveryReceiver(observer);
         var filter = new IntentFilter();
@@ -69,14 +93,36 @@ public sealed class AndroidBluetoothEndpointProvider : IDeviceEndpointProvider
             context.RegisterReceiver(receiver, filter);
         }
 
-        adapter.StartDiscovery();
+        if (cancellationToken.IsCancellationRequested)
+        {
+            context.UnregisterReceiver(receiver);
+            return;
+        }
 
-        return () =>
+        try
+        {
+            adapter.StartDiscovery();
+        }
+        catch (Exception ex)
+        {
+            // Приводим сюда даже случаи, которые ScanPermissions() не отловил (например,
+            // платформенный отказ) — receiver не должен остаться зарегистрированным навсегда.
+            context.UnregisterReceiver(receiver);
+            observer.OnError(ex);
+            return;
+        }
+
+        // Срабатывает либо на Dispose() подписки, либо на естественное завершение скана:
+        // DiscoveryReceiver.OnReceive вызывает observer.OnCompleted(), Rx автоматически
+        // диспозит подписку (см. Observable.Create), что вызывает cts.Cancel() и этот колбэк.
+        // CancellationTokenSource гарантирует однократный вызов колбэка независимо от того,
+        // сколько раз был вызван Cancel().
+        cancellationToken.Register(() =>
         {
             adapter.CancelDiscovery();
             context.UnregisterReceiver(receiver);
-        };
-    });
+        });
+    }
 
     public async Task<bool> PairAsync(string deviceId, CancellationToken cancellationToken = default)
     {
@@ -119,6 +165,13 @@ public sealed class AndroidBluetoothEndpointProvider : IDeviceEndpointProvider
         OperatingSystem.IsAndroidVersionAtLeast(31)
             ? new[] { "android.permission.BLUETOOTH_CONNECT" }
             : new[] { "android.permission.BLUETOOTH" };
+
+    // На API 31+ startDiscovery() требует BLUETOOTH_SCAN; на API ≤30 классический
+    // discovery без ACCESS_FINE_LOCATION не отдаёт устройств.
+    private static string[] ScanPermissions() =>
+        OperatingSystem.IsAndroidVersionAtLeast(31)
+            ? new[] { "android.permission.BLUETOOTH_SCAN" }
+            : new[] { "android.permission.ACCESS_FINE_LOCATION" };
 
     private sealed class DiscoveryReceiver : BroadcastReceiver
     {
