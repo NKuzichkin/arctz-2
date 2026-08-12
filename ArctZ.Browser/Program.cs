@@ -11,15 +11,17 @@ using System.Threading.Tasks;
 
 internal sealed partial class Program
 {
-    private static Task Main(string[] args)
+    private static async Task Main(string[] args)
     {
+        await SerialInterop.InitializeAsync();
+
         var services = new ServiceCollection();
         services.AddArctZCore();
-        services.AddSingleton<IDeviceTransport, NotSupportedDeviceTransport>();
+        services.AddSingleton<IDeviceTransport, BrowserSerialTransport>();
         services.AddSingleton<IProgramStorage, InMemoryProgramStorage>();
         App.Services = services.BuildServiceProvider();
 
-        return BuildAvaloniaApp()
+        await BuildAvaloniaApp()
             .WithInterFont()
             .UseReactiveUI(b => b.WithAvalonia())
 #if DEBUG

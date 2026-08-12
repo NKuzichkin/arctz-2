@@ -10,4 +10,10 @@ const dotnetRuntime = await dotnet
 
 const config = dotnetRuntime.getConfig();
 
+// serial.js (imported from C# via JSHost.ImportAsync in SerialInterop) calls back
+// into .NET through this global — it has no other way to reach the assembly's
+// [JSExport] methods since it isn't itself loaded through the dotnet runtime's
+// module resolution.
+globalThis.__arctzSerialExports = await dotnetRuntime.getAssemblyExports(config.mainAssemblyName);
+
 await dotnetRuntime.runMain(config.mainAssemblyName, [globalThis.location.href]);
