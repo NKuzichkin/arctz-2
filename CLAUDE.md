@@ -21,8 +21,13 @@ dotnet build ArctZ.Desktop/ArctZ.Desktop.csproj
 dotnet run --project ArctZ.Desktop/ArctZ.Desktop.csproj
 
 dotnet build ArctZ.Browser/ArctZ.Browser.csproj
-dotnet run --project ArctZ.Browser/ArctZ.Browser.csproj
+DOTNET_USE_POLLING_FILE_WATCHER=1 dotnet run --project ArctZ.Browser/ArctZ.Browser.csproj
 ```
+
+Browser (WASM) build requirements:
+- The `wasm-tools` workload is required (`dotnet workload install wasm-tools`). Without it the `browser-wasm` RID never gets built and `dotnet run` fails with `The application to execute does not exist: ...\browser-wasm\ArctZ.Browser.dll`.
+- Do **not** work around a failing native link with `-p:WasmBuildNative=false`. It builds fine but produces an app that dies at startup with `DllNotFoundException: libSkiaSharp`, because Avalonia's Skia/HarfBuzz native assets only reach the app through that link step. `ArctZ.Browser.csproj` instead relocates just this project's `obj/` to a local disk when the checkout is on drive `Z:` — see the comment there for why.
+- `DOTNET_USE_POLLING_FILE_WATCHER=1` is needed when running from drive `Z:`: the VirtualBox shared folder does not deliver native filesystem events, and the static-web-assets watcher then recurses until the host process dies with a stack overflow right after printing its `App url:` lines.
 
 Android/iOS build requirements (already set up on this machine):
 - `android` and `ios` .NET workloads installed (`dotnet workload install android ios`).

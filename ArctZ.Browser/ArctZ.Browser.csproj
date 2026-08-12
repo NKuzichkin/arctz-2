@@ -4,6 +4,14 @@
     <OutputType>Exe</OutputType>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Nullable>enable</Nullable>
+    <!-- The WASM native link step (emcc -> llvm-objcopy) rewrites dotnet.native.wasm
+         in place, which hangs indefinitely when the intermediate directory lives on
+         the VirtualBox shared folder this repo is checked out to on the dev machine
+         (drive Z:). Keeping only this project's obj/ on a local disk lets emcc link
+         SkiaSharp/HarfBuzz in; without it the app loads and then dies with
+         "DllNotFoundException: libSkiaSharp". Scoped to Z: so other machines and CI,
+         where the checkout is on a normal local disk, keep the default obj/ layout. -->
+    <IntermediateOutputPath Condition="$(MSBuildProjectDirectory.StartsWith('Z:'))">C:\Temp\arctz-browser-obj\</IntermediateOutputPath>
   </PropertyGroup>
 
   <ItemGroup>
