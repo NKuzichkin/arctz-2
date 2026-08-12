@@ -24,6 +24,8 @@ public sealed class LoggingDeviceTransport : IDeviceTransport
 
     public bool IsConnected => _inner.IsConnected;
 
+    public bool IsSupported => _inner.IsSupported;
+
     public event Action<string>? LineReceived
     {
         add => _inner.LineReceived += value;

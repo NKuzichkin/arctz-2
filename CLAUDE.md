@@ -21,6 +21,9 @@ dotnet build ArctZ.Desktop/ArctZ.Desktop.csproj
 dotnet run --project ArctZ.Desktop/ArctZ.Desktop.csproj
 
 dotnet build ArctZ.Browser/ArctZ.Browser.csproj
+# PowerShell (the shell used on this machine):
+$env:DOTNET_USE_POLLING_FILE_WATCHER = "1"; dotnet run --project ArctZ.Browser/ArctZ.Browser.csproj
+# bash/sh equivalent:
 DOTNET_USE_POLLING_FILE_WATCHER=1 dotnet run --project ArctZ.Browser/ArctZ.Browser.csproj
 ```
 

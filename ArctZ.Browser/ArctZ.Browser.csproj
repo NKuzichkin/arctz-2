@@ -10,8 +10,19 @@
          (drive Z:). Keeping only this project's obj/ on a local disk lets emcc link
          SkiaSharp/HarfBuzz in; without it the app loads and then dies with
          "DllNotFoundException: libSkiaSharp". Scoped to Z: so other machines and CI,
-         where the checkout is on a normal local disk, keep the default obj/ layout. -->
-    <IntermediateOutputPath Condition="$(MSBuildProjectDirectory.StartsWith('Z:'))">C:\Temp\arctz-browser-obj\</IntermediateOutputPath>
+         where the checkout is on a normal local disk, keep the default obj/ layout.
+         The $(Configuration)\ segment mirrors the default obj/ layout on purpose:
+         setting IntermediateOutputPath explicitly skips the SDK's
+         $(BaseIntermediateOutputPath)$(Configuration)\ composition, so without it Debug
+         and Release would share one intermediate directory and clobber each other's
+         incremental state. The $(TargetFramework)\ segment is NOT spelled out here -
+         AppendTargetFrameworkToOutputPath still appends it to whatever this property
+         holds, and repeating it just yields ...\Debug\net10.0-browser\net10.0-browser\.
+         The effective path is C:\Temp\arctz-browser-obj\Debug\net10.0-browser\.
+         The drive test is upper-cased before comparing because MSBuild is free to hand
+         back either "Z:" or "z:", and a case-sensitive StartsWith would drop this
+         workaround silently. -->
+    <IntermediateOutputPath Condition="$(MSBuildProjectDirectory.ToUpperInvariant().StartsWith('Z:'))">C:\Temp\arctz-browser-obj\$(Configuration)\</IntermediateOutputPath>
   </PropertyGroup>
 
   <ItemGroup>

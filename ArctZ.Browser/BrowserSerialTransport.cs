@@ -42,6 +42,12 @@ public sealed class BrowserSerialTransport : IDeviceTransport
         var reopened = await SerialInterop.ReopenSavedPortAsync();
         if (!reopened)
         {
+            // What actually keeps a cancelled picker from reaching `IsConnected = true`
+            // is the *rejection* of the underlying promise: navigator.serial.requestPort()
+            // rejects with NotFoundError when the user dismisses it, so the await below
+            // throws instead of returning. requestPort() in serial.js only ever resolves
+            // with true, making this guard a belt-and-braces check against that contract
+            // changing - do not "simplify" by removing the await's role in it.
             var requested = await SerialInterop.RequestPortAsync();
             if (!requested)
             {
