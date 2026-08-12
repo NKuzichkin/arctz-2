@@ -42,7 +42,11 @@ public sealed class BrowserSerialTransport : IDeviceTransport
         var reopened = await SerialInterop.ReopenSavedPortAsync();
         if (!reopened)
         {
-            await SerialInterop.RequestPortAsync();
+            var requested = await SerialInterop.RequestPortAsync();
+            if (!requested)
+            {
+                throw new InvalidOperationException("No serial port was selected.");
+            }
         }
 
         IsConnected = true;
