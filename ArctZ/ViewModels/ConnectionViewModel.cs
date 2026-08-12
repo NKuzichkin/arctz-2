@@ -20,6 +20,7 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
     private readonly IDeviceEndpointProvider _endpointProvider;
     private static readonly ConnectionEndpoint DemoEndpoint = new("demo", "Демо", ConnectionEndpointKind.Demo);
     private IDisposable? _sentGCodeSubscription;
+    private IDisposable? _scanSubscription;
     private IMockDeviceControl? _currentMockControl;
     private const int MaxSentGCodeLines = 200;
     private const int MockErrorCode = 9;
@@ -49,6 +50,8 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
     [Reactive] private bool isPlaybackLocked;
 
     [Reactive] private string? endpointError;
+
+    [Reactive] private bool isScanning;
 
     public bool HasEndpointError => !string.IsNullOrEmpty(EndpointError);
 
@@ -112,6 +115,7 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
     public IEnhancedCommand<Unit> DisconnectCommand { get; }
     public IEnhancedCommand<Unit> ResetAlarmCommand { get; }
     public IEnhancedCommand<Unit> RefreshEndpointsCommand { get; }
+    public IEnhancedCommand<Unit> ScanCommand { get; }
     public IEnhancedCommand<Unit> ToggleGCodeLogCommand { get; }
     public IEnhancedCommand<Unit> ToggleMockSettingsCommand { get; }
     public IEnhancedCommand<Unit> TriggerMockErrorCommand { get; }
@@ -149,6 +153,8 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
             .Enhance(text: "Сброс аварии", name: "ResetAlarmCommand"));
         RefreshEndpointsCommand = Track(ReactiveCommand.CreateFromTask(RefreshEndpointsAsync)
             .Enhance(text: "Обновить список", name: "RefreshEndpointsCommand"));
+        ScanCommand = Track(ReactiveCommand.Create(ToggleScan)
+            .Enhance(text: "Поиск", name: "ScanCommand"));
         ToggleGCodeLogCommand = Track(ReactiveCommand.Create(() => { IsGCodeLogOpen = !IsGCodeLogOpen; })
             .Enhance(text: "Лог G-code", name: "ToggleGCodeLogCommand"));
         ToggleMockSettingsCommand = Track(ReactiveCommand.Create(() => { IsMockSettingsOpen = !IsMockSettingsOpen; })
@@ -365,5 +371,57 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
         {
             EndpointError = ex.Message;
         }
+    }
+
+    private void ToggleScan()
+    {
+        if (_scanSubscription is not null)
+        {
+            _scanSubscription.Dispose();
+            _scanSubscription = null;
+            IsScanning = false;
+            return;
+        }
+
+        IsScanning = true;
+        EndpointError = null;
+
+        _scanSubscription = _endpointProvider.Discover()
+            .ObserveOn(RxSchedulers.MainThreadScheduler)
+            .Subscribe(
+                OnDeviceDiscovered,
+                ex =>
+                {
+                    EndpointError = ex.Message;
+                    IsScanning = false;
+                    _scanSubscription = null;
+                },
+                () =>
+                {
+                    IsScanning = false;
+                    _scanSubscription = null;
+                });
+    }
+
+    private void OnDeviceDiscovered(DeviceEndpointInfo info)
+    {
+        if (AvailableEndpoints.Any(e => e.Id == info.Id))
+        {
+            return;
+        }
+
+        var demoIndex = AvailableEndpoints.IndexOf(DemoEndpoint);
+        var insertAt = demoIndex >= 0 ? demoIndex : AvailableEndpoints.Count;
+        AvailableEndpoints.Insert(insertAt, new ConnectionEndpoint(info.Id, info.Name, ConnectionEndpointKind.RealDevice, info.IsPaired));
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _scanSubscription?.Dispose();
+        }
+
+        base.Dispose(disposing);
     }
 }

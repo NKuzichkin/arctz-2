@@ -470,4 +470,38 @@ public class ConnectionViewModelTests
         Assert.True(vm.HasEndpointError);
         Assert.Equal(2, vm.AvailableEndpoints.Count);
     }
+
+    [Fact]
+    public async Task ScanCommand_DeviceFound_AddsItBeforeDemoWithoutDuplicates()
+    {
+        var provider = new FakeDeviceEndpointProvider();
+        var vm = await CreateVmAsync(new FakeDeviceTransport(), endpointProvider: provider);
+        Assert.Single(vm.AvailableEndpoints);
+
+        vm.ScanCommand.Execute(null);
+        Assert.True(vm.IsScanning);
+        provider.DiscoverySubject.OnNext(new DeviceEndpointInfo("aa:bb", "FluidNC-1", false));
+        provider.DiscoverySubject.OnNext(new DeviceEndpointInfo("aa:bb", "FluidNC-1", false));
+        provider.DiscoverySubject.OnCompleted();
+
+        Assert.False(vm.IsScanning);
+        Assert.Equal(2, vm.AvailableEndpoints.Count);
+        Assert.Equal("aa:bb", vm.AvailableEndpoints[0].Id);
+        Assert.Equal(ConnectionEndpointKind.Demo, vm.AvailableEndpoints[1].Kind);
+    }
+
+    [Fact]
+    public async Task ScanCommand_InvokedWhileScanning_StopsTheScan()
+    {
+        var provider = new FakeDeviceEndpointProvider();
+        var vm = await CreateVmAsync(new FakeDeviceTransport(), endpointProvider: provider);
+
+        vm.ScanCommand.Execute(null);
+        Assert.True(vm.IsScanning);
+
+        vm.ScanCommand.Execute(null);
+
+        Assert.False(vm.IsScanning);
+        Assert.False(provider.DiscoverySubject.HasObservers);
+    }
 }
