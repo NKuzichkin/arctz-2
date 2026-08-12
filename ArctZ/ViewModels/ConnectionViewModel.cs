@@ -248,6 +248,36 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
             return;
         }
 
+        if (SelectedEndpoint.Kind == ConnectionEndpointKind.RealDevice && !SelectedEndpoint.IsPaired)
+        {
+            EndpointError = null;
+            bool paired;
+            try
+            {
+                paired = await _endpointProvider.PairAsync(SelectedEndpoint.Id);
+            }
+            catch (Exception ex)
+            {
+                EndpointError = ex.Message;
+                return;
+            }
+
+            if (!paired)
+            {
+                EndpointError = "Не удалось спарить устройство.";
+                return;
+            }
+
+            var pairedIndex = AvailableEndpoints.IndexOf(SelectedEndpoint);
+            var pairedEndpoint = SelectedEndpoint with { IsPaired = true };
+            if (pairedIndex >= 0)
+            {
+                AvailableEndpoints[pairedIndex] = pairedEndpoint;
+            }
+
+            SelectedEndpoint = pairedEndpoint;
+        }
+
         // All platform heads register IDeviceTransport as a singleton, so a second
         // session would wrap the same transport as the first: two LineReceived
         // subscribers, two status pollers, two racing reconnect loops. Tear the

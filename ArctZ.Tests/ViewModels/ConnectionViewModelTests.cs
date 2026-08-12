@@ -532,4 +532,69 @@ public class ConnectionViewModelTests
         Assert.False(vm.IsScanning);
         Assert.Equal(2, provider.DiscoverCallCount);
     }
+
+    [Fact]
+    public async Task ConnectCommand_UnpairedRealDeviceSelected_PairsBeforeConnecting()
+    {
+        var provider = new FakeDeviceEndpointProvider
+        {
+            KnownEndpoints = { new DeviceEndpointInfo("aa:bb", "FluidNC-1", false) },
+        };
+        var realTransport = new FakeDeviceTransport();
+        var vm = await CreateVmAsync(realTransport, endpointProvider: provider);
+
+        await vm.ConnectCommand.Execute();
+
+        Assert.Equal(new[] { "aa:bb" }, provider.PairedIds);
+        Assert.True(realTransport.IsConnected);
+        Assert.True(vm.SelectedEndpoint!.IsPaired);
+    }
+
+    [Fact]
+    public async Task ConnectCommand_PairingFails_DoesNotCreateSessionAndSetsEndpointError()
+    {
+        var provider = new FakeDeviceEndpointProvider
+        {
+            KnownEndpoints = { new DeviceEndpointInfo("aa:bb", "FluidNC-1", false) },
+            PairResult = false,
+        };
+        var realTransport = new FakeDeviceTransport();
+        var vm = await CreateVmAsync(realTransport, endpointProvider: provider);
+
+        await vm.ConnectCommand.Execute();
+
+        Assert.Null(vm.Session);
+        Assert.False(realTransport.IsConnected);
+        Assert.False(string.IsNullOrEmpty(vm.EndpointError));
+    }
+
+    [Fact]
+    public async Task ConnectCommand_PairingThrows_DoesNotCreateSessionAndSurfacesTheError()
+    {
+        var provider = new FakeDeviceEndpointProvider
+        {
+            KnownEndpoints = { new DeviceEndpointInfo("aa:bb", "FluidNC-1", false) },
+            PairException = new InvalidOperationException("Нет разрешения на Bluetooth"),
+        };
+        var vm = await CreateVmAsync(new FakeDeviceTransport(), endpointProvider: provider);
+
+        await vm.ConnectCommand.Execute();
+
+        Assert.Null(vm.Session);
+        Assert.Equal("Нет разрешения на Bluetooth", vm.EndpointError);
+    }
+
+    [Fact]
+    public async Task ConnectCommand_AlreadyPairedRealDevice_DoesNotCallPairAsync()
+    {
+        var provider = new FakeDeviceEndpointProvider
+        {
+            KnownEndpoints = { new DeviceEndpointInfo("aa:bb", "FluidNC-1", true) },
+        };
+        var vm = await CreateVmAsync(new FakeDeviceTransport(), endpointProvider: provider);
+
+        await vm.ConnectCommand.Execute();
+
+        Assert.Empty(provider.PairedIds);
+    }
 }
