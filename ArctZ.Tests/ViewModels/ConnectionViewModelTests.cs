@@ -504,4 +504,32 @@ public class ConnectionViewModelTests
         Assert.False(vm.IsScanning);
         Assert.False(provider.DiscoverySubject.HasObservers);
     }
+
+    [Fact]
+    public async Task ScanCommand_ProviderCompletesSynchronously_CanBeInvokedAgainAfterward()
+    {
+        // Regression test: Discover() completing synchronously on Subscribe() (as
+        // Observable.Empty does, matching SingleRealDeviceEndpointProvider and
+        // AndroidBluetoothEndpointProvider with no adapter) used to race the
+        // "_scanSubscription = ..." assignment in ToggleScan — the OnCompleted callback ran
+        // before that assignment and nulled the field, which the outer assignment then
+        // overwrote back to a non-null (but already-terminated) disposable. IsScanning ended up
+        // false while _scanSubscription stayed non-null, so the *next* ScanCommand.Execute()
+        // took the "stop scanning" branch (disposed the dead subscription, no-op'd
+        // IsScanning = false) instead of starting a new scan — the toggle was permanently
+        // poisoned. This is fixed via a SingleAssignmentDisposable placeholder assigned before
+        // Subscribe() runs.
+        var provider = new FakeDeviceEndpointProvider { DiscoverOverride = () => Observable.Empty<DeviceEndpointInfo>() };
+        var vm = await CreateVmAsync(new FakeDeviceTransport(), endpointProvider: provider);
+
+        vm.ScanCommand.Execute(null);
+        Assert.False(vm.IsScanning);
+        Assert.Equal(1, provider.DiscoverCallCount);
+
+        // Before the fix, this took the "stop scanning" branch (dead _scanSubscription left
+        // over from the synchronous completion above) and never called Discover() again.
+        vm.ScanCommand.Execute(null);
+        Assert.False(vm.IsScanning);
+        Assert.Equal(2, provider.DiscoverCallCount);
+    }
 }

@@ -2,6 +2,7 @@ using System;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reactive;
+using System.Reactive.Disposables;
 using System.Reactive.Disposables.Fluent;
 using System.Reactive.Linq;
 using System.Threading.Tasks;
@@ -386,7 +387,16 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
         IsScanning = true;
         EndpointError = null;
 
-        _scanSubscription = _endpointProvider.Discover()
+        // Assign a placeholder before Subscribe() runs so a synchronous OnCompleted/OnError
+        // (e.g. Observable.Empty, or a real provider with no adapter available) can't race the
+        // outer "_scanSubscription = ..." assignment below and get overwritten with an
+        // already-terminated-but-non-null disposable — that would leave IsScanning == false but
+        // _scanSubscription != null, permanently poisoning the next ScanCommand toggle into
+        // taking the "stop scanning" branch instead of starting a new scan.
+        var subscription = new SingleAssignmentDisposable();
+        _scanSubscription = subscription;
+
+        subscription.Disposable = _endpointProvider.Discover()
             .ObserveOn(RxSchedulers.MainThreadScheduler)
             .Subscribe(
                 OnDeviceDiscovered,
@@ -394,12 +404,18 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
                 {
                     EndpointError = ex.Message;
                     IsScanning = false;
-                    _scanSubscription = null;
+                    if (ReferenceEquals(_scanSubscription, subscription))
+                    {
+                        _scanSubscription = null;
+                    }
                 },
                 () =>
                 {
                     IsScanning = false;
-                    _scanSubscription = null;
+                    if (ReferenceEquals(_scanSubscription, subscription))
+                    {
+                        _scanSubscription = null;
+                    }
                 });
     }
 
