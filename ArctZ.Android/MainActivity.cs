@@ -6,7 +6,7 @@ using Avalonia.Android;
 namespace ArctZ.Android
 {
     [Activity(
-        Label = "ArctZ.Android",
+        Label = "ArctZ",
         Theme = "@style/MyTheme.NoActionBar",
         Icon = "@drawable/icon",
         MainLauncher = true,
