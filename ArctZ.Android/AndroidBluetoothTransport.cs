@@ -20,6 +20,11 @@ public sealed class AndroidBluetoothTransport : IDeviceTransport
 
     private readonly AndroidPermissions _permissions;
     private readonly LineAssembler _lineAssembler = new();
+
+    // Сериализует запись в OutputStream между SendLineAsync и SendRawByteAsync, чтобы
+    // realtime-байты (?, !, ~, 0x18) не вклинивались в середину G-code-строки — оба метода
+    // делят один и тот же семафор.
+    private readonly SemaphoreSlim _writeLock = new(1, 1);
     private BluetoothSocket? _socket;
     private CancellationTokenSource? _readLoopCts;
 
@@ -86,11 +91,19 @@ public sealed class AndroidBluetoothTransport : IDeviceTransport
         }
 
         var bytes = Encoding.UTF8.GetBytes(line + "\n");
-        await Task.Run(() =>
+        await _writeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            socket.OutputStream.Write(bytes, 0, bytes.Length);
-            socket.OutputStream.Flush();
-        }, cancellationToken).ConfigureAwait(false);
+            await Task.Run(() =>
+            {
+                socket.OutputStream.Write(bytes, 0, bytes.Length);
+                socket.OutputStream.Flush();
+            }, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
     }
 
     public async Task SendRawByteAsync(byte value, CancellationToken cancellationToken = default)
@@ -101,11 +114,19 @@ public sealed class AndroidBluetoothTransport : IDeviceTransport
             return;
         }
 
-        await Task.Run(() =>
+        await _writeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            socket.OutputStream.Write(new[] { value }, 0, 1);
-            socket.OutputStream.Flush();
-        }, cancellationToken).ConfigureAwait(false);
+            await Task.Run(() =>
+            {
+                socket.OutputStream.Write(new[] { value }, 0, 1);
+                socket.OutputStream.Flush();
+            }, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
     }
 
     private static string[] ConnectPermissions() =>
