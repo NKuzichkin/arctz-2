@@ -16,6 +16,7 @@ namespace ArctZ.Android;
 public sealed class AndroidBluetoothTransport : IDeviceTransport
 {
     private static readonly UUID SppUuid = UUID.FromString("00001101-0000-1000-8000-00805F9B34FB")!;
+    private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(15);
     private const int ReadBufferSize = 1024;
 
     private readonly AndroidPermissions _permissions;
@@ -64,7 +65,29 @@ public sealed class AndroidBluetoothTransport : IDeviceTransport
         var socket = device.CreateRfcommSocketToServiceRecord(SppUuid)
             ?? throw new InvalidOperationException("Не удалось создать соединение с устройством.");
 
-        await Task.Run(() => socket.Connect(), cancellationToken).ConfigureAwait(false);
+        // Connect() блокируется без собственного таймаута: если контроллер не отвечает на
+        // установку RFCOMM-канала, поток висит бесконечно, и команда подключения в UI не
+        // завершается никогда. Ограничиваем ожидание и сообщаем об этом пользователю.
+        var connectTask = Task.Run(() => socket.Connect(), cancellationToken);
+        var completed = await Task.WhenAny(connectTask, Task.Delay(ConnectTimeout, cancellationToken)).ConfigureAwait(false);
+
+        if (completed != connectTask)
+        {
+            // socket.Connect() — блокирующий Java-вызов, C#-таймаут его не прерывает; штатный
+            // способ прервать зависшее RFCOMM-подключение — закрыть сокет из другого потока
+            // (см. документацию BluetoothSocket.connect()), это разблокирует поток connectTask.
+            try
+            {
+                socket.Close();
+            }
+            catch (Java.IO.IOException)
+            {
+            }
+
+            throw new InvalidOperationException("Устройство не отвечает на подключение. Проверьте, включён ли Bluetooth на контроллере, и попробуйте перезагрузить его.");
+        }
+
+        await connectTask.ConfigureAwait(false);
 
         _socket = socket;
         var cts = new CancellationTokenSource();

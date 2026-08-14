@@ -80,34 +80,56 @@ public sealed class AndroidBluetoothEndpointProvider : IDeviceEndpointProvider
 
         var context = global::Android.App.Application.Context;
         var receiver = new DiscoveryReceiver(observer);
-        var filter = new IntentFilter();
-        filter.AddAction(BluetoothDevice.ActionFound!);
-        filter.AddAction(BluetoothAdapter.ActionDiscoveryFinished!);
-
-        if (OperatingSystem.IsAndroidVersionAtLeast(33))
-        {
-            context.RegisterReceiver(receiver, filter, ReceiverFlags.NotExported);
-        }
-        else
-        {
-            context.RegisterReceiver(receiver, filter);
-        }
-
-        if (cancellationToken.IsCancellationRequested)
-        {
-            context.UnregisterReceiver(receiver);
-            return;
-        }
+        var registered = false;
 
         try
         {
-            adapter.StartDiscovery();
+            var filter = new IntentFilter();
+            filter.AddAction(BluetoothDevice.ActionFound!);
+            filter.AddAction(BluetoothAdapter.ActionDiscoveryFinished!);
+
+            if (OperatingSystem.IsAndroidVersionAtLeast(33))
+            {
+                // ACTION_FOUND/ACTION_DISCOVERY_FINISHED приходят от процесса com.android.bluetooth
+                // (свой UID, не "android"), поэтому система на API 33+ требует именно Exported —
+                // с NotExported broadcast тихо отбрасывается ("Exported Denial" в BroadcastQueue),
+                // без единого исключения на нашей стороне.
+                context.RegisterReceiver(receiver, filter, ReceiverFlags.Exported);
+            }
+            else
+            {
+                context.RegisterReceiver(receiver, filter);
+            }
+
+            registered = true;
+
+            if (cancellationToken.IsCancellationRequested)
+            {
+                context.UnregisterReceiver(receiver);
+                return;
+            }
+
+            if (!adapter.StartDiscovery())
+            {
+                // StartDiscovery() возвращает false без исключения (адаптер выключен, занят
+                // другой операцией и т.п.) — без этой проверки receiver остаётся висеть, а
+                // список устройств молча так и не наполняется без единой ошибки в UI.
+                context.UnregisterReceiver(receiver);
+                observer.OnError(new InvalidOperationException("Не удалось запустить поиск Bluetooth-устройств. Проверьте, включён ли Bluetooth."));
+                return;
+            }
         }
         catch (Exception ex)
         {
-            // Приводим сюда даже случаи, которые ScanPermissions() не отловил (например,
-            // платформенный отказ) — receiver не должен остаться зарегистрированным навсегда.
-            context.UnregisterReceiver(receiver);
+            // Метод запущен как fire-and-forget Task (см. вызывающий код) — без этого catch
+            // любое исключение здесь (например, из RegisterReceiver) навсегда теряется как
+            // необработанное исключение задачи, наблюдатель не получает ни OnError, ни
+            // OnCompleted, и UI зависает на "Стоп" без единой ошибки.
+            if (registered)
+            {
+                context.UnregisterReceiver(receiver);
+            }
+
             observer.OnError(ex);
             return;
         }
@@ -146,7 +168,19 @@ public sealed class AndroidBluetoothEndpointProvider : IDeviceEndpointProvider
         var tcs = new TaskCompletionSource<bool>();
         var context = global::Android.App.Application.Context;
         var receiver = new BondStateReceiver(deviceId, tcs);
-        context.RegisterReceiver(receiver, new IntentFilter(BluetoothDevice.ActionBondStateChanged));
+        var bondFilter = new IntentFilter(BluetoothDevice.ActionBondStateChanged);
+
+        if (OperatingSystem.IsAndroidVersionAtLeast(33))
+        {
+            // ACTION_BOND_STATE_CHANGED тоже приходит от com.android.bluetooth, а не "android" —
+            // тот же случай, что и в Discover(): нужен Exported, иначе broadcast отбрасывается
+            // системой без исключения, и PairAsync() зависал бы до PairTimeout без единой ошибки.
+            context.RegisterReceiver(receiver, bondFilter, ReceiverFlags.Exported);
+        }
+        else
+        {
+            context.RegisterReceiver(receiver, bondFilter);
+        }
 
         try
         {

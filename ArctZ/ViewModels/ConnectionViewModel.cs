@@ -317,15 +317,21 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
         {
             await session.ConnectAsync(SelectedEndpoint.Id);
         }
-        catch
+        catch (Exception ex)
         {
+            // Ошибку выставляем до DisconnectAsync(): у реального Bluetooth-транспорта
+            // закрытие сокета с зависшим нативным Connect() само блокируется, и после
+            // await эта строка уже не выполнится — пользователь видел бы вечное
+            // "подключение" без единого сообщения.
+            EndpointError = ex.Message;
+            Session = null;
+
             // A failed connect leaves the transport's LineReceived/Disconnected handlers
             // subscribed (DeviceSession.ConnectAsync wires them before attempting the
             // transport-level connect). session.DisconnectAsync() unwinds that — critical
             // for the real-device transport, which is a singleton reused by the next
             // attempt; leaked handlers there would double-fire on every subsequent connect.
             await session.DisconnectAsync();
-            Session = null;
         }
     }
 

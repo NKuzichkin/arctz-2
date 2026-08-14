@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using System.Linq;
+using System.Reactive.Concurrency;
 using System.Threading;
 using System.Threading.Tasks;
 using ArctZ.Components.VirtualJoystick;
@@ -12,6 +13,7 @@ using ArctZ.Services.Device.Commands;
 using ArctZ.Services.Program;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using ReactiveUI;
 
 namespace ArctZ.ViewModels;
 
@@ -861,7 +863,20 @@ public partial class ProgramViewModel : ViewModelBase
         }
     }
 
-    private void OnSessionConnectionStateChanged()
+    /// <summary>
+    /// DeviceSession поднимает ConnectionStateChanged из того потока, где менялось состояние: на
+    /// Desktop подключение завершается синхронно на UI-потоке, а на Android — в пуле потоков.
+    /// Тело обработчика трогает UI-привязанные команды и свойства, поэтому из фонового потока
+    /// падало исключением. Событие многоадресное — упавший обработчик отменяет вызов всех
+    /// следующих подписчиков, из-за чего ConnectionViewModel не получал Connected и экран
+    /// навсегда оставался в "Подключение" (исключение при этом гасил SerialEventQueue, так что в
+    /// логах не было ни следа). Маршалим на главный поток — в тестах MainThreadScheduler
+    /// подменён на ImmediateScheduler, поэтому поведение там остаётся синхронным.
+    /// </summary>
+    private void OnSessionConnectionStateChanged() =>
+        RxSchedulers.MainThreadScheduler.Schedule(ApplySessionConnectionState);
+
+    private void ApplySessionConnectionState()
     {
         var state = Connection.Session?.ConnectionState;
 
