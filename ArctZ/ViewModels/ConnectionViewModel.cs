@@ -387,9 +387,20 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
 
     /// <summary>Finds a FluidNC-named device and connects to it, retrying with the configured
     /// backoff schedule up to _autoConnectRetryPolicy.MaxAttempts times before giving up and
-    /// leaving the manual connection modal (IsConnectionModalVisible) as the fallback. Safe to
-    /// call multiple times — a new call cancels whatever call is currently in flight. Never
-    /// called from the constructor (see Global Constraints) — App.axaml.cs calls it once at
+    /// leaving the manual connection modal (IsConnectionModalVisible) as the fallback.
+    /// <para>Re-entrancy is bounded, not mutually exclusive. A new call cancels the previous
+    /// call's own loop — its pending retry wait and its progression to the next iteration — and
+    /// the ReferenceEquals guard in the finally block below ensures a superseded call's
+    /// AutoConnectPhase/_autoConnectCts bookkeeping can never clobber a newer call's state. But
+    /// the cancel is not awaited, and the core ConnectAsync() this loop calls accepts no
+    /// CancellationToken: a superseded call already mid-flight inside ConnectAsync() runs that
+    /// attempt to completion in the background and can still mutate Session/SelectedEndpoint/
+    /// AvailableEndpoints on the shared real transport afterwards. That is an accepted narrow
+    /// race — the loop spends nearly all of its time in discovery or backoff rather than inside
+    /// ConnectAsync(), so two calls overlapping there is rare — not a guarantee of mutual
+    /// exclusion. Closing it properly would mean threading cancellation through the pre-existing
+    /// ConnectAsync().</para>
+    /// Never called from the constructor (see Global Constraints) — App.axaml.cs calls it once at
     /// startup, and the restart subscription in the constructor (Task 6) calls it again after
     /// DeviceSession's own fast reconnect-to-known-id loop gives up.</summary>
     public async Task AutoConnectAsync(CancellationToken cancellationToken = default)
@@ -451,16 +462,33 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
             AutoConnectPhase = AutoConnectPhase.GivenUp;
             EndpointError ??= "Устройство FluidNC не найдено.";
         }
-        catch (OperationCanceledException)
+        // Guarded by our OWN token: an OperationCanceledException raised by anything else (e.g.
+        // the transport aborting inside ConnectAsync's DisconnectAsync cleanup, which sits
+        // outside any try/catch there) is NOT our cancellation and must propagate rather than be
+        // absorbed as "superseded" — swallowing it would exit the loop with AutoConnectPhase
+        // frozen mid-flight, no GivenUp, no EndpointError and no retry: a silent hang.
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
             // Superseded by ManualConnectAsync/ManualDisconnectAsync (Task 4) or app shutdown —
             // leave whatever state that action already set; nothing to clean up here.
         }
         finally
         {
+            // Only the loop that is still the current one may write back shared state; a
+            // superseded loop unwinding later must not stomp on its successor's phase.
             if (ReferenceEquals(_autoConnectCts, cts))
             {
                 _autoConnectCts = null;
+
+                // Every cancellation exit — the three early returns above and the catch — leaves
+                // the phase at Searching/Connecting/WaitingRetry. finally runs on all of them, so
+                // this is the single place that returns it to Idle. Natural-completion paths
+                // (success/GivenUp) set their own phase and are untouched: the token is not
+                // cancelled there.
+                if (token.IsCancellationRequested)
+                {
+                    AutoConnectPhase = AutoConnectPhase.Idle;
+                }
             }
         }
     }
