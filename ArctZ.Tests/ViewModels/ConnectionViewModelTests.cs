@@ -114,6 +114,28 @@ public class ConnectionViewModelTests
     }
 
     [Fact]
+    public async Task ManualDisconnect_SuppressesAutoConnectUntilNextSuccessfulConnect()
+    {
+        var realTransport = new FakeDeviceTransport();
+        var vm = await CreateVmAsync(realTransport);
+        await vm.ConnectCommand.Execute();
+
+        await vm.DisconnectCommand.Execute();
+
+        // A fire-and-forget AutoConnectAsync() call would flip AutoConnectPhase away from Idle
+        // (at minimum to Searching) before its first await — asserting it stays Idle proves no
+        // auto-connect loop was started by the explicit disconnect.
+        Assert.Equal(AutoConnectPhase.Idle, vm.AutoConnectPhase);
+        Assert.Null(vm.Session);
+
+        // Manual reconnect clears the suppression: a subsequent involuntary loss should be free to
+        // auto-restart again. This is exercised end-to-end in Task 6; here we only prove the
+        // manual connect path still works after a manual disconnect.
+        await vm.ConnectCommand.Execute();
+        Assert.NotNull(vm.Session);
+    }
+
+    [Fact]
     public async Task ConnectCommand_WhileAlreadyConnected_DisconnectsPreviousSessionBeforeCreatingNewOne()
     {
         var realTransport = new FakeDeviceTransport();

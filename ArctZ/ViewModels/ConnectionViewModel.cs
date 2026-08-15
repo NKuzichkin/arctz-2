@@ -158,9 +158,9 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
 
         // Track() subscribes ThrownExceptions (an unobserved command fault would otherwise crash
         // the process — see ReactiveViewModelBase.Track) and registers the command for disposal.
-        ConnectCommand = Track(ReactiveCommand.CreateFromTask(ConnectAsync, canConnect)
+        ConnectCommand = Track(ReactiveCommand.CreateFromTask(ManualConnectAsync, canConnect)
             .Enhance(text: "Подключить", name: "ConnectCommand"));
-        DisconnectCommand = Track(ReactiveCommand.CreateFromTask(DisconnectAsync, notPlaybackLocked)
+        DisconnectCommand = Track(ReactiveCommand.CreateFromTask(ManualDisconnectAsync, notPlaybackLocked)
             .Enhance(text: "Отключить", name: "DisconnectCommand"));
         ResetAlarmCommand = Track(ReactiveCommand.CreateFromTask(ResetAlarmAsync)
             .Enhance(text: "Сброс аварии", name: "ResetAlarmCommand"));
@@ -251,6 +251,26 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
             .DisposeWith(Disposables);
 
         RefreshEndpointsCommand.Execute().Subscribe().DisposeWith(Disposables);
+    }
+
+    /// <summary>Entry point for the "Подключить" button. Cancels any in-flight AutoConnectAsync
+    /// loop first — a manual choice must never race a background auto-connect attempt — and
+    /// clears the suppression flag so a later involuntary disconnect is free to auto-restart.</summary>
+    private Task ManualConnectAsync()
+    {
+        _autoConnectCts?.Cancel();
+        _autoConnectSuppressed = false;
+        return ConnectAsync();
+    }
+
+    /// <summary>Entry point for the "Отключить" button. Cancels any in-flight AutoConnectAsync
+    /// loop and suppresses auto-restart (Task 6's subscription) until the next successful
+    /// connect — the user turned it off on purpose, auto-connect must not turn it back on.</summary>
+    private async Task ManualDisconnectAsync()
+    {
+        _autoConnectCts?.Cancel();
+        _autoConnectSuppressed = true;
+        await DisconnectAsync();
     }
 
     private async Task ConnectAsync()
