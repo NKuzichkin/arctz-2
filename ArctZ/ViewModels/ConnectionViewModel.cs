@@ -5,6 +5,7 @@ using System.Reactive;
 using System.Reactive.Disposables;
 using System.Reactive.Disposables.Fluent;
 using System.Reactive.Linq;
+using System.Reactive.Threading.Tasks;
 using System.Threading;
 using System.Threading.Tasks;
 using ArctZ.Services.Device;
@@ -27,6 +28,7 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
     private const int MaxSentGCodeLines = 200;
     private const int MockErrorCode = 9;
     private const int MockAlarmCode = 1;
+    private static readonly TimeSpan AutoConnectScanWindow = TimeSpan.FromSeconds(10);
 
     [Reactive] private IDeviceSession? session;
 
@@ -381,6 +383,116 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
             Disposables.Remove(_sentGCodeSubscription);
             _sentGCodeSubscription = null;
         }
+    }
+
+    /// <summary>Finds a FluidNC-named device and connects to it, retrying with the configured
+    /// backoff schedule up to _autoConnectRetryPolicy.MaxAttempts times before giving up and
+    /// leaving the manual connection modal (IsConnectionModalVisible) as the fallback. Safe to
+    /// call multiple times — a new call cancels whatever call is currently in flight. Never
+    /// called from the constructor (see Global Constraints) — App.axaml.cs calls it once at
+    /// startup, and the restart subscription in the constructor (Task 6) calls it again after
+    /// DeviceSession's own fast reconnect-to-known-id loop gives up.</summary>
+    public async Task AutoConnectAsync(CancellationToken cancellationToken = default)
+    {
+        if (IsRealDeviceUnsupported)
+        {
+            return;
+        }
+
+        _autoConnectCts?.Cancel();
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _autoConnectCts = cts;
+        var token = cts.Token;
+
+        try
+        {
+            for (var attempt = 1; attempt <= _autoConnectRetryPolicy.MaxAttempts; attempt++)
+            {
+                if (token.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                AutoConnectAttempt = attempt;
+                AutoConnectPhase = AutoConnectPhase.Searching;
+
+                var endpoint = await FindFluidNcEndpointAsync(token);
+                if (token.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                if (endpoint is not null)
+                {
+                    SelectedEndpoint = endpoint;
+                    AutoConnectPhase = AutoConnectPhase.Connecting;
+                    await ConnectAsync();
+
+                    if (token.IsCancellationRequested)
+                    {
+                        return;
+                    }
+
+                    if (Session?.ConnectionState == ConnectionState.Connected)
+                    {
+                        AutoConnectPhase = AutoConnectPhase.Idle;
+                        _autoConnectSuppressed = false;
+                        return;
+                    }
+                }
+
+                if (attempt < _autoConnectRetryPolicy.MaxAttempts)
+                {
+                    AutoConnectPhase = AutoConnectPhase.WaitingRetry;
+                    await _autoConnectRetryPolicy.WaitBeforeRetryAsync(attempt, token);
+                }
+            }
+
+            AutoConnectPhase = AutoConnectPhase.GivenUp;
+            EndpointError ??= "Устройство FluidNC не найдено.";
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by ManualConnectAsync/ManualDisconnectAsync (Task 4) or app shutdown —
+            // leave whatever state that action already set; nothing to clean up here.
+        }
+        finally
+        {
+            if (ReferenceEquals(_autoConnectCts, cts))
+            {
+                _autoConnectCts = null;
+            }
+        }
+    }
+
+    /// <summary>Looks for a FluidNC-named endpoint: first among already-known endpoints
+    /// (RefreshEndpointsAsync), then — if the platform supports it — via a bounded discovery
+    /// scan. Every discovered endpoint (matching or not) is still merged into AvailableEndpoints
+    /// via OnDeviceDiscovered, exactly like the manual ScanCommand does, so a user who takes over
+    /// manually after a give-up sees the same list a manual scan would have produced.</summary>
+    private async Task<ConnectionEndpoint?> FindFluidNcEndpointAsync(CancellationToken cancellationToken)
+    {
+        await RefreshEndpointsAsync();
+
+        var known = AvailableEndpoints.FirstOrDefault(e =>
+            e.Kind == ConnectionEndpointKind.RealDevice && FluidNcDeviceName.Matches(e.DisplayName));
+        if (known is not null || !IsDiscoverySupported)
+        {
+            return known;
+        }
+
+        var match = await _endpointProvider.Discover()
+            .ObserveOn(RxSchedulers.MainThreadScheduler)
+            .Do(OnDeviceDiscovered)
+            .Where(info => FluidNcDeviceName.Matches(info.Name))
+            .Take(1)
+            .Select(info => (DeviceEndpointInfo?)info)
+            .Timeout(AutoConnectScanWindow, Observable.Return((DeviceEndpointInfo?)null))
+            .Catch(Observable.Return((DeviceEndpointInfo?)null))
+            .FirstOrDefaultAsync()
+            .ToTask(cancellationToken);
+
+        return match is null ? null : AvailableEndpoints.FirstOrDefault(e => e.Id == match.Id);
     }
 
     private void AppendSentGCodeLine(string line)

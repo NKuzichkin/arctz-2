@@ -640,4 +640,79 @@ public class ConnectionViewModelTests
 
         Assert.Empty(provider.PairedIds);
     }
+
+    [Fact]
+    public async Task AutoConnectAsync_FindsFluidNcEndpointAmongKnown_ConnectsToIt()
+    {
+        var realTransport = new FakeDeviceTransport();
+        var provider = new FakeDeviceEndpointProvider
+        {
+            KnownEndpoints =
+            {
+                new DeviceEndpointInfo("other", "Some Other Device", true),
+                new DeviceEndpointInfo("fluid1", "FluidNC-1234", true),
+            },
+        };
+        var vm = await CreateVmAsync(realTransport, endpointProvider: provider);
+
+        await vm.AutoConnectAsync();
+
+        Assert.NotNull(vm.Session);
+        Assert.Equal(ConnectionState.Connected, vm.Session!.ConnectionState);
+        Assert.Equal("fluid1", vm.SelectedEndpoint!.Id);
+        Assert.Equal(AutoConnectPhase.Idle, vm.AutoConnectPhase);
+    }
+
+    [Fact]
+    public async Task AutoConnectAsync_NoFluidNcAnywhere_GivesUpAfterConfiguredAttemptsAndShowsManualModal()
+    {
+        var realTransport = new FakeDeviceTransport();
+        var provider = new FakeDeviceEndpointProvider
+        {
+            SupportsDiscovery = false,
+            KnownEndpoints = { new DeviceEndpointInfo("other", "Some Other Device", true) },
+        };
+        var fastPolicy = new FixedDelayReconnectPolicy(maxAttempts: 2, delay: TimeSpan.FromMilliseconds(1));
+        var vm = await CreateVmAsync(realTransport, endpointProvider: provider, autoConnectRetryPolicy: fastPolicy);
+
+        await vm.AutoConnectAsync();
+
+        Assert.Null(vm.Session);
+        Assert.Equal(AutoConnectPhase.GivenUp, vm.AutoConnectPhase);
+        Assert.True(vm.IsConnectionModalVisible);
+        Assert.Equal("Устройство FluidNC не найдено.", vm.EndpointError);
+    }
+
+    [Fact]
+    public async Task AutoConnectAsync_NoKnownMatch_FindsFluidNcViaDiscoveryScan()
+    {
+        var realTransport = new FakeDeviceTransport();
+        var provider = new FakeDeviceEndpointProvider
+        {
+            SupportsDiscovery = true,
+            KnownEndpoints = { new DeviceEndpointInfo("other", "Some Other Device", true) },
+        };
+        var vm = await CreateVmAsync(realTransport, endpointProvider: provider);
+
+        var autoConnectTask = vm.AutoConnectAsync();
+        provider.DiscoverySubject.OnNext(new DeviceEndpointInfo("found1", "FluidNC-ABCD", false));
+        provider.DiscoverySubject.OnCompleted();
+        await autoConnectTask;
+
+        Assert.NotNull(vm.Session);
+        Assert.Equal("found1", vm.SelectedEndpoint!.Id);
+        Assert.Contains("found1", provider.PairedIds); // was IsPaired: false — must pair before connecting
+    }
+
+    [Fact]
+    public async Task AutoConnectAsync_RealDeviceUnsupported_ReturnsImmediatelyWithoutTryingToConnect()
+    {
+        var realTransport = new FakeDeviceTransport { IsSupported = false };
+        var vm = await CreateVmAsync(realTransport);
+
+        await vm.AutoConnectAsync();
+
+        Assert.Equal(AutoConnectPhase.Idle, vm.AutoConnectPhase);
+        Assert.Null(vm.Session);
+    }
 }
