@@ -5,6 +5,7 @@ using System.Reactive;
 using System.Reactive.Disposables;
 using System.Reactive.Disposables.Fluent;
 using System.Reactive.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using ArctZ.Services.Device;
 using ReactiveUI;
@@ -53,6 +54,15 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
     [Reactive] private string? endpointError;
 
     [Reactive] private bool isScanning;
+
+    [Reactive] private AutoConnectPhase autoConnectPhase = AutoConnectPhase.Idle;
+    [Reactive] private int autoConnectAttempt;
+
+    private readonly IReconnectPolicy _autoConnectRetryPolicy;
+    private CancellationTokenSource? _autoConnectCts;
+    private bool _autoConnectSuppressed;
+
+    public int AutoConnectMaxAttempts => _autoConnectRetryPolicy.MaxAttempts;
 
     public bool HasEndpointError => !string.IsNullOrEmpty(EndpointError);
 
@@ -126,12 +136,14 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
         IDeviceTransport realTransport,
         Func<IDeviceTransport> createDemoTransport,
         IDeviceSessionFactory sessionFactory,
-        IDeviceEndpointProvider endpointProvider)
+        IDeviceEndpointProvider endpointProvider,
+        IReconnectPolicy? autoConnectRetryPolicy = null)
     {
         _realTransport = realTransport;
         _createDemoTransport = createDemoTransport;
         _sessionFactory = sessionFactory;
         _endpointProvider = endpointProvider;
+        _autoConnectRetryPolicy = autoConnectRetryPolicy ?? new ExponentialBackoffReconnectPolicy(ExponentialBackoffReconnectPolicy.DefaultDelays);
 
         AvailableEndpoints.Add(DemoEndpoint);
         SelectedEndpoint = _realTransport.IsSupported ? null : DemoEndpoint;

@@ -18,15 +18,36 @@ public class ConnectionViewModelTests
     private static async Task<ConnectionViewModel> CreateVmAsync(
         IDeviceTransport realTransport,
         IDeviceTransport? demoTransport = null,
-        IDeviceEndpointProvider? endpointProvider = null)
+        IDeviceEndpointProvider? endpointProvider = null,
+        IReconnectPolicy? autoConnectRetryPolicy = null)
     {
         var vm = new ConnectionViewModel(
             realTransport,
             () => demoTransport ?? new FakeDeviceTransport(),
             new DeviceSessionFactory(MachineLimits.Default),
-            endpointProvider ?? DefaultEndpointProvider());
+            endpointProvider ?? DefaultEndpointProvider(),
+            autoConnectRetryPolicy);
         await vm.RefreshEndpointsCommand.Execute();
         return vm;
+    }
+
+    [Fact]
+    public async Task Constructor_DefaultAutoConnectRetryPolicy_HasFiveMaxAttempts()
+    {
+        var vm = await CreateVmAsync(new FakeDeviceTransport());
+
+        Assert.Equal(5, vm.AutoConnectMaxAttempts);
+        Assert.Equal(AutoConnectPhase.Idle, vm.AutoConnectPhase);
+        Assert.Equal(0, vm.AutoConnectAttempt);
+    }
+
+    [Fact]
+    public async Task Constructor_CustomAutoConnectRetryPolicy_IsUsedInsteadOfDefault()
+    {
+        var customPolicy = new FixedDelayReconnectPolicy(maxAttempts: 2, delay: TimeSpan.FromMilliseconds(1));
+        var vm = await CreateVmAsync(new FakeDeviceTransport(), autoConnectRetryPolicy: customPolicy);
+
+        Assert.Equal(2, vm.AutoConnectMaxAttempts);
     }
 
     [Fact]
