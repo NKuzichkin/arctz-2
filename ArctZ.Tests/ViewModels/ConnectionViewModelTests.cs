@@ -5,6 +5,7 @@ using ArctZ.Services.Device;
 using ArctZ.Services.Device.Simulation;
 using ArctZ.Tests.Services.Device;
 using ArctZ.ViewModels;
+using static ArctZ.Tests.TestSupport.AsyncAssert;
 
 namespace ArctZ.Tests.ViewModels;
 
@@ -714,5 +715,51 @@ public class ConnectionViewModelTests
 
         Assert.Equal(AutoConnectPhase.Idle, vm.AutoConnectPhase);
         Assert.Null(vm.Session);
+    }
+
+    [Fact]
+    public async Task ExhaustedFastReconnect_AutomaticallyRestartsAutoConnect_AndFindsFluidNcAgain()
+    {
+        var realTransport = new FakeDeviceTransport();
+        var provider = new FakeDeviceEndpointProvider
+        {
+            SupportsDiscovery = false,
+            KnownEndpoints = { new DeviceEndpointInfo("fluid1", "FluidNC-1234", true) },
+        };
+        var vm = await CreateVmAsync(realTransport, endpointProvider: provider);
+        vm.SelectedEndpoint = vm.AvailableEndpoints.Single(e => e.Id == "fluid1");
+        await vm.ConnectCommand.Execute();
+        var firstSession = vm.Session;
+
+        // DeviceSessionFactory's unchanged internal reconnect policy is exactly 3 attempts (200ms
+        // apart, see DeviceSessionFactory.cs). Failing exactly 3 upcoming connects exhausts it
+        // deterministically without racing a wall-clock delay to flip the flag mid-loop, and leaves
+        // ConnectFailuresRemaining at 0 so the orchestrator's subsequent attempt (this task's
+        // restart) succeeds on its first try.
+        realTransport.ConnectFailuresRemaining = 3;
+        realTransport.SimulateDisconnect();
+        Assert.Equal(ConnectionState.Reconnecting, firstSession!.ConnectionState);
+
+        await WaitUntilAsync(() => vm.Session is not null && vm.Session.ConnectionState == ConnectionState.Connected, TimeSpan.FromSeconds(3));
+
+        Assert.NotNull(vm.Session);
+        Assert.Equal(ConnectionState.Connected, vm.Session!.ConnectionState);
+    }
+
+    [Fact]
+    public async Task GivenUpAutoConnectRestart_DoesNotFireAfterExplicitManualDisconnect()
+    {
+        var realTransport = new FakeDeviceTransport();
+        var vm = await CreateVmAsync(realTransport);
+        await vm.ConnectCommand.Execute();
+
+        await vm.DisconnectCommand.Execute();
+
+        // DeviceSession.DisconnectAsync() fires ConnectionStateChanged(Disconnected) on the
+        // torn-down session synchronously (DeviceSession.cs:78-90) — the same event the restart
+        // subscription listens for. It must stay suppressed: Session stays null.
+        Assert.Equal(AutoConnectPhase.Idle, vm.AutoConnectPhase);
+        Assert.Null(vm.Session);
+        Assert.True(vm.IsConnectionModalVisible);
     }
 }

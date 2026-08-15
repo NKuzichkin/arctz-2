@@ -197,10 +197,19 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
                 : Observable.FromEvent(h => s.ConnectionStateChanged += h, h => s.ConnectionStateChanged -= h)
                     .ObserveOn(RxSchedulers.MainThreadScheduler))
             .Switch()
-            .Subscribe(_ =>
+            .Subscribe(_stateChangedEvent =>
             {
                 ConnectionState = Session?.ConnectionState ?? ConnectionState.Disconnected;
                 LastError = Session?.LastError;
+
+                // DeviceSession's own fast reconnect-to-known-id loop (3x200ms, unchanged)
+                // exhausted on its own — Session is still assigned (only ManualDisconnectAsync
+                // nulls it), its ConnectionState just flipped to Disconnected. Hand off to the
+                // name-search auto-connect orchestrator unless the user explicitly disconnected.
+                if (ConnectionState == ConnectionState.Disconnected && !_autoConnectSuppressed)
+                {
+                    _ = AutoConnectAsync();
+                }
             })
             .DisposeWith(Disposables);
 
