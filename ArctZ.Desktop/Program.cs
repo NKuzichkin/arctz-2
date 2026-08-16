@@ -21,6 +21,7 @@ namespace ArctZ.Desktop
             var services = new ServiceCollection();
             services.AddArctZCore();
             services.AddSingleton<IDeviceTransport, DesktopSerialTransport>();
+            services.AddSingleton<IDeviceEndpointProvider, DesktopBluetoothEndpointProvider>();
             services.AddSingleton<IProgramStorage>(_ => new JsonFileProgramStorage(
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ArctZ", "Programs")));
             App.Services = services.BuildServiceProvider();
