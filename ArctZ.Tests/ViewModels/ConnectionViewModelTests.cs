@@ -20,12 +20,13 @@ public class ConnectionViewModelTests
         IDeviceTransport realTransport,
         IDeviceTransport? demoTransport = null,
         IDeviceEndpointProvider? endpointProvider = null,
-        IReconnectPolicy? autoConnectRetryPolicy = null)
+        IReconnectPolicy? autoConnectRetryPolicy = null,
+        IDeviceSessionFactory? sessionFactory = null)
     {
         var vm = new ConnectionViewModel(
             realTransport,
             () => demoTransport ?? new FakeDeviceTransport(),
-            new DeviceSessionFactory(MachineLimits.Default),
+            sessionFactory ?? new DeviceSessionFactory(MachineLimits.Default),
             endpointProvider ?? DefaultEndpointProvider(),
             autoConnectRetryPolicy);
         await vm.RefreshEndpointsCommand.Execute();
@@ -731,6 +732,23 @@ public class ConnectionViewModelTests
     }
 
     [Fact]
+    public async Task AutoConnectAsync_ProviderDoesNotSupportAutoConnect_ReturnsImmediatelyWithoutTryingToConnect()
+    {
+        var realTransport = new FakeDeviceTransport();
+        var provider = new FakeDeviceEndpointProvider
+        {
+            SupportsAutoConnect = false,
+            KnownEndpoints = { new DeviceEndpointInfo("fluid1", "FluidNC-1234", true) },
+        };
+        var vm = await CreateVmAsync(realTransport, endpointProvider: provider);
+
+        await vm.AutoConnectAsync();
+
+        Assert.Equal(AutoConnectPhase.Idle, vm.AutoConnectPhase);
+        Assert.Null(vm.Session);
+    }
+
+    [Fact]
     public async Task ExhaustedFastReconnect_AutomaticallyRestartsAutoConnect_AndFindsFluidNcAgain()
     {
         var realTransport = new FakeDeviceTransport();
@@ -760,6 +778,35 @@ public class ConnectionViewModelTests
     }
 
     [Fact]
+    public async Task ExhaustedFastReconnect_RestartCreatesExactlyOneNewSession()
+    {
+        var realTransport = new FakeDeviceTransport();
+        var provider = new FakeDeviceEndpointProvider
+        {
+            SupportsDiscovery = false,
+            KnownEndpoints = { new DeviceEndpointInfo("fluid1", "FluidNC-1234", true) },
+        };
+        var factory = new CountingDeviceSessionFactory(new DeviceSessionFactory(MachineLimits.Default));
+        var vm = await CreateVmAsync(realTransport, endpointProvider: provider, sessionFactory: factory);
+        vm.SelectedEndpoint = vm.AvailableEndpoints.Single(e => e.Id == "fluid1");
+        await vm.ConnectCommand.Execute();
+
+        // Same deterministic exhaustion trick as
+        // ExhaustedFastReconnect_AutomaticallyRestartsAutoConnect_AndFindsFluidNcAgain: exactly 3
+        // failing connects drain DeviceSessionFactory's internal reconnect policy without racing a
+        // wall clock, leaving the orchestrator's restart to succeed on its first attempt.
+        realTransport.ConnectFailuresRemaining = 3;
+        realTransport.SimulateDisconnect();
+
+        await WaitUntilAsync(() => vm.Session is not null && vm.Session.ConnectionState == ConnectionState.Connected, TimeSpan.FromSeconds(3));
+
+        // One session for the initial manual connect, one for the restart. A third would mean the
+        // restart subscription re-fired AutoConnectAsync from inside its own ConnectAsync()
+        // teardown — the overlapping-loop bug that can orphan a live session.
+        Assert.Equal(2, factory.CreateCallCount);
+    }
+
+    [Fact]
     public async Task GivenUpAutoConnectRestart_DoesNotFireAfterExplicitManualDisconnect()
     {
         var realTransport = new FakeDeviceTransport();
@@ -774,5 +821,22 @@ public class ConnectionViewModelTests
         Assert.Equal(AutoConnectPhase.Idle, vm.AutoConnectPhase);
         Assert.Null(vm.Session);
         Assert.True(vm.IsConnectionModalVisible);
+    }
+
+    /// <summary>Counts how many DeviceSessions a scenario builds, so a test can prove a reconnect
+    /// path created exactly one replacement session rather than racing two overlapping loops.</summary>
+    private sealed class CountingDeviceSessionFactory : IDeviceSessionFactory
+    {
+        private readonly IDeviceSessionFactory _inner;
+
+        public CountingDeviceSessionFactory(IDeviceSessionFactory inner) => _inner = inner;
+
+        public int CreateCallCount { get; private set; }
+
+        public IDeviceSession Create(IDeviceTransport transport)
+        {
+            CreateCallCount++;
+            return _inner.Create(transport);
+        }
     }
 }

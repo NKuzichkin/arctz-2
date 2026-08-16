@@ -10,6 +10,11 @@ namespace ArctZ.Tests.Services.Device;
 public sealed class FakeDeviceEndpointProvider : IDeviceEndpointProvider
 {
     public bool SupportsDiscovery { get; set; } = true;
+
+    /// <summary>Defaults to true (NOT the interface's false default) so every existing test that
+    /// exercises AutoConnectAsync through this fake keeps working unchanged; tests that need the
+    /// opt-out path set it to false explicitly.</summary>
+    public bool SupportsAutoConnect { get; set; } = true;
     public List<DeviceEndpointInfo> KnownEndpoints { get; set; } = new();
     public Exception? GetKnownEndpointsException { get; set; }
     public Exception? PairException { get; set; }

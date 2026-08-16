@@ -28,6 +28,8 @@ public sealed class AndroidBluetoothEndpointProvider : IDeviceEndpointProvider
 
     public bool SupportsDiscovery => true;
 
+    public bool SupportsAutoConnect => true;
+
     public async Task<IReadOnlyList<DeviceEndpointInfo>> GetKnownEndpointsAsync(CancellationToken cancellationToken = default)
     {
         var granted = await _permissions.RequestAsync(ConnectPermissions()).ConfigureAwait(false);

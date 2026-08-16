@@ -29,6 +29,8 @@ public sealed class DesktopComPortEndpointProvider : IDeviceEndpointProvider
 
     public bool SupportsDiscovery => false;
 
+    public bool SupportsAutoConnect => true;
+
     public async Task<IReadOnlyList<DeviceEndpointInfo>> GetKnownEndpointsAsync(CancellationToken cancellationToken = default)
     {
         var probes = SerialPort.GetPortNames().Select(port => ProbePortAsync(port, cancellationToken));

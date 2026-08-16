@@ -216,7 +216,11 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
                 // exhausted on its own — Session is still assigned (only ManualDisconnectAsync
                 // nulls it), its ConnectionState just flipped to Disconnected. Hand off to the
                 // name-search auto-connect orchestrator unless the user explicitly disconnected.
-                if (ConnectionState == ConnectionState.Disconnected && !_autoConnectSuppressed)
+                // _autoConnectCts is null additionally guards against this same event firing again
+                // from inside AutoConnectAsync's own ConnectAsync() call (tearing down THIS session
+                // to build a new one) — without it, a second overlapping loop could orphan a
+                // session the first loop is still using.
+                if (ConnectionState == ConnectionState.Disconnected && !_autoConnectSuppressed && _autoConnectCts is null)
                 {
                     _ = AutoConnectAsync();
                 }
@@ -436,7 +440,7 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
     /// DeviceSession's own fast reconnect-to-known-id loop gives up.</summary>
     public async Task AutoConnectAsync(CancellationToken cancellationToken = default)
     {
-        if (IsRealDeviceUnsupported)
+        if (IsRealDeviceUnsupported || !_endpointProvider.SupportsAutoConnect)
         {
             return;
         }
