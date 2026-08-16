@@ -572,6 +572,15 @@
             </Grid>
         </DockPanel>
 
+        <Border IsVisible="{Binding Connection.IsAutoConnectSplashVisible}" Background="{StaticResource HudScrimBrush}">
+            <StackPanel x:DataType="vm:ConnectionViewModel" DataContext="{Binding Connection}"
+                        Spacing="14" HorizontalAlignment="Center" VerticalAlignment="Center" Width="280">
+                <ProgressBar IsIndeterminate="True" HorizontalAlignment="Stretch" />
+                <TextBlock Text="{Binding AutoConnectStatusText}" HorizontalAlignment="Center"
+                           TextWrapping="Wrap" TextAlignment="Center" />
+            </StackPanel>
+        </Border>
+
         <Border IsVisible="{Binding Connection.IsConnectionModalVisible}" Background="{StaticResource HudScrimBrush}">
             <Border x:DataType="vm:ConnectionViewModel" DataContext="{Binding Connection}"
                     Width="360" Background="{StaticResource HudPanelElevatedBrush}"
