@@ -39,6 +39,7 @@ namespace ArctZ
         {
             var viewModel = Services!.GetRequiredService<ProgramViewModel>();
             _ = viewModel.RefreshLibraryCommand.ExecuteAsync(null);
+            _ = viewModel.Connection.AutoConnectAsync();
 
             if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
