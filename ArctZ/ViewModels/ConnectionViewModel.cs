@@ -267,8 +267,8 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
             })
             .DisposeWith(Disposables);
 
-        this.WhenAnyValue(x => x.AutoConnectPhase, x => x.AutoConnectAttempt,
-                (_, _) => Unit.Default)
+        this.WhenAnyValue(x => x.AutoConnectPhase, x => x.AutoConnectAttempt, x => x.ConnectionState,
+                (_, _, _) => Unit.Default)
             .Subscribe(_ =>
             {
                 this.RaisePropertyChanged(nameof(IsAutoConnectSplashVisible));

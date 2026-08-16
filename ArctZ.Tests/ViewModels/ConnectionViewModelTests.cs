@@ -226,6 +226,31 @@ public class ConnectionViewModelTests
     }
 
     [Fact]
+    public async Task UnsolicitedDisconnect_RaisesPropertyChangedForSplashPropertiesEvenThoughAutoConnectPhaseNeverMoves()
+    {
+        // Regression test: IsAutoConnectSplashVisible/AutoConnectStatusText both switch on
+        // ConnectionState == Reconnecting, but during DeviceSession's own fast internal reconnect
+        // (simulated here via SimulateDisconnect) AutoConnectPhase never leaves Idle — AutoConnectAsync
+        // only runs later, after ConnectionState has already settled back to Disconnected. A prior
+        // version of this VM only re-raised PropertyChanged for these two properties from a subscription
+        // watching AutoConnectPhase/AutoConnectAttempt, so a live binding would never refresh here even
+        // though the getters themselves returned the correct value when read directly.
+        var realTransport = new FakeDeviceTransport();
+        var vm = await CreateVmAsync(realTransport);
+        await vm.ConnectCommand.Execute();
+
+        var raisedPropertyNames = new System.Collections.Generic.List<string?>();
+        vm.PropertyChanged += (_, e) => raisedPropertyNames.Add(e.PropertyName);
+
+        realTransport.ConnectFailuresRemaining = 10;
+        realTransport.SimulateDisconnect();
+
+        Assert.Equal(ConnectionState.Reconnecting, vm.ConnectionState);
+        Assert.Contains(nameof(ConnectionViewModel.IsAutoConnectSplashVisible), raisedPropertyNames);
+        Assert.Contains(nameof(ConnectionViewModel.AutoConnectStatusText), raisedPropertyNames);
+    }
+
+    [Fact]
     public async Task ConnectionStateChanged_OnAReplacedSession_DoesNotAffectTheViewModel()
     {
         var realTransport = new FakeDeviceTransport();
