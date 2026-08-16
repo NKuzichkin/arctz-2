@@ -88,22 +88,32 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
         ? $"Авария FluidNC: код {code}"
         : LastError;
 
-    public bool IsConnectionModalVisible => Session is null || ConnectionState != ConnectionState.Connected;
+    public bool IsAutoConnectSplashVisible =>
+        AutoConnectPhase is AutoConnectPhase.Searching or AutoConnectPhase.Connecting or AutoConnectPhase.WaitingRetry
+        || ConnectionState == ConnectionState.Reconnecting;
+
+    public string AutoConnectStatusText => ConnectionState == ConnectionState.Reconnecting
+        ? "Переподключение…" // DeviceSession's fast internal reconnect (Part 1) — no attempt count exposed
+        : AutoConnectPhase switch
+        {
+            AutoConnectPhase.Searching => "Поиск FluidNC…",
+            AutoConnectPhase.Connecting => "Подключение…",
+            AutoConnectPhase.WaitingRetry => $"Попытка {AutoConnectAttempt} из {AutoConnectMaxAttempts} не удалась, повтор…",
+            _ => "",
+        };
+
+    public bool IsConnectionModalVisible =>
+        !IsAutoConnectSplashVisible && (Session is null || ConnectionState != ConnectionState.Connected);
 
     // Авария (LastAlarmCode) блокирует основной экран отдельной модалкой; обычная ошибка
     // соединения (LastError) остаётся баннером внутри ConnectionView — см. HasError/ErrorMessage.
-    // Соединение имеет приоритет: если связь разорвана на транспортном уровне во время
-    // аварии (тот же Session, ConnectionState уходит в Reconnecting/Disconnected —
-    // LastAlarmCode при этом НЕ сбрасывается, см. подписку на Session выше), модалка
-    // аварии не должна перекрывать модалку соединения — её "Сброс аварии" всё равно
-    // не может выполниться без живой связи (зависает в BufferAwareCommandQueue), а
-    // единственная рабочая кнопка восстановления ("Подключить") лежит в модалке
-    // соединения. Модалка аварии появится снова автоматически после переподключения,
-    // если авария всё ещё активна — обе модалки пересчитываются в одной и той же
-    // WhenAnyValue-подписке ниже.
-    public bool IsAlarmModalVisible => LastAlarmCode is not null && !IsConnectionModalVisible;
+    // Приоритет: заставка автоподключения > ручная модалка соединения > модалка аварии — авария
+    // не должна перекрывать единственный работающий путь восстановления связи, будь то заставка
+    // (идёт автоматика) или ручной список (автоматика сдалась).
+    public bool IsAlarmModalVisible =>
+        LastAlarmCode is not null && !IsConnectionModalVisible && !IsAutoConnectSplashVisible;
 
-    public bool IsAnyModalVisible => IsConnectionModalVisible || IsAlarmModalVisible;
+    public bool IsAnyModalVisible => IsAutoConnectSplashVisible || IsConnectionModalVisible || IsAlarmModalVisible;
 
     public string ConnectionStateLabel => ConnectionState switch
     {
@@ -254,6 +264,18 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
                 this.RaisePropertyChanged(nameof(HasError));
                 this.RaisePropertyChanged(nameof(ErrorMessage));
                 this.RaisePropertyChanged(nameof(HasEndpointError));
+            })
+            .DisposeWith(Disposables);
+
+        this.WhenAnyValue(x => x.AutoConnectPhase, x => x.AutoConnectAttempt,
+                (_, _) => Unit.Default)
+            .Subscribe(_ =>
+            {
+                this.RaisePropertyChanged(nameof(IsAutoConnectSplashVisible));
+                this.RaisePropertyChanged(nameof(AutoConnectStatusText));
+                this.RaisePropertyChanged(nameof(IsConnectionModalVisible));
+                this.RaisePropertyChanged(nameof(IsAlarmModalVisible));
+                this.RaisePropertyChanged(nameof(IsAnyModalVisible));
             })
             .DisposeWith(Disposables);
 

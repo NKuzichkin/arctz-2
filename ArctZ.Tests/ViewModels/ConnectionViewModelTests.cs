@@ -210,24 +210,19 @@ public class ConnectionViewModelTests
     // outright.
 
     [Fact]
-    public async Task UnsolicitedDisconnect_TransitionsToReconnectingAndShowsModal()
+    public async Task UnsolicitedDisconnect_TransitionsToReconnectingAndShowsSplashInsteadOfModal()
     {
         var realTransport = new FakeDeviceTransport();
         var vm = await CreateVmAsync(realTransport);
         await vm.ConnectCommand.Execute();
 
-        // ConnectFailuresRemaining is set only after the initial connect succeeds, so the
-        // upcoming reconnect attempts (not this connect) are the ones that fail — same idiom as
-        // ProgramViewModelPlaybackTests.LinkLoss_DuringPlayback_....
         realTransport.ConnectFailuresRemaining = 10;
         realTransport.SimulateDisconnect();
 
-        // DeviceSession.OnTransportDisconnected sets Reconnecting synchronously (via the
-        // lock-guarded SerialEventQueue, which drains inline) before it ever awaits a retry, and
-        // ConnectionViewModel's ObserveOn uses RxSchedulers.MainThreadScheduler, which
-        // ReactiveUIBootstrap pins to ImmediateScheduler for tests — so no wait is needed here.
         Assert.Equal(ConnectionState.Reconnecting, vm.ConnectionState);
-        Assert.True(vm.IsConnectionModalVisible);
+        Assert.True(vm.IsAutoConnectSplashVisible);
+        Assert.False(vm.IsConnectionModalVisible);
+        Assert.Equal("Переподключение…", vm.AutoConnectStatusText);
     }
 
     [Fact]
@@ -362,18 +357,12 @@ public class ConnectionViewModelTests
     }
 
     [Fact]
-    public async Task UnsolicitedDisconnect_DuringAlarm_ConnectionModalWinsOverAlarmModal()
+    public async Task UnsolicitedDisconnect_DuringAlarm_SplashWinsOverAlarmModal()
     {
-        // Regression test: an alarm firing followed by a routine transport-level link drop
-        // (same Session instance, just ConnectionState moving to Reconnecting/Disconnected —
-        // see the comment above the Session subscription in ConnectionViewModel's constructor,
-        // LastAlarmCode is only cleared when Session itself changes, NOT on a state transition
-        // of the same session) used to leave BOTH IsConnectionModalVisible and
-        // IsAlarmModalVisible true. Because the alarm modal is the last child of MainView's root
-        // Grid, it painted over the connection modal, hiding the only working recovery control
-        // ("Подключить") behind a hit-testable scrim — "Сброс аварии" alone can't recover
-        // because it depends on a live link to get an "ok" back. ConnectionViewModel now favors
-        // the connection modal whenever both conditions are true.
+        // Regression test (updated for the auto-connect splash — see the connection-modal-vs-alarm
+        // regression this replaces, above): a routine transport-level link drop during an active
+        // alarm must not paint the alarm modal over the ONLY working recovery UI. Previously that
+        // was the manual connection modal; now it's the auto-connect splash.
         var realTransport = new FakeDeviceTransport();
         var vm = await CreateVmAsync(realTransport);
         await vm.ConnectCommand.Execute();
@@ -381,16 +370,15 @@ public class ConnectionViewModelTests
         realTransport.SimulateReceivedLine("ALARM:1");
         Assert.True(vm.IsAlarmModalVisible);
         Assert.False(vm.IsConnectionModalVisible);
+        Assert.False(vm.IsAutoConnectSplashVisible);
         Assert.True(vm.IsAnyModalVisible);
 
-        // Same idiom as UnsolicitedDisconnect_TransitionsToReconnectingAndShowsModal: the
-        // upcoming reconnect attempts must fail so the VM observes Reconnecting rather than
-        // racing straight back to Connected.
         realTransport.ConnectFailuresRemaining = 10;
         realTransport.SimulateDisconnect();
 
         Assert.Equal(ConnectionState.Reconnecting, vm.ConnectionState);
-        Assert.True(vm.IsConnectionModalVisible);
+        Assert.True(vm.IsAutoConnectSplashVisible);
+        Assert.False(vm.IsConnectionModalVisible);
         Assert.False(vm.IsAlarmModalVisible);
         Assert.True(vm.IsAnyModalVisible);
     }
