@@ -120,6 +120,10 @@ public sealed class DesktopSerialTransport : IDeviceTransport
         {
             Disconnected?.Invoke();
         }
+        catch (InvalidOperationException)
+        {
+            Disconnected?.Invoke();
+        }
     }
 
     private void OnErrorReceived(object sender, SerialErrorReceivedEventArgs e) => Disconnected?.Invoke();
