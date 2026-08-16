@@ -64,13 +64,37 @@ public sealed class DesktopSerialTransport : IDeviceTransport
 
     public Task SendLineAsync(string line, CancellationToken cancellationToken = default)
     {
-        _port?.WriteLine(line);
+        try
+        {
+            _port?.WriteLine(line);
+        }
+        catch (IOException)
+        {
+            Disconnected?.Invoke();
+        }
+        catch (InvalidOperationException)
+        {
+            Disconnected?.Invoke();
+        }
+
         return Task.CompletedTask;
     }
 
     public Task SendRawByteAsync(byte value, CancellationToken cancellationToken = default)
     {
-        _port?.Write(new[] { value }, 0, 1);
+        try
+        {
+            _port?.Write(new[] { value }, 0, 1);
+        }
+        catch (IOException)
+        {
+            Disconnected?.Invoke();
+        }
+        catch (InvalidOperationException)
+        {
+            Disconnected?.Invoke();
+        }
+
         return Task.CompletedTask;
     }
 
