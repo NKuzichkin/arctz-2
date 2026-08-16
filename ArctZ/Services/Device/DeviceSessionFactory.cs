@@ -28,7 +28,7 @@ public sealed class DeviceSessionFactory : IDeviceSessionFactory
         var commandQueue = new BufferAwareCommandQueue(transport);
         var eventQueue = new SerialEventQueue();
         var jogScheduler = new JogScheduler(
-            new JogCommandFactory(_limits),
+            new JogCommandFactory(_limits, JogInterval),
             serializer,
             transport,
             realtimeChannel,

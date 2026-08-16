@@ -196,11 +196,21 @@ public sealed class DeviceSession : IDeviceSession
     {
         switch (_statusParser.Parse(rawLine))
         {
+            // Jog lines bypass the command queue, so their acknowledgements must not resolve a
+            // queued command — and a jog error must not abort the pending program.
             case OkLine:
-                _commandQueue.HandleOk();
+                if (!_jogScheduler.TryHandleAck())
+                {
+                    _commandQueue.HandleOk();
+                }
+
                 break;
             case ErrorLine error:
-                _commandQueue.HandleError(error.Code);
+                if (!_jogScheduler.TryHandleAck())
+                {
+                    _commandQueue.HandleError(error.Code);
+                }
+
                 break;
             case AlarmLine alarm:
                 AlarmTriggered?.Invoke(alarm.Code);
@@ -212,7 +222,7 @@ public sealed class DeviceSession : IDeviceSession
                     _commandQueue.UpdateBufferCapacity(rx, planner);
                 }
 
-                _jogScheduler.UpdateCurrentPose(report.Status.WPos);
+                _jogScheduler.UpdateStatus(report.Status);
                 DeviceStatusChanged?.Invoke();
                 break;
             case UnrecognizedLine:

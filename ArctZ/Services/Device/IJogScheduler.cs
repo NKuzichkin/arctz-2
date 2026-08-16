@@ -8,7 +8,11 @@ public interface IJogScheduler
 
     void UpdateState(DualJoystickState state);
 
-    void UpdateCurrentPose(MachinePose pose);
+    void UpdateStatus(DeviceStatus status);
+
+    /// <summary>Attributes one ok/error line to an outstanding jog. Returns false when no jog is
+    /// awaiting acknowledgement, meaning the line belongs to the queued-command stream instead.</summary>
+    bool TryHandleAck();
 
     void Stop();
 }

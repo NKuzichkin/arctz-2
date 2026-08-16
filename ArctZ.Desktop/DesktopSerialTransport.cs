@@ -15,6 +15,16 @@ namespace ArctZ.Desktop;
 /// </summary>
 public sealed class DesktopSerialTransport : IDeviceTransport
 {
+    private const int ReadBufferSize = 1024;
+
+    private readonly LineAssembler _lineAssembler = new();
+    private readonly byte[] _readBuffer = new byte[ReadBufferSize];
+
+    // Serializes writes between SendLineAsync and SendRawByteAsync so a realtime byte (?, !, ~,
+    // jog cancel) can never land in the middle of a G-code line, and so it is ordered strictly
+    // after any line already handed over — a jog arriving after a jog-cancel restarts the motion
+    // the cancel just stopped.
+    private readonly SemaphoreSlim _writeLock = new(1, 1);
     private SerialPort? _port;
     private int _disconnectedRaised;
 
@@ -64,40 +74,51 @@ public sealed class DesktopSerialTransport : IDeviceTransport
         return Task.CompletedTask;
     }
 
-    public Task SendLineAsync(string line, CancellationToken cancellationToken = default)
+    public Task SendLineAsync(string line, CancellationToken cancellationToken = default) =>
+        WriteAsync(port => port.WriteLine(line), cancellationToken);
+
+    public Task SendRawByteAsync(byte value, CancellationToken cancellationToken = default) =>
+        WriteAsync(port => port.Write(new[] { value }, 0, 1), cancellationToken);
+
+    /// <summary>
+    /// Performs the blocking SerialPort write off the calling thread. Callers reach this from
+    /// inside the shared SerialEventQueue lock, and over a Bluetooth SPP port a write can stall
+    /// for tens of milliseconds — holding that lock also blocks the read path that delivers acks
+    /// and status reports, starving the jog scheduler's flow control.
+    /// </summary>
+    private async Task WriteAsync(Action<SerialPort> write, CancellationToken cancellationToken)
     {
+        var port = _port;
+        if (port is null)
+        {
+            return;
+        }
+
+        await _writeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            _port?.WriteLine(line);
+            await Task.Run(
+                () =>
+                {
+                    try
+                    {
+                        write(port);
+                    }
+                    catch (IOException)
+                    {
+                        RaiseDisconnectedOnce();
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        RaiseDisconnectedOnce();
+                    }
+                },
+                cancellationToken).ConfigureAwait(false);
         }
-        catch (IOException)
+        finally
         {
-            RaiseDisconnectedOnce();
+            _writeLock.Release();
         }
-        catch (InvalidOperationException)
-        {
-            RaiseDisconnectedOnce();
-        }
-
-        return Task.CompletedTask;
-    }
-
-    public Task SendRawByteAsync(byte value, CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            _port?.Write(new[] { value }, 0, 1);
-        }
-        catch (IOException)
-        {
-            RaiseDisconnectedOnce();
-        }
-        catch (InvalidOperationException)
-        {
-            RaiseDisconnectedOnce();
-        }
-
-        return Task.CompletedTask;
     }
 
     private void OnDataReceived(object sender, SerialDataReceivedEventArgs e)
@@ -108,11 +129,25 @@ public sealed class DesktopSerialTransport : IDeviceTransport
             return;
         }
 
+        // Reads only what has already arrived and assembles lines incrementally. ReadLine() would
+        // block here for up to ReadTimeout whenever the buffer holds a partial line, and this
+        // handler is the only path delivering acks and status reports — stalling it throttles the
+        // jog scheduler into starving the controller's planner, which the operator feels as
+        // stuttering motion.
         try
         {
             while (port.BytesToRead > 0)
             {
-                LineReceived?.Invoke(port.ReadLine());
+                var read = port.Read(_readBuffer, 0, Math.Min(_readBuffer.Length, port.BytesToRead));
+                if (read <= 0)
+                {
+                    break;
+                }
+
+                foreach (var line in _lineAssembler.Append(_readBuffer, read))
+                {
+                    LineReceived?.Invoke(line);
+                }
             }
         }
         catch (TimeoutException)

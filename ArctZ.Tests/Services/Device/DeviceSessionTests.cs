@@ -21,7 +21,7 @@ public class DeviceSessionTests
         var eventQueue = new SerialEventQueue();
         _commandQueue = new BufferAwareCommandQueue(_transport);
         var jogScheduler = new JogScheduler(
-            new JogCommandFactory(MachineLimits.Default), serializer, _transport, realtimeChannel, _jogTimer, TimeSpan.FromMilliseconds(100), eventQueue);
+            new JogCommandFactory(MachineLimits.Default, TimeSpan.FromMilliseconds(100)), serializer, _transport, realtimeChannel, _jogTimer, TimeSpan.FromMilliseconds(100), eventQueue);
         var statusPoller = new StatusPoller(realtimeChannel, _pollTimer, TimeSpan.FromMilliseconds(250));
         var reconnectPolicy = new FixedDelayReconnectPolicy(maxAttempts: 3, delay: TimeSpan.FromMilliseconds(1));
 

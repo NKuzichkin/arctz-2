@@ -18,7 +18,7 @@ public class DeviceSessionReconnectTests
         var realtimeChannel = new RealtimeCommandChannel(_transport);
         var commandQueue = new BufferAwareCommandQueue(_transport);
         var jogScheduler = new JogScheduler(
-            new JogCommandFactory(MachineLimits.Default), serializer, _transport, realtimeChannel, _jogTimer, TimeSpan.FromMilliseconds(100), _eventQueue);
+            new JogCommandFactory(MachineLimits.Default, TimeSpan.FromMilliseconds(100)), serializer, _transport, realtimeChannel, _jogTimer, TimeSpan.FromMilliseconds(100), _eventQueue);
         var statusPoller = new StatusPoller(realtimeChannel, _pollTimer, TimeSpan.FromMilliseconds(250));
         var reconnectPolicy = new FixedDelayReconnectPolicy(maxAttempts: 3, delay: TimeSpan.FromMilliseconds(1));
 
@@ -103,7 +103,7 @@ public class DeviceSessionReconnectTests
         var realtimeChannel = new RealtimeCommandChannel(_transport);
         var commandQueue = new BufferAwareCommandQueue(_transport);
         var jogScheduler = new JogScheduler(
-            new JogCommandFactory(MachineLimits.Default), serializer, _transport, realtimeChannel, _jogTimer, TimeSpan.FromMilliseconds(100), _eventQueue);
+            new JogCommandFactory(MachineLimits.Default, TimeSpan.FromMilliseconds(100)), serializer, _transport, realtimeChannel, _jogTimer, TimeSpan.FromMilliseconds(100), _eventQueue);
         var statusPoller = new StatusPoller(realtimeChannel, _pollTimer, TimeSpan.FromMilliseconds(250));
         var session = new DeviceSession(_transport, commandQueue, new FluidNcStatusParser(), jogScheduler, statusPoller, reconnectPolicy, _eventQueue, realtimeChannel);
 
