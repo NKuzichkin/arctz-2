@@ -118,6 +118,47 @@ public class ProgramViewModelShutdownTests
         Assert.Equal(PlaybackState.Stopped, vm.PlaybackState);
     }
 
+    /// <summary>Смахивание из недавних на Android не убивает процесс: StopSelf() лишь отпускает
+    /// сервис, а следующий запуск приложения Android отдаёт тому же процессу — вместе с этой самой
+    /// ViewModel. Оставленный взведённым флаг закрыл бы новый запуск оверлеем «Остановка
+    /// устройства…» навсегда.</summary>
+    [Fact]
+    public async Task ShutdownAsync_WhenFinished_LeavesTheViewModelFitForAnotherRun()
+    {
+        var vm = CreateViewModel(out _, out _);
+        vm.PlaybackState = PlaybackState.Running;
+
+        await vm.ShutdownAsync(confirmIfRunning: false);
+
+        Assert.False(vm.IsShuttingDown);
+    }
+
+    /// <summary>Закрытие окна на Desktop идёт двумя заходами: первый отменяется ради остановки
+    /// станка, второй должен пройти. Признак «станок уже остановлен» обязан пережить завершение
+    /// остановки — в отличие от оверлея.</summary>
+    [Fact]
+    public async Task ShutdownAsync_WhenFinished_ReportsTheShutdownComplete()
+    {
+        var vm = CreateViewModel(out _, out _);
+
+        await vm.ShutdownAsync();
+
+        Assert.True(vm.IsShutdownComplete);
+    }
+
+    [Fact]
+    public async Task ShutdownAsync_WhenConfirmationIsDeclined_DoesNotReportTheShutdownComplete()
+    {
+        var vm = CreateViewModel(out _, out _);
+        vm.PlaybackState = PlaybackState.Running;
+
+        var shutdownTask = vm.ShutdownAsync();
+        vm.ConfirmNoCommand.Execute(null);
+        await shutdownTask;
+
+        Assert.False(vm.IsShutdownComplete);
+    }
+
     /// <summary>Не подключено — выходим без обращения к устройству, а не падаем на null.</summary>
     [Fact]
     public async Task ExitCommand_WhenNoSessionIsConnected_StillExits()

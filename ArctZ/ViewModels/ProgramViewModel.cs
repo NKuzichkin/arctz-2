@@ -63,9 +63,15 @@ public partial class ProgramViewModel : ViewModelBase
 
     /// <summary>Приложение уже закрывается и ждёт остановки станка. Пока флаг взведён,
     /// экран закрыт оверлеем: ожидание занимает до <see cref="DeviceStopTimeout"/>, и без
-    /// него интерфейс выглядел бы зависшим.</summary>
+    /// него интерфейс выглядел бы зависшим. Состояние временное — снимается по завершении
+    /// остановки, см. <see cref="ShutdownAsync"/>.</summary>
     [ObservableProperty]
     private bool _isShuttingDown;
+
+    /// <summary>Станок остановлен и связь разорвана. В отличие от <see cref="IsShuttingDown"/>
+    /// переживает завершение остановки: закрытие окна на Desktop идёт двумя заходами — первый
+    /// отменяется ради остановки станка, второй должен по этому признаку пройти.</summary>
+    public bool IsShutdownComplete { get; private set; }
 
     [ObservableProperty]
     private ProgramCompletionMode _completionMode = ProgramCompletionMode.Stop;
@@ -196,6 +202,7 @@ public partial class ProgramViewModel : ViewModelBase
     public async Task<bool> ShutdownAsync(bool confirmIfRunning = true)
     {
         IsSideMenuOpen = false;
+        IsShutdownComplete = false;
 
         if (confirmIfRunning && IsProgramLocked)
         {
@@ -214,12 +221,25 @@ public partial class ProgramViewModel : ViewModelBase
 
         IsShuttingDown = true;
 
-        if (Connection.Session is { } session)
+        try
         {
-            await session.StopAndDrainAsync(DeviceStopTimeout);
+            if (Connection.Session is { } session)
+            {
+                await session.StopAndDrainAsync(DeviceStopTimeout);
+            }
+
+            await Connection.DisconnectForShutdownAsync();
+        }
+        finally
+        {
+            // Снимается обязательно: на Android смахивание из недавних не убивает процесс —
+            // StopSelf() лишь отпускает сервис, — и следующий запуск приложения Android отдаёт
+            // тому же процессу вместе с этой ViewModel. Оставленный флаг закрыл бы новый запуск
+            // оверлеем остановки навсегда.
+            IsShuttingDown = false;
         }
 
-        await Connection.DisconnectForShutdownAsync();
+        IsShutdownComplete = true;
 
         return true;
     }

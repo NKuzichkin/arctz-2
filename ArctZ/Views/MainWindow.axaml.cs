@@ -29,7 +29,7 @@ namespace ArctZ.Views
                 return;
             }
 
-            e.Cancel = _closeCoordinator.ShouldCancelClose(ViewModel?.IsShuttingDown ?? true);
+            e.Cancel = _closeCoordinator.ShouldCancelClose(ViewModel?.IsShutdownComplete ?? true);
         }
     }
 }
