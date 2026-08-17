@@ -2,8 +2,10 @@ using System.Threading.Tasks;
 using Android.App;
 using Android.Content.PM;
 using Android.OS;
+using ArctZ.ViewModels;
 using Avalonia;
 using Avalonia.Android;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ArctZ.Android
 {
@@ -28,6 +30,21 @@ namespace ArctZ.Android
         {
             base.OnCreate(savedInstanceState);
             Instance = this;
+        }
+
+        /// <summary>
+        /// Смахивание из недавних не убивает процесс: следующий запуск Android отдаёт тому же
+        /// процессу, а значит стартовый путь Avalonia (App.OnFrameworkInitializationCompleted,
+        /// откуда идёт единственный явный вызов автоподключения) второй раз не отрабатывает.
+        /// Без этого вызова приложение после принудительного закрытия открывалось бы
+        /// отключённым и ждало ручного «Подключить».
+        /// </summary>
+        protected override void OnResume()
+        {
+            base.OnResume();
+
+            var connection = global::ArctZ.App.Services?.GetService<ConnectionViewModel>();
+            _ = connection?.EnsureAutoConnectAsync();
         }
 
         protected override void OnDestroy()

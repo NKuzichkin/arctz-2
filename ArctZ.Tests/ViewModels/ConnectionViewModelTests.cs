@@ -678,6 +678,64 @@ public class ConnectionViewModelTests
         Assert.Equal(AutoConnectPhase.Idle, vm.AutoConnectPhase);
     }
 
+    /// <summary>Закрытие приложения — не решение пользователя остаться отключённым. На Android
+    /// процесс переживает смахивание из недавних, и подавление автоподключения, оставленное
+    /// включённым, дожило бы до следующего запуска: приложение открылось бы и больше никогда
+    /// не подключилось само.</summary>
+    [Fact]
+    public async Task DisconnectForShutdown_LeavesAutoConnectAvailableForTheNextLaunch()
+    {
+        var realTransport = new FakeDeviceTransport();
+        var provider = new FakeDeviceEndpointProvider
+        {
+            KnownEndpoints = { new DeviceEndpointInfo("fluid1", "FluidNC-1234", true) },
+        };
+        var vm = await CreateVmAsync(realTransport, endpointProvider: provider);
+        await vm.AutoConnectAsync();
+        Assert.NotNull(vm.Session);
+
+        await vm.DisconnectForShutdownAsync();
+        Assert.Null(vm.Session);
+
+        await vm.EnsureAutoConnectAsync();
+
+        Assert.NotNull(vm.Session);
+    }
+
+    [Fact]
+    public async Task EnsureAutoConnect_AfterAManualDisconnect_RespectsTheUsersChoiceAndStaysDisconnected()
+    {
+        var realTransport = new FakeDeviceTransport();
+        var provider = new FakeDeviceEndpointProvider
+        {
+            KnownEndpoints = { new DeviceEndpointInfo("fluid1", "FluidNC-1234", true) },
+        };
+        var vm = await CreateVmAsync(realTransport, endpointProvider: provider);
+        await vm.AutoConnectAsync();
+
+        await vm.DisconnectCommand.Execute();
+        await vm.EnsureAutoConnectAsync();
+
+        Assert.Null(vm.Session);
+    }
+
+    [Fact]
+    public async Task EnsureAutoConnect_WhileAlreadyConnected_KeepsTheLiveSession()
+    {
+        var realTransport = new FakeDeviceTransport();
+        var provider = new FakeDeviceEndpointProvider
+        {
+            KnownEndpoints = { new DeviceEndpointInfo("fluid1", "FluidNC-1234", true) },
+        };
+        var vm = await CreateVmAsync(realTransport, endpointProvider: provider);
+        await vm.AutoConnectAsync();
+        var session = vm.Session;
+
+        await vm.EnsureAutoConnectAsync();
+
+        Assert.Same(session, vm.Session);
+    }
+
     [Fact]
     public async Task AutoConnectAsync_NoFluidNcAnywhere_GivesUpAfterConfiguredAttemptsAndShowsManualModal()
     {
