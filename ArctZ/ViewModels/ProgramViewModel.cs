@@ -189,12 +189,15 @@ public partial class ProgramViewModel : ViewModelBase
     /// путей выхода (пункт меню и закрытие окна), поэтому останавливает устройство безусловно —
     /// шла программа, шёл джог или машина простаивала.
     /// </summary>
+    /// <param name="confirmIfRunning">False на пути принудительного закрытия приложения
+    /// (смахивание из недавних на Android): спросить там некого, а станок остановить
+    /// обязательно.</param>
     /// <returns>False, если пользователь отказался от выхода; устройство при этом не тронуто.</returns>
-    public async Task<bool> ShutdownAsync()
+    public async Task<bool> ShutdownAsync(bool confirmIfRunning = true)
     {
         IsSideMenuOpen = false;
 
-        if (IsProgramLocked)
+        if (confirmIfRunning && IsProgramLocked)
         {
             var confirmed = await ConfirmAsync("Сейчас выполняется программа. Всё равно выйти из приложения?");
             if (!confirmed)

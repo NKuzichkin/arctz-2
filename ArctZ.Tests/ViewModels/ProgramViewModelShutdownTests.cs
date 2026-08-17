@@ -102,6 +102,22 @@ public class ProgramViewModelShutdownTests
         await exitTask;
     }
 
+    /// <summary>Принудительное закрытие приложения (смахивание из недавних на Android) не
+    /// может ничего спросить у пользователя: показывать некому и некогда.</summary>
+    [Fact]
+    public async Task ShutdownAsync_WithoutConfirmation_StopsARunningProgramWithoutAskingAnything()
+    {
+        var vm = CreateViewModel(out _, out var session);
+        vm.PlaybackState = PlaybackState.Running;
+
+        var stopped = await vm.ShutdownAsync(confirmIfRunning: false);
+
+        Assert.True(stopped);
+        Assert.Null(vm.PendingConfirmation);
+        Assert.Equal(1, session.StopAndDrainCallCount);
+        Assert.Equal(PlaybackState.Stopped, vm.PlaybackState);
+    }
+
     /// <summary>Не подключено — выходим без обращения к устройству, а не падаем на null.</summary>
     [Fact]
     public async Task ExitCommand_WhenNoSessionIsConnected_StillExits()
