@@ -5,6 +5,12 @@ namespace ArctZ.Services.Device;
 
 public sealed class FluidNcStatusParser : IStatusParser
 {
+    /// <summary>Last work-coordinate offset the firmware reported. It rides along on only every
+    /// tenth status report or so, but applies to every MPos in between, so it has to be remembered.
+    /// Zero until the first WCO arrives — which is also the right answer while no work offset is
+    /// set, the usual case for this machine.</summary>
+    private MachinePose _workCoordinateOffset = MachinePose.Zero;
+
     public FluidNcLine Parse(string rawLine)
     {
         var line = rawLine.Trim();
@@ -39,7 +45,7 @@ public sealed class FluidNcStatusParser : IStatusParser
         return new UnrecognizedLine(rawLine);
     }
 
-    private static FluidNcLine ParseStatusReport(string body, string rawLine)
+    private FluidNcLine ParseStatusReport(string body, string rawLine)
     {
         var fields = body.Split('|');
         if (fields.Length == 0)
@@ -51,17 +57,18 @@ public sealed class FluidNcStatusParser : IStatusParser
             ? parsedState
             : MachineState.Unknown;
 
-        var pose = MachinePose.Zero;
-        var wPosField = Array.Find(fields, f => f.StartsWith("WPos:", StringComparison.Ordinal));
-        if (wPosField is not null)
+        if (TryReadPose(fields, "WCO:") is { } offset)
         {
-            var coords = wPosField["WPos:".Length..].Split(',');
-            pose = new MachinePose(
-                X: ParseCoordinate(coords, 0),
-                Y: ParseCoordinate(coords, 1),
-                Z: ParseCoordinate(coords, 2),
-                A: ParseCoordinate(coords, 3));
+            _workCoordinateOffset = offset;
         }
+
+        // Which of the two the firmware sends is decided by `$10` bit 0, not by us, so both have to
+        // be understood. WPos already has the offset applied; MPos is machine-absolute and needs it
+        // subtracted to give the rest of the app the work position it expects.
+        var pose = TryReadPose(fields, "WPos:")
+            ?? (TryReadPose(fields, "MPos:") is { } machinePose
+                ? Subtract(machinePose, _workCoordinateOffset)
+                : MachinePose.Zero);
 
         int? plannerBlocksAvailable = null;
         int? rxBytesAvailable = null;
@@ -80,6 +87,25 @@ public sealed class FluidNcStatusParser : IStatusParser
 
         return new StatusReportLine(new DeviceStatus(state, pose, plannerBlocksAvailable, rxBytesAvailable));
     }
+
+    private static MachinePose? TryReadPose(string[] fields, string prefix)
+    {
+        var field = Array.Find(fields, f => f.StartsWith(prefix, StringComparison.Ordinal));
+        if (field is null)
+        {
+            return null;
+        }
+
+        var coords = field[prefix.Length..].Split(',');
+        return new MachinePose(
+            X: ParseCoordinate(coords, 0),
+            Y: ParseCoordinate(coords, 1),
+            Z: ParseCoordinate(coords, 2),
+            A: ParseCoordinate(coords, 3));
+    }
+
+    private static MachinePose Subtract(MachinePose pose, MachinePose offset) =>
+        new(pose.X - offset.X, pose.Y - offset.Y, pose.Z - offset.Z, pose.A - offset.A);
 
     private static double ParseCoordinate(string[] coords, int index) =>
         index < coords.Length &&

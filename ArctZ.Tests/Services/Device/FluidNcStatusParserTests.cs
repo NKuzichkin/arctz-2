@@ -27,6 +27,52 @@ public class FluidNcStatusParserTests
         Assert.Equal(new MachinePose(1.000, 2.000, 3.000, 0), report.Status.WPos);
     }
 
+    /// <summary>With `$10=1` — the setting this machine actually runs — the firmware reports MPos
+    /// and never WPos, so a parser that only knows WPos silently hands out a zero pose forever.</summary>
+    [Fact]
+    public void Parse_StatusReportLine_WithMPosInsteadOfWPos_ExtractsPosition()
+    {
+        var result = _parser.Parse("<Jog|MPos:0.000,169.910,0.000,0.000|FS:1000,0>");
+
+        var report = Assert.IsType<StatusReportLine>(result);
+        Assert.Equal(new MachinePose(0.000, 169.910, 0.000, 0.000), report.Status.WPos);
+    }
+
+    /// <summary>MPos is machine-absolute; the work position the rest of the app wants is MPos minus
+    /// the work-coordinate offset.</summary>
+    [Fact]
+    public void Parse_StatusReportLine_WithMPosAndWco_SubtractsTheOffset()
+    {
+        var result = _parser.Parse("<Idle|MPos:10.000,20.000,30.000,40.000|WCO:1.000,2.000,3.000,4.000>");
+
+        var report = Assert.IsType<StatusReportLine>(result);
+        Assert.Equal(new MachinePose(9.000, 18.000, 27.000, 36.000), report.Status.WPos);
+    }
+
+    /// <summary>The firmware sends WCO only every so often, so the offset from an earlier report has
+    /// to keep applying to the MPos-only reports that follow it.</summary>
+    [Fact]
+    public void Parse_StatusReportLine_WithMPosAfterAnEarlierWco_KeepsApplyingThatOffset()
+    {
+        _parser.Parse("<Idle|MPos:10.000,20.000,30.000,40.000|WCO:1.000,2.000,3.000,4.000>");
+
+        var result = _parser.Parse("<Idle|MPos:10.000,20.000,30.000,40.000>");
+
+        var report = Assert.IsType<StatusReportLine>(result);
+        Assert.Equal(new MachinePose(9.000, 18.000, 27.000, 36.000), report.Status.WPos);
+    }
+
+    /// <summary>WPos is already the work position, so a WCO in the same report must not be applied
+    /// to it a second time.</summary>
+    [Fact]
+    public void Parse_StatusReportLine_WithWPosAndWco_UsesWPosUnchanged()
+    {
+        var result = _parser.Parse("<Idle|WPos:9.000,18.000,27.000,36.000|WCO:1.000,2.000,3.000,4.000>");
+
+        var report = Assert.IsType<StatusReportLine>(result);
+        Assert.Equal(new MachinePose(9.000, 18.000, 27.000, 36.000), report.Status.WPos);
+    }
+
     [Fact]
     public void Parse_StatusReportLine_MissingBf_ReturnsNullBufferInfo()
     {
