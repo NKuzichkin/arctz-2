@@ -18,6 +18,23 @@ public class FluidNcStatusParserTests
         Assert.Equal(128, report.Status.RxBytesAvailable);
     }
 
+    /// <summary>Состояние может нести подсостояние через двоеточие. По спецификации grbl 1.1
+    /// "Hold:0" — торможение закончено, "Hold:1" — ещё идёт (и сброс в этот момент выбросит
+    /// аварию), поэтому суффикс нужен целиком, а не только имя состояния.</summary>
+    [Theory]
+    [InlineData("Hold:0", MachineState.Hold, 0)]
+    [InlineData("Hold:1", MachineState.Hold, 1)]
+    [InlineData("Door:1", MachineState.Unknown, 1)]
+    [InlineData("Run", MachineState.Run, null)]
+    public void Parse_StatusReportLine_ReadsStateAndSubState(string field, MachineState expectedState, int? expectedSubState)
+    {
+        var result = _parser.Parse($"<{field}|MPos:0.000,0.000,0.000,0.000|Bf:15,128>");
+
+        var report = Assert.IsType<StatusReportLine>(result);
+        Assert.Equal(expectedState, report.Status.State);
+        Assert.Equal(expectedSubState, report.Status.SubState);
+    }
+
     [Fact]
     public void Parse_StatusReportLine_MissingAxis_DefaultsToZero()
     {

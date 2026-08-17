@@ -41,5 +41,16 @@ public interface IDeviceSession
 
     Task FeedHoldAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Halts the machine for good: cancels jog motion, drops everything still queued in the app,
+    /// feed-holds, waits (up to <paramref name="timeout"/>) for a status report confirming the
+    /// firmware buffer is empty, then soft-resets. Every command goes out unconditionally —
+    /// whether or not a jog or a program was running, and whether or not the drain was confirmed.
+    /// Deliberately takes no CancellationToken: the timeout is the only way out, so no caller can
+    /// leave the machine half-stopped.
+    /// </summary>
+    /// <returns>True when the device confirmed an empty buffer before the timeout.</returns>
+    Task<bool> StopAndDrainAsync(TimeSpan timeout);
+
     Task ResumeAsync(CancellationToken cancellationToken = default);
 }

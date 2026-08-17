@@ -662,5 +662,16 @@
                 </StackPanel>
             </Border>
         </Border>
+
+        <!-- Последним в Grid: перекрывает и остальные модалки, включая аварийную. -->
+        <Border IsVisible="{Binding IsShuttingDown}" Background="{StaticResource HudScrimBrush}">
+            <StackPanel Spacing="14" HorizontalAlignment="Center" VerticalAlignment="Center" Width="280">
+                <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+                    <materialIcons:MaterialIcon Kind="StopCircleOutline" Width="18" Height="18" VerticalAlignment="Center" />
+                    <TextBlock Text="Остановка устройства…" VerticalAlignment="Center" />
+                </StackPanel>
+                <ProgressBar IsIndeterminate="True" HorizontalAlignment="Stretch" />
+            </StackPanel>
+        </Border>
     </Grid>
 </UserControl>

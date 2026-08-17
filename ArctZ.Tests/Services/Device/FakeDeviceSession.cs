@@ -26,9 +26,21 @@ public sealed class FakeDeviceSession : ArctZ.Services.Device.IDeviceSession
 
     public int UpdateJogCallCount { get; private set; }
 
+    public int StopAndDrainCallCount { get; private set; }
+
+    public int DisconnectCallCount { get; private set; }
+
+    /// <summary>Задать, чтобы StopAndDrainAsync повис до разрешения — так тест успевает
+    /// проверить состояние приложения, пока остановка ещё идёт.</summary>
+    public TaskCompletionSource<bool>? StopAndDrainGate { get; set; }
+
     public Task ConnectAsync(string deviceId, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
-    public Task DisconnectAsync() => Task.CompletedTask;
+    public Task DisconnectAsync()
+    {
+        DisconnectCallCount++;
+        return Task.CompletedTask;
+    }
 
     public void BeginJog()
     {
@@ -59,6 +71,17 @@ public sealed class FakeDeviceSession : ArctZ.Services.Device.IDeviceSession
         Task.FromResult(Acknowledged);
 
     public Task FeedHoldAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    public async Task<bool> StopAndDrainAsync(TimeSpan timeout)
+    {
+        StopAndDrainCallCount++;
+        if (StopAndDrainGate is { } gate)
+        {
+            await gate.Task;
+        }
+
+        return true;
+    }
 
     public Task ResumeAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 }

@@ -129,6 +129,15 @@ public sealed class MockDeviceTransport : IDeviceTransport, IMockDeviceControl
                 case 0x85: // jog cancel
                     _targetPose = null;
                     break;
+                case 0x18: // soft reset (Ctrl-X)
+                    // В отличие от feed hold, выбрасывает всё принятое, но ещё не исполненное:
+                    // после него станку нечего возобновлять.
+                    _pendingLines.Clear();
+                    _rxBytesInFlight = 0;
+                    _targetPose = null;
+                    _dwellSecondsRemaining = 0;
+                    _held = false;
+                    break;
             }
         }
 

@@ -26,4 +26,8 @@ public sealed record RealtimeCommand(byte Value) : IDeviceCommand
     public static readonly RealtimeCommand FeedHold = new((byte)'!');
     public static readonly RealtimeCommand CycleStartResume = new((byte)'~');
     public static readonly RealtimeCommand JogCancel = new(0x85);
+
+    /// <summary>Ctrl-X. Unlike a feed hold, this empties the firmware's rx and planner
+    /// buffers outright, so nothing is left to resume once the app is gone.</summary>
+    public static readonly RealtimeCommand SoftReset = new(0x18);
 }

@@ -61,6 +61,12 @@ public partial class ProgramViewModel : ViewModelBase
     [ObservableProperty]
     private bool _isSideMenuOpen;
 
+    /// <summary>Приложение уже закрывается и ждёт остановки станка. Пока флаг взведён,
+    /// экран закрыт оверлеем: ожидание занимает до <see cref="DeviceStopTimeout"/>, и без
+    /// него интерфейс выглядел бы зависшим.</summary>
+    [ObservableProperty]
+    private bool _isShuttingDown;
+
     [ObservableProperty]
     private ProgramCompletionMode _completionMode = ProgramCompletionMode.Stop;
 
@@ -164,8 +170,27 @@ public partial class ProgramViewModel : ViewModelBase
         IsSideMenuOpen = false;
     }
 
+    /// <summary>Сколько ждать от станка подтверждения, что его буфер пуст. Восемь status-отчётов
+    /// при штатном опросе в 250 мс — с запасом на дребезг связи, но так, чтобы выход не подвисал
+    /// заметно, когда устройство молчит.</summary>
+    internal static readonly TimeSpan DeviceStopTimeout = TimeSpan.FromSeconds(2);
+
     [RelayCommand]
     private async Task ExitAsync()
+    {
+        if (await ShutdownAsync())
+        {
+            _exitService.Exit();
+        }
+    }
+
+    /// <summary>
+    /// Приводит станок в безопасное состояние перед закрытием приложения. Вызывается из всех
+    /// путей выхода (пункт меню и закрытие окна), поэтому останавливает устройство безусловно —
+    /// шла программа, шёл джог или машина простаивала.
+    /// </summary>
+    /// <returns>False, если пользователь отказался от выхода; устройство при этом не тронуто.</returns>
+    public async Task<bool> ShutdownAsync()
     {
         IsSideMenuOpen = false;
 
@@ -174,11 +199,26 @@ public partial class ProgramViewModel : ViewModelBase
             var confirmed = await ConfirmAsync("Сейчас выполняется программа. Всё равно выйти из приложения?");
             if (!confirmed)
             {
-                return;
+                return false;
             }
         }
 
-        _exitService.Exit();
+        // Гасит цикл диспетчеризации в PlayAsync до того, как он успеет дослать в очередь
+        // очередной шаг поверх уже отправленной остановки.
+        PlaybackState = PlaybackState.Stopped;
+        CurrentSegmentIndex = null;
+        SegmentProgress = 0;
+
+        IsShuttingDown = true;
+
+        if (Connection.Session is { } session)
+        {
+            await session.StopAndDrainAsync(DeviceStopTimeout);
+        }
+
+        await Connection.DisconnectForShutdownAsync();
+
+        return true;
     }
 
     partial void OnProgramIdChanged(Guid? value)

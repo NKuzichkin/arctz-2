@@ -18,6 +18,10 @@ public sealed class DeviceSession : IDeviceSession
     private string? _lastDeviceId;
     private int _connectionGeneration;
 
+    /// <summary>The firmware reports free planner slots, not the total, so the largest free count
+    /// seen — which happens when the machine is idle — stands in for the planner's capacity.</summary>
+    private int _plannerCapacity;
+
     public DeviceSession(
         IDeviceTransport transport,
         IBufferAwareCommandQueue commandQueue,
@@ -105,6 +109,81 @@ public sealed class DeviceSession : IDeviceSession
 
     public Task<CommandResult> ResetAlarmAsync(CancellationToken cancellationToken = default) =>
         _commandQueue.EnqueueAsync(new GCodeLineCommand("$X"), cancellationToken);
+
+    public async Task<bool> StopAndDrainAsync(TimeSpan timeout)
+    {
+        // The jog cancel goes out directly rather than only through the scheduler: Stop() returns
+        // on its first line when no jog is active, and this path may not skip anything.
+        _jogScheduler.Stop();
+        await _realtimeChannel.SendAsync(RealtimeCommand.JogCancel).ConfigureAwait(false);
+
+        _commandQueue.AbortPending();
+        await _realtimeChannel.SendAsync(RealtimeCommand.FeedHold).ConfigureAwait(false);
+
+        var drained = await WaitForEmptyBufferAsync(timeout).ConfigureAwait(false);
+
+        // Unconditional, drained or not: a feed hold only parks the motion, leaving the rest of it
+        // in the planner to resume on the next '~'. The soft reset is what empties the buffer.
+        await _realtimeChannel.SendAsync(RealtimeCommand.SoftReset).ConfigureAwait(false);
+
+        return drained;
+    }
+
+    /// <summary>Waits for a status report showing a stopped machine with an empty planner. Only
+    /// reports that arrive after the feed hold count — the last one before it was sampled while
+    /// the machine was still moving, and can show an idle machine from before the planner filled.
+    /// </summary>
+    private async Task<bool> WaitForEmptyBufferAsync(TimeSpan timeout)
+    {
+        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void OnStatusChanged()
+        {
+            if (IsStoppedWithEmptyBuffer(DeviceStatus))
+            {
+                completion.TrySetResult(true);
+            }
+        }
+
+        DeviceStatusChanged += OnStatusChanged;
+        try
+        {
+            using var timeoutCts = new CancellationTokenSource();
+            var timeoutTask = Task.Delay(timeout, timeoutCts.Token);
+            var finished = await Task.WhenAny(completion.Task, timeoutTask).ConfigureAwait(false);
+            if (finished == timeoutTask)
+            {
+                return false;
+            }
+
+            timeoutCts.Cancel();
+            return true;
+        }
+        finally
+        {
+            DeviceStatusChanged -= OnStatusChanged;
+        }
+    }
+
+    private bool IsStoppedWithEmptyBuffer(DeviceStatus? status) => status switch
+    {
+        // Idle означает, что планировщик отработан до конца; свободные слоты это подтверждают.
+        // Их отсутствие в отчёте (прошивку можно собрать без поля Bf) оставляет состояние
+        // единственным свидетельством — принять его лучше, чем всегда упираться в таймаут.
+        { State: MachineState.Idle } idle =>
+            idle.PlannerBlocksAvailable is not { } available || available >= _plannerCapacity,
+
+        // Удержание не опустошает планировщик — остаток движения лежит именно в нём, — поэтому
+        // ждать пустых слотов здесь бессмысленно. Признак остановки — завершённое торможение:
+        // "Hold:1" по спецификации grbl 1.1 значит «ещё тормозим», и сброс в этот момент
+        // выбросит аварию с потерей позиции.
+        { State: MachineState.Hold } hold => hold.SubState is not 1,
+
+        // Авария — тоже остановка: станок не движется и не сдвинется до сброса.
+        { State: MachineState.Alarm } => true,
+
+        _ => false,
+    };
 
     public Task FeedHoldAsync(CancellationToken cancellationToken = default) =>
         _realtimeChannel.SendAsync(RealtimeCommand.FeedHold, cancellationToken);
@@ -217,6 +296,11 @@ public sealed class DeviceSession : IDeviceSession
                 break;
             case StatusReportLine report:
                 DeviceStatus = report.Status;
+                if (report.Status.PlannerBlocksAvailable is { } free)
+                {
+                    _plannerCapacity = Math.Max(_plannerCapacity, free);
+                }
+
                 if (report.Status.PlannerBlocksAvailable is { } planner && report.Status.RxBytesAvailable is { } rx)
                 {
                     _commandQueue.UpdateBufferCapacity(rx, planner);

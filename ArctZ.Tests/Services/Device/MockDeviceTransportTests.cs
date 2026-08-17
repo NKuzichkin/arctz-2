@@ -35,6 +35,37 @@ public class MockDeviceTransportTests
         return report!.Status;
     }
 
+    /// <summary>Мягкий сброс (Ctrl-X) — единственная команда, которая реально опустошает буферы
+    /// прошивки; на нём держится безопасный выход из приложения.</summary>
+    [Fact]
+    public async Task SendRawByteAsync_SoftReset_DropsQueuedLinesAndStopsMotion()
+    {
+        await _mock.ConnectAsync("demo");
+        await _mock.SendLineAsync("G1 X100 F600");
+        await _mock.SendLineAsync("G1 X200 F600");
+        _ticker.RaiseElapsed(); // первая строка уходит в исполнение, станок трогается
+        Assert.Equal(MachineState.Run, QueryStatus().State);
+
+        await _mock.SendRawByteAsync(0x18);
+
+        var status = QueryStatus();
+        Assert.Equal(MachineState.Idle, status.State);
+        Assert.Equal(15, status.PlannerBlocksAvailable);
+        Assert.Equal(128, status.RxBytesAvailable);
+    }
+
+    [Fact]
+    public async Task SendRawByteAsync_SoftResetAfterFeedHold_ClearsTheHold()
+    {
+        await _mock.ConnectAsync("demo");
+        await _mock.SendRawByteAsync((byte)'!');
+        Assert.Equal(MachineState.Hold, QueryStatus().State);
+
+        await _mock.SendRawByteAsync(0x18);
+
+        Assert.Equal(MachineState.Idle, QueryStatus().State);
+    }
+
     [Fact]
     public async Task ConnectAsync_SetsIsConnectedAndStartsMotionTicker()
     {

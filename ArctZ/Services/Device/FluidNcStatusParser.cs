@@ -53,9 +53,17 @@ public sealed class FluidNcStatusParser : IStatusParser
             return new UnrecognizedLine(rawLine);
         }
 
-        var state = Enum.TryParse<MachineState>(fields[0], ignoreCase: true, out var parsedState)
+        // "Hold:0"/"Hold:1" (and "Door:n") name the state before the colon and qualify it after —
+        // for a hold, whether the deceleration has finished. Both halves matter, and parsing the
+        // field whole would leave every one of them as Unknown.
+        var stateParts = fields[0].Split(':');
+        var state = Enum.TryParse<MachineState>(stateParts[0], ignoreCase: true, out var parsedState)
             ? parsedState
             : MachineState.Unknown;
+        int? subState = stateParts.Length > 1 &&
+            int.TryParse(stateParts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedSubState)
+                ? parsedSubState
+                : null;
 
         if (TryReadPose(fields, "WCO:") is { } offset)
         {
@@ -85,7 +93,7 @@ public sealed class FluidNcStatusParser : IStatusParser
             }
         }
 
-        return new StatusReportLine(new DeviceStatus(state, pose, plannerBlocksAvailable, rxBytesAvailable));
+        return new StatusReportLine(new DeviceStatus(state, pose, plannerBlocksAvailable, rxBytesAvailable, subState));
     }
 
     private static MachinePose? TryReadPose(string[] fields, string prefix)

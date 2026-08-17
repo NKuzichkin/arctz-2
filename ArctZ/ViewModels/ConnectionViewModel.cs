@@ -310,6 +310,11 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
         await DisconnectAsync();
     }
 
+    /// <summary>Разрыв связи при закрытии приложения. Идёт тем же путём, что и кнопка
+    /// «Отключить», именно ради подавления автоподключения: без него разрыв тут же поднимает
+    /// новую попытку связаться со станком, который приложение только что остановило.</summary>
+    public Task DisconnectForShutdownAsync() => ManualDisconnectAsync();
+
     private async Task ConnectAsync()
     {
         if (SelectedEndpoint is null)
