@@ -17,6 +17,11 @@ public sealed class JogScheduler : IJogScheduler
     /// the firmware rejects with an error.</summary>
     private const double MinStep = 0.001;
 
+    /// <summary>Ticks that must pass between two jog cancels. Sweeping the stick smoothly through a
+    /// circle turns roughly one threshold's worth of angle per tick, and cancelling that often would
+    /// keep the planner empty — the stutter the buffered send loop exists to avoid.</summary>
+    private const int CancelCooldownTicks = 3;
+
     private readonly IJogCommandFactory _commandFactory;
     private readonly ICommandSerializer _serializer;
     private readonly IDeviceTransport _transport;
@@ -24,6 +29,7 @@ public sealed class JogScheduler : IJogScheduler
     private readonly IPeriodicTimer _timer;
     private readonly TimeSpan _interval;
     private readonly ISerialEventQueue _eventQueue;
+    private readonly JogDirectionChangeDetector _changeDetector;
 
     private DualJoystickState? _latestState;
     private MachinePose _latestPose = MachinePose.Zero;
@@ -33,6 +39,14 @@ public sealed class JogScheduler : IJogScheduler
     private int _queuedPlannerBlocks;
     private int _plannerCapacity;
 
+    /// <summary>Stick state behind the last jog line sent — what the machine is actually executing,
+    /// which is what a new stick position has to be judged against.</summary>
+    private DualJoystickState? _committedState;
+    private bool _cancelPending;
+    private bool _hasUncancelledMotion;
+    private long _tickCount;
+    private long _lastCancelTick = -CancelCooldownTicks;
+
     public JogScheduler(
         IJogCommandFactory commandFactory,
         ICommandSerializer serializer,
@@ -40,7 +54,8 @@ public sealed class JogScheduler : IJogScheduler
         IRealtimeCommandChannel realtimeChannel,
         IPeriodicTimer timer,
         TimeSpan interval,
-        ISerialEventQueue eventQueue)
+        ISerialEventQueue eventQueue,
+        JogDirectionChangeDetector? changeDetector = null)
     {
         _commandFactory = commandFactory;
         _serializer = serializer;
@@ -49,6 +64,7 @@ public sealed class JogScheduler : IJogScheduler
         _timer = timer;
         _interval = interval;
         _eventQueue = eventQueue;
+        _changeDetector = changeDetector ?? new JogDirectionChangeDetector();
         _timer.Elapsed += () => _eventQueue.Enqueue(OnElapsedCore);
     }
 
@@ -61,11 +77,34 @@ public sealed class JogScheduler : IJogScheduler
             _isActive = true;
             _outstandingJogs = 0;
             _queuedPlannerBlocks = 0;
+            _committedState = null;
+            _cancelPending = false;
+            _hasUncancelledMotion = false;
+            _tickCount = 0;
+            _lastCancelTick = -CancelCooldownTicks;
         });
         _timer.Start(_interval);
     }
 
-    public void UpdateState(DualJoystickState state) => _eventQueue.Enqueue(() => _latestState = state);
+    public void UpdateState(DualJoystickState state) => _eventQueue.Enqueue(() =>
+    {
+        _latestState = state;
+
+        if (!_isActive || _committedState is not { } committed)
+        {
+            return;
+        }
+
+        if (!_changeDetector.IsSharpChange(committed, state))
+        {
+            return;
+        }
+
+        // Adopt the new position as the reference right away: the rest of the swing would otherwise
+        // keep measuring against the abandoned direction and ask for a cancel on every sample.
+        _committedState = state;
+        RequestCancel();
+    });
 
     public void UpdateStatus(DeviceStatus status) => _eventQueue.Enqueue(() =>
     {
@@ -92,6 +131,8 @@ public sealed class JogScheduler : IJogScheduler
                 _outstandingJogs--;
                 consumed = true;
             }
+
+            TrySendPendingCancel();
         });
 
         return consumed;
@@ -120,12 +161,60 @@ public sealed class JogScheduler : IJogScheduler
             _latestState = null;
             _outstandingJogs = 0;
             _queuedPlannerBlocks = 0;
+            _committedState = null;
+            _cancelPending = false;
+            _hasUncancelledMotion = false;
         });
+    }
+
+    /// <summary>Asks for the committed motion to be flushed. Does nothing when the machine has
+    /// nothing of ours left to flush, or when the previous cancel is too recent.</summary>
+    private void RequestCancel()
+    {
+        if (_cancelPending || !_hasUncancelledMotion || _tickCount - _lastCancelTick < CancelCooldownTicks)
+        {
+            return;
+        }
+
+        _cancelPending = true;
+        TrySendPendingCancel();
+    }
+
+    /// <summary>Holds the cancel back until every jog line has been acknowledged. A cancel that
+    /// overtakes an unacknowledged jog leaves that jog inside the firmware's mc_line(), which plans
+    /// it after the flush and drives one more block in the direction just abandoned (grbl issues
+    /// #95 and #837) — the fix upstream settled on is to send the cancel only after the ok.</summary>
+    private void TrySendPendingCancel()
+    {
+        if (!_cancelPending || _outstandingJogs > 0)
+        {
+            return;
+        }
+
+        _cancelPending = false;
+        _hasUncancelledMotion = false;
+        // The cancel empties the planner, so the stale free-slot count from the last status report
+        // must not keep gating the send loop until the next one arrives.
+        _queuedPlannerBlocks = 0;
+        _lastCancelTick = _tickCount;
+
+        // Sent outside any queued write: the cancel must not wait behind a jog blocked on a
+        // saturated link.
+        _ = _realtimeChannel.SendAsync(RealtimeCommand.JogCancel);
     }
 
     private void OnElapsedCore()
     {
+        _tickCount++;
+
         if (!_isActive || _latestState is null)
+        {
+            return;
+        }
+
+        // Sending now would both keep _outstandingJogs above zero — starving the cancel that is
+        // waiting on it — and add a block the cancel is about to flush anyway.
+        if (_cancelPending)
         {
             return;
         }
@@ -142,6 +231,8 @@ public sealed class JogScheduler : IJogScheduler
         }
 
         _outstandingJogs++;
+        _committedState = _latestState;
+        _hasUncancelledMotion = true;
         var text = _serializer.Serialize(command);
         _ = _transport.SendLineAsync(text);
     }

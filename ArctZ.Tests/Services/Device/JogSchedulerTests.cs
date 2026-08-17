@@ -15,6 +15,14 @@ public class JogSchedulerTests
     private static readonly DualJoystickState FullLeftX =
         new(new JoystickAxisInput(1, 0, 1), new JoystickAxisInput(0, 0, 0));
 
+    private static readonly DualJoystickState ReversedLeftX =
+        new(new JoystickAxisInput(-1, 0, 1), new JoystickAxisInput(0, 0, 0));
+
+    /// <summary>A 20-degree turn at unchanged force — inside both of the detector's thresholds.</summary>
+    private static readonly DualJoystickState GentlyTurnedLeftX = new(
+        new JoystickAxisInput(Math.Cos(20 * Math.PI / 180), Math.Sin(20 * Math.PI / 180), 1),
+        new JoystickAxisInput(0, 0, 0));
+
     public JogSchedulerTests()
     {
         _scheduler = new JogScheduler(
@@ -212,5 +220,159 @@ public class JogSchedulerTests
         _timer.RaiseElapsed();
 
         Assert.Empty(_transport.SentLines);
+    }
+
+    [Fact]
+    public void UpdateState_ReversingWithNothingAwaitingAck_SendsJogCancelImmediately()
+    {
+        _scheduler.Start();
+        _scheduler.UpdateState(FullLeftX);
+        _timer.RaiseElapsed();
+        _scheduler.TryHandleAck();
+
+        _scheduler.UpdateState(ReversedLeftX);
+
+        Assert.Equal(new byte[] { 0x85 }, _transport.SentRawBytes);
+    }
+
+    /// <summary>A cancel that overtakes an unacknowledged jog leaves that jog inside the firmware's
+    /// mc_line(), where it is planned after the flush and drives one more block in the direction
+    /// just abandoned (grbl issues #95 and #837).</summary>
+    [Fact]
+    public void UpdateState_ReversingWithJogsAwaitingAck_DefersCancelUntilTheyAreAcknowledged()
+    {
+        _scheduler.Start();
+        _scheduler.UpdateState(FullLeftX);
+        _timer.RaiseElapsed();
+        _timer.RaiseElapsed();
+
+        _scheduler.UpdateState(ReversedLeftX);
+        Assert.Empty(_transport.SentRawBytes);
+
+        _scheduler.TryHandleAck();
+        Assert.Empty(_transport.SentRawBytes);
+
+        _scheduler.TryHandleAck();
+        Assert.Equal(new byte[] { 0x85 }, _transport.SentRawBytes);
+    }
+
+    [Fact]
+    public void Tick_WhileACancelIsDeferred_SendsNoFurtherJog()
+    {
+        _scheduler.Start();
+        _scheduler.UpdateState(FullLeftX);
+        _timer.RaiseElapsed();
+        _scheduler.UpdateState(ReversedLeftX);
+
+        _timer.RaiseElapsed();
+
+        Assert.Single(_transport.SentLines);
+    }
+
+    [Fact]
+    public void UpdateState_WithGradualTurn_SendsNoJogCancel()
+    {
+        _scheduler.Start();
+        _scheduler.UpdateState(FullLeftX);
+        _timer.RaiseElapsed();
+        _scheduler.TryHandleAck();
+
+        _scheduler.UpdateState(GentlyTurnedLeftX);
+
+        Assert.Empty(_transport.SentRawBytes);
+    }
+
+    [Fact]
+    public void UpdateState_ReversingBeforeAnyJogWasSent_SendsNoJogCancel()
+    {
+        _scheduler.Start();
+        _scheduler.UpdateState(FullLeftX);
+
+        _scheduler.UpdateState(ReversedLeftX);
+
+        Assert.Empty(_transport.SentRawBytes);
+    }
+
+    [Fact]
+    public void Tick_AfterAJogCancel_SendsTheNewDirection()
+    {
+        _scheduler.Start();
+        _scheduler.UpdateState(FullLeftX);
+        _timer.RaiseElapsed();
+        _scheduler.TryHandleAck();
+        _scheduler.UpdateState(ReversedLeftX);
+
+        _timer.RaiseElapsed();
+
+        Assert.Equal(
+            new[] { "$J=G91 G21 X2.5 Y0 Z0 A0 F1000", "$J=G91 G21 X-2.5 Y0 Z0 A0 F1000" },
+            _transport.SentLines);
+    }
+
+    [Fact]
+    public void UpdateState_ReversingAgainWithinTheCooldown_SendsNoSecondJogCancel()
+    {
+        _scheduler.Start();
+        _scheduler.UpdateState(FullLeftX);
+        _timer.RaiseElapsed();
+        _scheduler.TryHandleAck();
+        _scheduler.UpdateState(ReversedLeftX);
+        _timer.RaiseElapsed();
+        _scheduler.TryHandleAck();
+
+        _scheduler.UpdateState(FullLeftX);
+
+        Assert.Equal(new byte[] { 0x85 }, _transport.SentRawBytes);
+    }
+
+    [Fact]
+    public void UpdateState_ReversingAgainAfterTheCooldown_SendsASecondJogCancel()
+    {
+        _scheduler.Start();
+        _scheduler.UpdateState(FullLeftX);
+        _timer.RaiseElapsed();
+        _scheduler.TryHandleAck();
+        _scheduler.UpdateState(ReversedLeftX);
+
+        for (var tick = 0; tick < 3; tick++)
+        {
+            _timer.RaiseElapsed();
+            _scheduler.TryHandleAck();
+        }
+
+        _scheduler.UpdateState(FullLeftX);
+
+        Assert.Equal(new byte[] { 0x85, 0x85 }, _transport.SentRawBytes);
+    }
+
+    /// <summary>Nothing new has reached the machine since the first cancel, so there is no committed
+    /// motion left for a second one to flush.</summary>
+    [Fact]
+    public void UpdateState_ReversingTwiceWithNoJogInBetween_SendsOnlyOneJogCancel()
+    {
+        _scheduler.Start();
+        _scheduler.UpdateState(FullLeftX);
+        _timer.RaiseElapsed();
+        _scheduler.TryHandleAck();
+
+        _scheduler.UpdateState(ReversedLeftX);
+        _scheduler.UpdateState(FullLeftX);
+
+        Assert.Equal(new byte[] { 0x85 }, _transport.SentRawBytes);
+    }
+
+    /// <summary>Dragging the stick to dead centre without lifting the finger never reaches Stop(),
+    /// so the cancel is the only thing that keeps the machine from coasting out the queued blocks.</summary>
+    [Fact]
+    public void UpdateState_ReturningTheStickToCentre_SendsJogCancel()
+    {
+        _scheduler.Start();
+        _scheduler.UpdateState(FullLeftX);
+        _timer.RaiseElapsed();
+        _scheduler.TryHandleAck();
+
+        _scheduler.UpdateState(new DualJoystickState(default, default));
+
+        Assert.Equal(new byte[] { 0x85 }, _transport.SentRawBytes);
     }
 }
