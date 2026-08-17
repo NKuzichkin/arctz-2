@@ -92,10 +92,17 @@ public interface IBackgroundSessionHost
 
 `BackgroundSessionCoordinator` — синглтон, подписанный на `PropertyChanged`
 `ProgramViewModel` (`PlaybackState`, `ProgramName`, `StatusLabel`) и
-`ConnectionViewModel` (`ConnectionState`). Вызывает `Update` при каждом
-изменении и `Stop()` при переходе связи в `Disconnected`. Поднимается в
-`App.OnFrameworkInitializationCompleted` рядом с существующим резолвом
-`ProgramViewModel`.
+`ConnectionViewModel` (`Session`, `ConnectionState`, `DeviceStatus`). Вызывает
+`Update` при каждом изменении и `Stop()`, когда `Connection.Session` стало
+`null`.
+
+Признак «связь есть» — именно `Session`, а не `ConnectionState`: при обрыве
+`ConnectionState` уходит в `Reconnecting`, но станок никуда не делся и сеанс
+обязан пережить переподключение. Обнуляется `Session` только при явном
+отключении (`ManualDisconnectAsync`) и при закрытии приложения.
+
+Поднимается в `App.OnFrameworkInitializationCompleted` рядом с существующим
+резолвом `ProgramViewModel`.
 
 ### D. Выход без диалога (ядро)
 
@@ -137,7 +144,8 @@ public interface IBackgroundSessionHost
 Покрываются тестами (`ArctZ.Tests`):
 
 - проектор: `Running` → Пауза + Стоп; `Paused` → Продолжить + Стоп;
-  подключено без программы → без кнопок; отключено → `Stop()` у хоста;
+  подключено без программы → без кнопок; программа без имени → заголовок
+  «ArctZ»;
 - координатор: изменения состояния ViewModel → вызовы фейкового хоста;
 - `ShutdownAsync(confirmIfRunning: false)`: диалог не показывается,
   станок останавливается, связь рвётся.
