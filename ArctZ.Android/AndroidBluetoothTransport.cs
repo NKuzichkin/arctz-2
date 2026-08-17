@@ -152,10 +152,20 @@ public sealed class AndroidBluetoothTransport : IDeviceTransport
         }
     }
 
-    private static string[] ConnectPermissions() =>
-        OperatingSystem.IsAndroidVersionAtLeast(31)
-            ? new[] { "android.permission.BLUETOOTH_CONNECT" }
-            : new[] { "android.permission.BLUETOOTH" };
+    // POST_NOTIFICATIONS идёт вместе с разрешением на Bluetooth: подключение — единственный
+    // момент, когда пользователь заведомо смотрит на экран, а уведомление фонового сеанса нужно
+    // ровно с этого момента. Отказ ничего не ломает: сервис работает, просто уведомления не видно.
+    private static string[] ConnectPermissions()
+    {
+        if (!OperatingSystem.IsAndroidVersionAtLeast(31))
+        {
+            return new[] { "android.permission.BLUETOOTH" };
+        }
+
+        return OperatingSystem.IsAndroidVersionAtLeast(33)
+            ? new[] { "android.permission.BLUETOOTH_CONNECT", "android.permission.POST_NOTIFICATIONS" }
+            : new[] { "android.permission.BLUETOOTH_CONNECT" };
+    }
 
     private void ReadLoop(BluetoothSocket socket, CancellationToken cancellationToken)
     {

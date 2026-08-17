@@ -12,6 +12,9 @@ namespace ArctZ.Android
         Theme = "@style/MyTheme.NoActionBar",
         Icon = "@drawable/icon",
         MainLauncher = true,
+        // Тап по уведомлению фонового сеанса поднимает уже существующую активность, а не
+        // вторую копию экрана поверх живой.
+        LaunchMode = LaunchMode.SingleTask,
         ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.UiMode)]
     public class MainActivity : AvaloniaMainActivity
     {
