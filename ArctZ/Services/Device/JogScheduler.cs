@@ -151,6 +151,8 @@ public sealed class JogScheduler : IJogScheduler
         // the controller after the cancel — a lurch right after the machine has smoothly stopped.
         _isActive = false;
 
+        JogTrace.Write("stick released (Stop)"); // TEMPORARY: see JogTrace.
+
         _eventQueue.Enqueue(() =>
         {
             _timer.Stop();
@@ -188,6 +190,11 @@ public sealed class JogScheduler : IJogScheduler
     {
         if (!_cancelPending || _outstandingJogs > 0)
         {
+            if (_cancelPending)
+            {
+                JogTrace.Write($"cancel waiting on {_outstandingJogs} unacknowledged jog(s)"); // TEMPORARY: see JogTrace.
+            }
+
             return;
         }
 

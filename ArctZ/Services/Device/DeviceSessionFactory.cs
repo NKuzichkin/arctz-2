@@ -10,15 +10,20 @@ namespace ArctZ.Services.Device;
 public sealed class DeviceSessionFactory : IDeviceSessionFactory
 {
     private static readonly TimeSpan JogInterval = TimeSpan.FromMilliseconds(100);
-    private static readonly TimeSpan StatusPollInterval = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan DefaultStatusPollInterval = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan ReconnectDelay = TimeSpan.FromMilliseconds(200);
     private const int ReconnectMaxAttempts = 3;
 
     private readonly MachineLimits _limits;
+    private readonly TimeSpan _statusPollInterval;
 
-    public DeviceSessionFactory(MachineLimits limits)
+    /// <param name="statusPollInterval">How often '?' goes out. Raising the rate is only useful for
+    /// diagnostics that need dense WPos samples; it costs link bandwidth the jog stream competes
+    /// for, so the default stays at 250 ms.</param>
+    public DeviceSessionFactory(MachineLimits limits, TimeSpan? statusPollInterval = null)
     {
         _limits = limits;
+        _statusPollInterval = statusPollInterval ?? DefaultStatusPollInterval;
     }
 
     public IDeviceSession Create(IDeviceTransport transport)
@@ -35,7 +40,7 @@ public sealed class DeviceSessionFactory : IDeviceSessionFactory
             new SystemPeriodicTimer(),
             JogInterval,
             eventQueue);
-        var statusPoller = new StatusPoller(realtimeChannel, new SystemPeriodicTimer(), StatusPollInterval);
+        var statusPoller = new StatusPoller(realtimeChannel, new SystemPeriodicTimer(), _statusPollInterval);
         var reconnectPolicy = new FixedDelayReconnectPolicy(ReconnectMaxAttempts, ReconnectDelay);
 
         return new DeviceSession(transport, commandQueue, new FluidNcStatusParser(), jogScheduler, statusPoller, reconnectPolicy, eventQueue, realtimeChannel);

@@ -20,7 +20,18 @@ namespace ArctZ.Desktop
 
             var services = new ServiceCollection();
             services.AddArctZCore();
-            services.AddSingleton<IDeviceTransport, DesktopSerialTransport>();
+            // TEMPORARY: JogDiagnosticsTransport timestamps every byte in both directions so the
+            // residual jog overrun after stick release can be measured. Restore the plain
+            // registration below once that is done.
+            services.AddSingleton<IDeviceTransport>(_ => new JogDiagnosticsTransport(new DesktopSerialTransport()));
+
+            // TEMPORARY: 150 ms status polling (default 250 ms). 50 ms was tried first and saturated
+            // the BT SPP link — corrupted status lines, an error:3 from a mangled command, and ok
+            // latencies in the seconds — which distorted the very timings being measured. Registered
+            // after AddArctZCore so it overrides the default factory. Remove with the diagnostics.
+            services.AddSingleton<IDeviceSessionFactory>(sp => new DeviceSessionFactory(
+                sp.GetRequiredService<MachineLimits>(),
+                TimeSpan.FromMilliseconds(150)));
             services.AddSingleton<IDeviceEndpointProvider, DesktopComPortEndpointProvider>();
             services.AddSingleton<IProgramStorage>(_ => new JsonFileProgramStorage(
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ArctZ", "Programs")));
