@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using ArctZ.Services.Device;
 using ArctZ.Services.Program;
+using ArctZ.Tests.Services.App;
 using ArctZ.Tests.Services.Device;
 using ArctZ.Tests.Services.Program;
 using ArctZ.ViewModels;
@@ -16,7 +17,7 @@ public class ProgramViewModelStatusLabelTests
         transport = new FakeDeviceTransport();
         var storage = new FakeProgramStorage();
         var connection = new ConnectionViewModel(transport, () => new FakeDeviceTransport(), new DeviceSessionFactory(MachineLimits.Default), new SingleRealDeviceEndpointProvider());
-        return new ProgramViewModel(connection, storage, new TrajectoryCompiler());
+        return new ProgramViewModel(connection, storage, new TrajectoryCompiler(), new FakeAppExitService());
     }
 
     private static void SeedTwoSegmentProgram(ProgramViewModel vm, FakeDeviceTransport transport)

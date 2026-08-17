@@ -3,6 +3,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using ArctZ.Services.Device;
 using ArctZ.Services.Program;
+using ArctZ.Tests.Services.App;
 using ArctZ.Tests.Services.Device;
 using ArctZ.Tests.Services.Program;
 using ArctZ.ViewModels;
@@ -17,7 +18,7 @@ public class ProgramViewModelPlaybackTests
         transport = new FakeDeviceTransport();
         var storage = new FakeProgramStorage();
         var connection = new ConnectionViewModel(transport, () => new FakeDeviceTransport(), new DeviceSessionFactory(MachineLimits.Default), new SingleRealDeviceEndpointProvider());
-        return new ProgramViewModel(connection, storage, new TrajectoryCompiler());
+        return new ProgramViewModel(connection, storage, new TrajectoryCompiler(), new FakeAppExitService());
     }
 
     /// <summary>3 key points, 2 continuous-blend segments -> 2 compiled G1 steps, no G4.</summary>

@@ -5,6 +5,7 @@ using ArctZ.Components.VirtualJoystick;
 using ArctZ.Services.Program;
 using ArctZ.ViewModels;
 using Avalonia.Controls;
+using Avalonia.Threading;
 
 namespace ArctZ.Views
 {
@@ -55,7 +56,25 @@ namespace ArctZ.Views
                 GCodeLogList.IsEffectivelyVisible &&
                 sender is ObservableCollection<string> { Count: > 0 } lines)
             {
-                GCodeLogList.ScrollIntoView(lines.Count - 1);
+                // ScrollIntoView forces its own synchronous LayoutManager.ExecuteLayoutPass()
+                // internally (Avalonia's VirtualizingStackPanel implementation). Calling it
+                // inline here — mid CollectionChanged, right after AppendSentGCodeLine's
+                // trim-then-add pair (RemoveAt(0) then Add once the 200-line cap is hit) — can
+                // catch the panel's realized-element bookkeeping before it's settled from the
+                // preceding Remove, handing that forced pass a transient rect with a NaN/negative
+                // component. Layoutable.Arrange rejects that with "Invalid Arrange rectangle"
+                // (InvalidOperationException) — reproduced by
+                // ArctZ.Tests.Screenshots.GCodeLogAutoScrollTests. Posting instead of calling
+                // inline lets the pending layout invalidation resolve normally first, so
+                // ScrollIntoView's own pass sees settled state. Re-check Count/visibility at
+                // execution time since more lines may have arrived (or the panel closed) by then.
+                Dispatcher.UIThread.Post(() =>
+                {
+                    if (GCodeLogList.IsEffectivelyVisible && lines.Count > 0)
+                    {
+                        GCodeLogList.ScrollIntoView(lines.Count - 1);
+                    }
+                }, DispatcherPriority.Loaded);
             }
         }
 

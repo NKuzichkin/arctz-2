@@ -8,6 +8,7 @@ using System.Reactive.Concurrency;
 using System.Threading;
 using System.Threading.Tasks;
 using ArctZ.Components.VirtualJoystick;
+using ArctZ.Services.App;
 using ArctZ.Services.Device;
 using ArctZ.Services.Device.Commands;
 using ArctZ.Services.Program;
@@ -21,6 +22,7 @@ public partial class ProgramViewModel : ViewModelBase
 {
     private readonly IProgramStorage _storage;
     private readonly ITrajectoryCompiler _compiler;
+    private readonly IAppExitService _exitService;
     private JoystickAxisInput _leftInput;
     private JoystickAxisInput _rightInput;
     private bool _leftActive;
@@ -79,11 +81,12 @@ public partial class ProgramViewModel : ViewModelBase
 
     public bool IsEditingCompletionSettings => CompletionSettingsEditor is not null;
 
-    public ProgramViewModel(ConnectionViewModel connection, IProgramStorage storage, ITrajectoryCompiler compiler)
+    public ProgramViewModel(ConnectionViewModel connection, IProgramStorage storage, ITrajectoryCompiler compiler, IAppExitService exitService)
     {
         Connection = connection;
         _storage = storage;
         _compiler = compiler;
+        _exitService = exitService;
         Connection.PropertyChanged += OnConnectionPropertyChanged;
 
         // Add/Remove/Move/Reset all need to re-evaluate whether a given point
@@ -159,6 +162,23 @@ public partial class ProgramViewModel : ViewModelBase
     {
         Connection.IsMockSettingsOpen = true;
         IsSideMenuOpen = false;
+    }
+
+    [RelayCommand]
+    private async Task ExitAsync()
+    {
+        IsSideMenuOpen = false;
+
+        if (IsProgramLocked)
+        {
+            var confirmed = await ConfirmAsync("Сейчас выполняется программа. Всё равно выйти из приложения?");
+            if (!confirmed)
+            {
+                return;
+            }
+        }
+
+        _exitService.Exit();
     }
 
     partial void OnProgramIdChanged(Guid? value)

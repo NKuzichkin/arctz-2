@@ -42,7 +42,7 @@ public class ScreenshotGalleryTests
             () => demoTransport,
             new DeviceSessionFactory(MachineLimits.Default),
             new SingleRealDeviceEndpointProvider());
-        var programViewModel = new ProgramViewModel(connection, storage, new TrajectoryCompiler());
+        var programViewModel = new ProgramViewModel(connection, storage, new TrajectoryCompiler(), new FakeAppExitService());
 
         var mainView = new MainView { DataContext = programViewModel };
         VisualTreeAnimationStripper.StripRevealAnimations(mainView);

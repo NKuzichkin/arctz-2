@@ -1,6 +1,7 @@
 using ArctZ.Components.VirtualJoystick;
 using ArctZ.Services.Device;
 using ArctZ.Services.Program;
+using ArctZ.Tests.Services.App;
 using ArctZ.Tests.Services.Device;
 using ArctZ.Tests.Services.Program;
 using ArctZ.ViewModels;
@@ -16,7 +17,7 @@ public class ProgramViewModelJoystickSpeedTests
         var connection = new ConnectionViewModel(transport, () => new FakeDeviceTransport(), new DeviceSessionFactory(MachineLimits.Default), new SingleRealDeviceEndpointProvider());
         var session = new FakeDeviceSession();
         connection.Session = session;
-        var vm = new ProgramViewModel(connection, storage, new TrajectoryCompiler());
+        var vm = new ProgramViewModel(connection, storage, new TrajectoryCompiler(), new FakeAppExitService());
         return (vm, session);
     }
 

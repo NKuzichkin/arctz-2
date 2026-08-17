@@ -509,6 +509,13 @@
                                         <TextBlock Text="Настройки мока" VerticalAlignment="Center" />
                                     </StackPanel>
                                 </Button>
+                                <Button Classes="header-action" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                        Command="{Binding ExitCommand}">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <materialIcons:MaterialIcon Kind="ExitToApp" Width="16" Height="16" VerticalAlignment="Center" />
+                                        <TextBlock Text="Выйти" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
                             </StackPanel>
                         </DockPanel>
                     </Border>

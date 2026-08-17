@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using ArctZ.Components.VirtualJoystick;
 using ArctZ.Services.Device;
 using ArctZ.Services.Program;
+using ArctZ.Tests.Services.App;
 using ArctZ.Tests.Services.Device;
 using ArctZ.Tests.Services.Program;
 using ArctZ.ViewModels;
@@ -17,7 +18,7 @@ public class ProgramViewModelAuthoringTests
         transport = new FakeDeviceTransport();
         storage = new FakeProgramStorage();
         var connection = new ConnectionViewModel(transport, () => new FakeDeviceTransport(), new DeviceSessionFactory(MachineLimits.Default), new SingleRealDeviceEndpointProvider());
-        return new ProgramViewModel(connection, storage, new TrajectoryCompiler());
+        return new ProgramViewModel(connection, storage, new TrajectoryCompiler(), new FakeAppExitService());
     }
 
     [Fact]

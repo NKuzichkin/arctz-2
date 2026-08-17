@@ -1,4 +1,5 @@
 using System;
+using ArctZ.Services.App;
 using ArctZ.Services.Program;
 using ArctZ.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,11 +24,13 @@ public static class ServiceCollectionExtensions
             new SystemPeriodicTimer(),
             TimeSpan.FromMilliseconds(100)));
         services.AddSingleton<ITrajectoryCompiler, TrajectoryCompiler>();
+        services.AddSingleton<IAppExitService, AppExitService>();
         services.AddSingleton<ConnectionViewModel>();
         services.AddSingleton<ProgramViewModel>(sp => new ProgramViewModel(
             sp.GetRequiredService<ConnectionViewModel>(),
             sp.GetRequiredService<IProgramStorage>(),
-            sp.GetRequiredService<ITrajectoryCompiler>()));
+            sp.GetRequiredService<ITrajectoryCompiler>(),
+            sp.GetRequiredService<IAppExitService>()));
         return services;
     }
 }
