@@ -151,19 +151,19 @@ public sealed class JogScheduler : IJogScheduler
         // the controller after the cancel — a lurch right after the machine has smoothly stopped.
         _isActive = false;
 
-        // Sent outside the enqueued action: the cancel is the one command that must not wait
-        // behind a jog write blocked on a saturated link.
-        _ = _realtimeChannel.SendAsync(RealtimeCommand.JogCancel);
-
         _eventQueue.Enqueue(() =>
         {
             _timer.Stop();
             _latestState = null;
-            _outstandingJogs = 0;
-            _queuedPlannerBlocks = 0;
             _committedState = null;
-            _cancelPending = false;
-            _hasUncancelledMotion = false;
+
+            // Unconditional, unlike RequestCancel: the release is the last chance to flush the
+            // committed motion, so neither the cooldown nor an empty _hasUncancelledMotion may
+            // swallow it — a redundant cancel on an already-flushed machine costs nothing.
+            // _outstandingJogs is deliberately left alone so the same ack gate applies here; the
+            // next Start() resets it.
+            _cancelPending = true;
+            TrySendPendingCancel();
         });
     }
 

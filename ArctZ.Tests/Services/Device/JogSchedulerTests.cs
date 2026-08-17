@@ -194,8 +194,61 @@ public class JogSchedulerTests
         Assert.False(_scheduler.IsActive);
     }
 
+    /// <summary>Same grbl #837 hazard as a mid-sweep cancel: releasing the stick must not let the
+    /// cancel overtake a jog line the firmware has not acknowledged, or that line is planned after
+    /// the flush and the machine runs one more block past the release.</summary>
     [Fact]
-    public void Stop_ClearsOutstandingAcksSoTheNextJogStartsUnthrottled()
+    public void Stop_WithJogsAwaitingAck_DefersCancelUntilTheyAreAcknowledged()
+    {
+        _scheduler.Start();
+        _scheduler.UpdateState(FullLeftX);
+        _timer.RaiseElapsed();
+        _timer.RaiseElapsed();
+
+        _scheduler.Stop();
+        Assert.Empty(_transport.SentRawBytes);
+
+        Assert.True(_scheduler.TryHandleAck());
+        Assert.Empty(_transport.SentRawBytes);
+
+        Assert.True(_scheduler.TryHandleAck());
+        Assert.Equal(new byte[] { 0x85 }, _transport.SentRawBytes);
+    }
+
+    /// <summary>The release is the last chance to flush the committed motion, so it must not be
+    /// swallowed by the cooldown that throttles mid-sweep cancels.</summary>
+    [Fact]
+    public void Stop_WithinTheCancelCooldown_StillSendsJogCancel()
+    {
+        _scheduler.Start();
+        _scheduler.UpdateState(FullLeftX);
+        _timer.RaiseElapsed();
+        _scheduler.TryHandleAck();
+        _scheduler.UpdateState(ReversedLeftX);
+
+        _scheduler.Stop();
+
+        Assert.Equal(new byte[] { 0x85, 0x85 }, _transport.SentRawBytes);
+    }
+
+    [Fact]
+    public void Stop_WhileAMidSweepCancelIsDeferred_SendsOnlyOneJogCancel()
+    {
+        _scheduler.Start();
+        _scheduler.UpdateState(FullLeftX);
+        _timer.RaiseElapsed();
+        _timer.RaiseElapsed();
+        _scheduler.UpdateState(ReversedLeftX);
+
+        _scheduler.Stop();
+        _scheduler.TryHandleAck();
+        _scheduler.TryHandleAck();
+
+        Assert.Equal(new byte[] { 0x85 }, _transport.SentRawBytes);
+    }
+
+    [Fact]
+    public void Stop_ThenStart_StartsUnthrottledDespiteJogsLeftAwaitingAck()
     {
         _scheduler.Start();
         _scheduler.UpdateState(FullLeftX);

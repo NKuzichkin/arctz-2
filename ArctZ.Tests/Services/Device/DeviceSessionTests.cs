@@ -117,6 +117,11 @@ public class DeviceSessionTests
 
         _session.EndJog();
 
+        // The cancel waits for the outstanding jog's ok (grbl #837), which reaches the scheduler
+        // only through the session's line routing — so this also covers that hop.
+        Assert.DoesNotContain((byte)0x85, _transport.SentRawBytes);
+        _transport.SimulateReceivedLine("ok");
+
         Assert.Contains((byte)0x85, _transport.SentRawBytes);
     }
 
