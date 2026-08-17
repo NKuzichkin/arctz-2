@@ -31,6 +31,13 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<IProgramStorage>(),
             sp.GetRequiredService<ITrajectoryCompiler>(),
             sp.GetRequiredService<IAppExitService>()));
+
+        // Обычный AddSingleton, а не TryAddSingleton: голова платформы (Android) регистрирует
+        // свой хост после этого вызова, а при резолве одиночного сервиса выигрывает последняя
+        // регистрация. TryAdd оставил бы на Android no-op.
+        services.AddSingleton<IBackgroundSessionHost, NullBackgroundSessionHost>();
+        services.AddSingleton<BackgroundSessionCoordinator>();
+
         return services;
     }
 }

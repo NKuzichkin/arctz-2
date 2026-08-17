@@ -1,3 +1,4 @@
+using ArctZ.Services.App;
 using ArctZ.ViewModels;
 using ArctZ.Views;
 using Avalonia;
@@ -38,6 +39,11 @@ namespace ArctZ
         public override void OnFrameworkInitializationCompleted()
         {
             var viewModel = Services!.GetRequiredService<ProgramViewModel>();
+
+            // Резолвится ради самого факта создания: конструктор подписывается на ViewModel и
+            // дальше живёт столько же, сколько контейнер. Без этой строки на Android не появится
+            // ни уведомления, ни остановки станка при закрытии из недавних.
+            _ = Services!.GetRequiredService<BackgroundSessionCoordinator>();
             _ = viewModel.RefreshLibraryCommand.ExecuteAsync(null);
             _ = viewModel.Connection.AutoConnectAsync();
 
