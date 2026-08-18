@@ -65,4 +65,47 @@ public class LoggingDeviceTransportTests
         Assert.Equal("ok", receivedLine);
         Assert.True(disconnectedRaised);
     }
+
+    [Fact]
+    public void InnerLineReceived_RaisesLineReceivedLogged()
+    {
+        var inner = new FakeDeviceTransport();
+        var transport = new LoggingDeviceTransport(inner);
+        var logged = new List<string>();
+        transport.LineReceivedLogged += logged.Add;
+
+        inner.SimulateReceivedLine("error:9");
+
+        Assert.Equal(new[] { "error:9" }, logged);
+    }
+
+    [Fact]
+    public void LineReceivedLogged_IsRaisedEvenWithoutLineReceivedSubscribers()
+    {
+        var inner = new FakeDeviceTransport();
+        var transport = new LoggingDeviceTransport(inner);
+        var logged = new List<string>();
+        transport.LineReceivedLogged += logged.Add;
+
+        inner.SimulateReceivedLine("[MSG:INFO: FluidNC v3.7.0]");
+
+        Assert.Equal(new[] { "[MSG:INFO: FluidNC v3.7.0]" }, logged);
+    }
+
+    [Fact]
+    public void Dispose_DetachesFromInnerTransport()
+    {
+        var inner = new FakeDeviceTransport();
+        var transport = new LoggingDeviceTransport(inner);
+        var logged = new List<string>();
+        var forwarded = new List<string>();
+        transport.LineReceivedLogged += logged.Add;
+        transport.LineReceived += forwarded.Add;
+
+        transport.Dispose();
+        inner.SimulateReceivedLine("ok");
+
+        Assert.Empty(logged);
+        Assert.Empty(forwarded);
+    }
 }

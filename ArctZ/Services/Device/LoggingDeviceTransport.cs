@@ -6,30 +6,53 @@ namespace ArctZ.Services.Device;
 
 /// <summary>
 /// Decorates an IDeviceTransport to expose every G-code/$-command line sent
-/// to the device, for a demo-mode diagnostic log. Realtime bytes
-/// (SendRawByteAsync: '?', '!', '~', jog-cancel) are not text G-code lines
-/// and are intentionally not raised as LineSent.
+/// to the device and every line the device answers with, for the diagnostic
+/// logs. Realtime bytes (SendRawByteAsync: '?', '!', '~', jog-cancel) are not
+/// text G-code lines and are intentionally not raised as LineSent.
 /// </summary>
-public sealed class LoggingDeviceTransport : IDeviceTransport
+public sealed class LoggingDeviceTransport : IDeviceTransport, IDisposable
 {
     private readonly IDeviceTransport _inner;
 
     public LoggingDeviceTransport(IDeviceTransport inner)
     {
         _inner = inner;
+
+        // Subscribed here rather than passed through, so that LineReceivedLogged
+        // fires whether or not anyone subscribed to LineReceived — the diagnostic
+        // log must not depend on a session being wired up. The flip side is that
+        // this handler outlives DeviceSession's own subscribe/unsubscribe cycle on
+        // a transport that is a singleton for the real device, hence Dispose().
+        _inner.LineReceived += OnInnerLineReceived;
     }
 
     /// <summary>Raised synchronously on the caller's thread for every line passed to SendLineAsync.</summary>
     public event Action<string>? LineSent;
 
+    /// <summary>Raised synchronously for every line the device sent back, independently of LineReceived subscribers.</summary>
+    public event Action<string>? LineReceivedLogged;
+
     public bool IsConnected => _inner.IsConnected;
 
     public bool IsSupported => _inner.IsSupported;
 
-    public event Action<string>? LineReceived
+    public event Action<string>? LineReceived;
+
+    /// <summary>Detaches from the wrapped transport. Required because the real-device
+    /// transport is a singleton reused by every connect: without this, each new
+    /// decorator would leave one more handler attached to it forever.</summary>
+    public void Dispose()
     {
-        add => _inner.LineReceived += value;
-        remove => _inner.LineReceived -= value;
+        _inner.LineReceived -= OnInnerLineReceived;
+        LineReceived = null;
+        LineReceivedLogged = null;
+        LineSent = null;
+    }
+
+    private void OnInnerLineReceived(string line)
+    {
+        LineReceivedLogged?.Invoke(line);
+        LineReceived?.Invoke(line);
     }
 
     public event Action? Disconnected

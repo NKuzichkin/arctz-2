@@ -5,6 +5,8 @@
              xmlns:vm="using:ArctZ.ViewModels"
              xmlns:js="using:ArctZ.Components.VirtualJoystick"
              xmlns:program="using:ArctZ.Services.Program"
+             xmlns:diagnostics="using:ArctZ.Services.Diagnostics"
+             xmlns:sys="using:System"
              xmlns:conv="using:ArctZ.Converters"
              xmlns:materialIcons="using:Material.Icons.Avalonia"
              mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="600"
@@ -510,6 +512,13 @@
                                     </StackPanel>
                                 </Button>
                                 <Button Classes="header-action" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                        Command="{Binding OpenAboutCommand}">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <materialIcons:MaterialIcon Kind="InformationOutline" Width="16" Height="16" VerticalAlignment="Center" />
+                                        <TextBlock Text="О программе" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Classes="header-action" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
                                         Command="{Binding ExitCommand}">
                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                         <materialIcons:MaterialIcon Kind="ExitToApp" Width="16" Height="16" VerticalAlignment="Center" />
@@ -574,6 +583,56 @@
                                         Value="{Binding Connection.MockResponseDelayMs}" />
                             </StackPanel>
                         </StackPanel>
+                    </Border>
+                </Border>
+
+                <Border IsVisible="{Binding IsAboutOpen}" Background="{StaticResource HudScrimBrush}">
+                    <Border MaxWidth="520" MaxHeight="640" Margin="16" Background="{StaticResource HudPanelElevatedBrush}"
+                            BorderBrush="{StaticResource HudBorderStrongBrush}" BorderThickness="1"
+                            Padding="20" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <DockPanel>
+                            <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+                                <TextBlock Grid.Column="0" Classes="section-heading" Text="О ПРОГРАММЕ" VerticalAlignment="Center" />
+                                <Button Grid.Column="1" Padding="8,2" Command="{Binding CloseAboutCommand}">
+                                    <materialIcons:MaterialIcon Kind="Close" Width="16" Height="16" />
+                                </Button>
+                            </Grid>
+
+                            <Button DockPanel.Dock="Bottom" x:Name="CopyDiagnosticsButton" Classes="primary"
+                                    HorizontalAlignment="Stretch" Margin="0,12,0,0"
+                                    Click="OnCopyDiagnosticsClick">
+                                <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+                                    <materialIcons:MaterialIcon Kind="ContentCopy" Width="16" Height="16" VerticalAlignment="Center"
+                                                               IsVisible="{Binding !About.IsCopied}" />
+                                    <materialIcons:MaterialIcon Kind="Check" Width="16" Height="16" VerticalAlignment="Center"
+                                                               IsVisible="{Binding About.IsCopied}" />
+                                    <TextBlock Text="Скопировать всё" VerticalAlignment="Center"
+                                               IsVisible="{Binding !About.IsCopied}" />
+                                    <TextBlock Text="Скопировано" VerticalAlignment="Center"
+                                               IsVisible="{Binding About.IsCopied}" />
+                                </StackPanel>
+                            </Button>
+
+                            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding About.Sections}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="diagnostics:DiagnosticsSection">
+                                            <StackPanel Spacing="2" Margin="0,0,0,14">
+                                                <TextBlock Classes="section-heading" Text="{Binding Title}" Margin="0,0,0,4" />
+                                                <ItemsControl ItemsSource="{Binding DisplayLines}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="sys:String">
+                                                            <TextBlock Text="{Binding}" TextWrapping="Wrap"
+                                                                       FontFamily="{StaticResource HudFontMono}" FontSize="12" />
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </DockPanel>
                     </Border>
                 </Border>
             </Grid>

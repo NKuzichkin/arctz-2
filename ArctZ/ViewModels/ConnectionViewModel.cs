@@ -9,6 +9,7 @@ using System.Reactive.Threading.Tasks;
 using System.Threading;
 using System.Threading.Tasks;
 using ArctZ.Services.Device;
+using ArctZ.Services.Diagnostics;
 using ReactiveUI;
 using ReactiveUI.SourceGenerators;
 using Zafiro.UI.Commands;
@@ -23,9 +24,18 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
     private readonly IDeviceEndpointProvider _endpointProvider;
     private static readonly ConnectionEndpoint DemoEndpoint = new("demo", "Демо", ConnectionEndpointKind.Demo);
     private IDisposable? _sentGCodeSubscription;
+    private IDisposable? _exchangeLogSubscription;
+    private IDisposable? _firmwareBannerSubscription;
+    private LoggingDeviceTransport? _loggingTransport;
     private IDisposable? _scanSubscription;
     private IMockDeviceControl? _currentMockControl;
     private const int MaxSentGCodeLines = 200;
+
+    /// <summary>How much of the device conversation the "О программе" report carries.</summary>
+    public const int MaxExchangeLogEntries = 20;
+
+    /// <summary>How many past failures the "О программе" report carries.</summary>
+    public const int MaxErrorLogEntries = 10;
     private const int MockErrorCode = 9;
     private const int MockAlarmCode = 1;
     private static readonly TimeSpan AutoConnectScanWindow = TimeSpan.FromSeconds(10);
@@ -54,6 +64,10 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
     [Reactive] private bool isPlaybackLocked;
 
     [Reactive] private string? endpointError;
+
+    /// <summary>The greeting FluidNC printed on connect — the only place the firmware version
+    /// appears in the stream. Kept for the "О программе" report; null until the machine speaks.</summary>
+    [Reactive] private string? firmwareBanner;
 
     [Reactive] private bool isScanning;
 
@@ -133,6 +147,13 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
     public bool IsRealDeviceUnsupported => !_realTransport.IsSupported;
 
     public ObservableCollection<string> SentGCodeLines { get; } = new();
+
+    /// <summary>Recent device conversation, minus the status-poll and jog noise — see DeviceExchangeFilter.
+    /// Deliberately survives reconnects: it exists to explain a drop that already happened.</summary>
+    public BoundedLog<DeviceExchangeEntry> ExchangeLog { get; } = new(MaxExchangeLogEntries);
+
+    /// <summary>Recent failures, newest last. Survives reconnects for the same reason as ExchangeLog.</summary>
+    public BoundedLog<DiagnosticErrorEntry> ErrorLog { get; } = new(MaxErrorLogEntries);
 
     public IEnhancedCommand<Unit> ConnectCommand { get; }
     public IEnhancedCommand<Unit> DisconnectCommand { get; }
@@ -287,6 +308,21 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
             .Subscribe(ms => _currentMockControl?.SetResponseDelay(TimeSpan.FromMilliseconds(ms)))
             .DisposeWith(Disposables);
 
+        // Diagnostic error log: driven off the same three properties the UI shows a failure
+        // from, so anything the user was told about is also in the report they can copy.
+        // Clearing a property (alarm reset, successful reconnect) is not itself a failure.
+        this.WhenAnyValue(x => x.LastError)
+            .Subscribe(message => RecordError(DiagnosticErrorKind.Connection, message))
+            .DisposeWith(Disposables);
+
+        this.WhenAnyValue(x => x.EndpointError)
+            .Subscribe(message => RecordError(DiagnosticErrorKind.Endpoint, message))
+            .DisposeWith(Disposables);
+
+        this.WhenAnyValue(x => x.LastAlarmCode)
+            .Subscribe(code => RecordError(DiagnosticErrorKind.Alarm, code is { } c ? $"Авария FluidNC: код {c}" : null))
+            .DisposeWith(Disposables);
+
         RefreshEndpointsCommand.Execute().Subscribe().DisposeWith(Disposables);
     }
 
@@ -400,13 +436,55 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
             Disposables.Remove(_sentGCodeSubscription);
         }
 
+        if (_exchangeLogSubscription is not null)
+        {
+            Disposables.Remove(_exchangeLogSubscription);
+        }
+
+        // The previous decorator stays attached to innerTransport's LineReceived until told
+        // otherwise, and for the real device that transport is a singleton reused by every
+        // connect — leaving it attached would log each received line once per past session.
+        _loggingTransport?.Dispose();
+
         var loggingTransport = new LoggingDeviceTransport(innerTransport);
+        _loggingTransport = loggingTransport;
         SentGCodeLines.Clear();
         _sentGCodeSubscription = Observable.FromEvent<string>(
                 h => loggingTransport.LineSent += h,
                 h => loggingTransport.LineSent -= h)
             .ObserveOn(RxSchedulers.MainThreadScheduler)
             .Subscribe(AppendSentGCodeLine)
+            .DisposeWith(Disposables);
+
+        if (_firmwareBannerSubscription is not null)
+        {
+            Disposables.Remove(_firmwareBannerSubscription);
+        }
+
+        // A fresh link re-greets, so the previous session's banner is stale — and a machine
+        // that never greets should show nothing rather than the last machine's version.
+        FirmwareBanner = null;
+        _firmwareBannerSubscription = Observable.FromEvent<string>(
+                h => loggingTransport.LineReceivedLogged += h,
+                h => loggingTransport.LineReceivedLogged -= h)
+            .Where(FirmwareBannerDetector.IsBanner)
+            .ObserveOn(RxSchedulers.MainThreadScheduler)
+            .Subscribe(line => FirmwareBanner ??= line.Trim())
+            .DisposeWith(Disposables);
+
+        _exchangeLogSubscription = Observable.Merge(
+                Observable.FromEvent<string>(
+                        h => loggingTransport.LineSent += h,
+                        h => loggingTransport.LineSent -= h)
+                    .Select(line => (Direction: DeviceExchangeDirection.Sent, Line: line)),
+                Observable.FromEvent<string>(
+                        h => loggingTransport.LineReceivedLogged += h,
+                        h => loggingTransport.LineReceivedLogged -= h)
+                    .Select(line => (Direction: DeviceExchangeDirection.Received, Line: line)))
+            .Where(exchange => DeviceExchangeFilter.ShouldLog(exchange.Line))
+            .ObserveOn(RxSchedulers.MainThreadScheduler)
+            .Subscribe(exchange => ExchangeLog.Add(
+                new DeviceExchangeEntry(DateTimeOffset.Now, exchange.Direction, exchange.Line.Trim())))
             .DisposeWith(Disposables);
 
         var session = _sessionFactory.Create(loggingTransport);
@@ -586,6 +664,16 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
             .ToTask(cancellationToken);
 
         return match is null ? null : AvailableEndpoints.FirstOrDefault(e => e.Id == match.Id);
+    }
+
+    private void RecordError(DiagnosticErrorKind kind, string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return;
+        }
+
+        ErrorLog.Add(new DiagnosticErrorEntry(DateTimeOffset.Now, kind, message));
     }
 
     private void AppendSentGCodeLine(string line)

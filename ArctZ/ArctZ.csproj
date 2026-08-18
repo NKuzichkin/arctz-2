@@ -4,7 +4,50 @@
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <!-- The SDK would otherwise append "+<SourceRevisionId>" to the informational version;
+         the git-describe output stamped below already carries the commit hash. -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
+
+  <!--
+    Stamps the git revision and commit date into the assembly, for the "О программе" dialog
+    (read back by Services/Diagnostics/BuildInfo.cs). This has to happen at build time: on
+    Android, iOS and in the browser there is no repository to query at runtime.
+
+    Both Execs are best-effort — IgnoreExitCode covers "not a git repository", ContinueOnError
+    covers "git is not installed at all". Either way the build succeeds and the dialog falls
+    back to the assembly version. Note that neither command asks git for the repository root
+    (rev-parse show-toplevel): on this checkout's Z: drive that resolves to a broken UNC path.
+  -->
+  <Target Name="StampGitBuildInfo" BeforeTargets="GetAssemblyAttributes">
+    <Exec Command="git describe --tags --always --dirty"
+          WorkingDirectory="$(MSBuildThisFileDirectory)"
+          ConsoleToMSBuild="true" StandardOutputImportance="low" StandardErrorImportance="low"
+          IgnoreExitCode="true" ContinueOnError="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="ArctZGitDescribe" />
+      <Output TaskParameter="ExitCode" PropertyName="ArctZGitDescribeExitCode" />
+    </Exec>
+    <!-- %25%25 reaches the generated batch file as %%, which cmd in turn passes to git as the
+         single % that its format placeholder needs. A single %25 would be swallowed by cmd. -->
+    <Exec Command="git log -1 --format=%25%25cI"
+          WorkingDirectory="$(MSBuildThisFileDirectory)"
+          ConsoleToMSBuild="true" StandardOutputImportance="low" StandardErrorImportance="low"
+          IgnoreExitCode="true" ContinueOnError="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="ArctZGitCommitDate" />
+      <Output TaskParameter="ExitCode" PropertyName="ArctZGitCommitDateExitCode" />
+    </Exec>
+
+    <PropertyGroup Condition="'$(ArctZGitDescribeExitCode)' == '0' and '$(ArctZGitDescribe)' != ''">
+      <InformationalVersion>$(ArctZGitDescribe)</InformationalVersion>
+    </PropertyGroup>
+
+    <ItemGroup Condition="'$(ArctZGitCommitDateExitCode)' == '0' and '$(ArctZGitCommitDate)' != ''">
+      <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+        <_Parameter1>CommitDate</_Parameter1>
+        <_Parameter2>$(ArctZGitCommitDate)</_Parameter2>
+      </AssemblyAttribute>
+    </ItemGroup>
+  </Target>
   
   <ItemGroup>
     <AvaloniaResource Include="Assets\**" />

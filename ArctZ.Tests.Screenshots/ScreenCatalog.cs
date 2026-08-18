@@ -111,5 +111,19 @@ public static class ScreenCatalog
             "Настройки мока",
             Setup: vm => vm.Connection.ToggleMockSettingsCommand.Execute().ToTask(),
             Teardown: vm => vm.Connection.ToggleMockSettingsCommand.Execute().ToTask()),
+
+        new ScreenDefinition(
+            "about",
+            "О программе (диагностика)",
+            Setup: vm =>
+            {
+                // Seeded so the report's log sections show real entries rather than "(пусто)":
+                // the demo transport's own traffic is filtered out as status-poll noise.
+                demoTransport.SimulateReceivedLine("Grbl 3.7 [FluidNC v3.7.0 (wifi) '$' for help]");
+                demoTransport.SimulateReceivedLine("error:9");
+                vm.OpenAboutCommand.Execute(null);
+                return Task.CompletedTask;
+            },
+            Teardown: vm => { vm.CloseAboutCommand.Execute(null); return Task.CompletedTask; }),
     };
 }

@@ -5,6 +5,8 @@ using ArctZ.Components.VirtualJoystick;
 using ArctZ.Services.Program;
 using ArctZ.ViewModels;
 using Avalonia.Controls;
+using Avalonia.Input.Platform;
+using Avalonia.Interactivity;
 using Avalonia.Threading;
 
 namespace ArctZ.Views
@@ -120,6 +122,27 @@ namespace ArctZ.Views
         private void OnRightJoystickMove(object? sender, JoystickEventArgs e) => ViewModel?.OnRightJoystickMove(e);
 
         private void OnRightJoystickUp(object? sender, JoystickEventArgs e) => ViewModel?.OnRightJoystickUp(e);
+
+        /// <summary>
+        /// Copying lives here rather than in the view model: the clipboard is reached through
+        /// the hosting TopLevel, which a view model has no handle on. The report text itself is
+        /// built and tested in AboutViewModel — this only moves it.
+        /// </summary>
+        private async void OnCopyDiagnosticsClick(object? sender, RoutedEventArgs e)
+        {
+            if (ViewModel?.About is not { } about)
+            {
+                return;
+            }
+
+            if (TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard)
+            {
+                return;
+            }
+
+            await clipboard.SetTextAsync(about.ReportText);
+            about.MarkCopied();
+        }
 
         private async void OnLibrarySelectionChanged(object? sender, SelectionChangedEventArgs e)
         {

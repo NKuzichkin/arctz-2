@@ -11,6 +11,7 @@ using ArctZ.Components.VirtualJoystick;
 using ArctZ.Services.App;
 using ArctZ.Services.Device;
 using ArctZ.Services.Device.Commands;
+using ArctZ.Services.Diagnostics;
 using ArctZ.Services.Program;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -23,6 +24,8 @@ public partial class ProgramViewModel : ViewModelBase
     private readonly IProgramStorage _storage;
     private readonly ITrajectoryCompiler _compiler;
     private readonly IAppExitService _exitService;
+    private readonly Func<DateTimeOffset> _now;
+    private readonly DateTimeOffset _startedAt;
     private JoystickAxisInput _leftInput;
     private JoystickAxisInput _rightInput;
     private bool _leftActive;
@@ -61,6 +64,12 @@ public partial class ProgramViewModel : ViewModelBase
     [ObservableProperty]
     private bool _isSideMenuOpen;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsAboutOpen))]
+    private AboutViewModel? _about;
+
+    public bool IsAboutOpen => About is not null;
+
     /// <summary>Приложение уже закрывается и ждёт остановки станка. Пока флаг взведён,
     /// экран закрыт оверлеем: ожидание занимает до <see cref="DeviceStopTimeout"/>, и без
     /// него интерфейс выглядел бы зависшим. Состояние временное — снимается по завершении
@@ -93,12 +102,22 @@ public partial class ProgramViewModel : ViewModelBase
 
     public bool IsEditingCompletionSettings => CompletionSettingsEditor is not null;
 
-    public ProgramViewModel(ConnectionViewModel connection, IProgramStorage storage, ITrajectoryCompiler compiler, IAppExitService exitService)
+    public ProgramViewModel(
+        ConnectionViewModel connection,
+        IProgramStorage storage,
+        ITrajectoryCompiler compiler,
+        IAppExitService exitService,
+        Func<DateTimeOffset>? now = null)
     {
         Connection = connection;
         _storage = storage;
         _compiler = compiler;
         _exitService = exitService;
+        _now = now ?? (() => DateTimeOffset.Now);
+
+        // This view model is a singleton built during startup, so its construction is the
+        // closest thing to "the app started" available without a platform-specific process API.
+        _startedAt = _now();
         Connection.PropertyChanged += OnConnectionPropertyChanged;
 
         // Add/Remove/Move/Reset all need to re-evaluate whether a given point
@@ -175,6 +194,34 @@ public partial class ProgramViewModel : ViewModelBase
         Connection.IsMockSettingsOpen = true;
         IsSideMenuOpen = false;
     }
+
+    [RelayCommand]
+    private void OpenAbout()
+    {
+        About = new AboutViewModel(DiagnosticsReportBuilder.Build(CaptureDiagnostics()));
+        IsSideMenuOpen = false;
+    }
+
+    [RelayCommand]
+    private void CloseAbout()
+    {
+        About = null;
+    }
+
+    /// <summary>Freezes everything the report describes at the instant the dialog opens,
+    /// so a machine that keeps talking cannot change the text out from under the reader.</summary>
+    private DiagnosticsSnapshot CaptureDiagnostics() => new(
+        BuildInfo.Current,
+        _now() - _startedAt,
+        Connection.ConnectionStateLabel,
+        Connection.SelectedEndpoint?.DisplayName,
+        Connection.FirmwareBanner,
+        ProgramName,
+        KeyPoints.Count,
+        StatusLabel,
+        IsDirty,
+        Connection.ErrorLog.Snapshot(),
+        Connection.ExchangeLog.Snapshot());
 
     /// <summary>Сколько ждать от станка подтверждения, что его буфер пуст. Восемь status-отчётов
     /// при штатном опросе в 250 мс — с запасом на дребезг связи, но так, чтобы выход не подвисал
