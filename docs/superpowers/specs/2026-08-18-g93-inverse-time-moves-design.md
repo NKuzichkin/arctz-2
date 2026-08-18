@@ -47,7 +47,8 @@ public sealed record KeyPoint(
 начальную позицию по завершении» (`RunReturnToStartMoveAsync`).
 
 Значение по умолчанию — **5 секунд**, константа
-`KeyPoint.DefaultTransitionSeconds`. Используется при захвате точки
+`InverseTimeMove.DefaultTransitionSeconds` (живёт рядом с правилом
+непозитивного времени, которое её и применяет). Используется при захвате точки
 (`CaptureKeyPoint`, `ProgramViewModel.cs:516`) вместо нынешних
 `FeedRateUnitsPerMin: 500`.
 
@@ -93,7 +94,7 @@ public static string Line(MachinePose pose, double seconds) =>
 скорости оси — худший из возможных ответов на пустое поле ввода или на
 старый файл программы, где `TransitionSeconds` десериализуется в `0`.
 Поэтому единое правило: `t <= 0` заменяется на
-`KeyPoint.DefaultTransitionSeconds` (5 с). Правило живёт в одном месте —
+`InverseTimeMove.DefaultTransitionSeconds` (5 с). Правило живёт в одном месте —
 в `InverseTimeMove`, — и обслуживает разом старые файлы, пустой ввод в
 редакторе и любой будущий источник данных.
 
