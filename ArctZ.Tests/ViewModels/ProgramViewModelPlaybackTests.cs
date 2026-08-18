@@ -21,7 +21,11 @@ public class ProgramViewModelPlaybackTests
         return new ProgramViewModel(connection, storage, new TrajectoryCompiler(), new FakeAppExitService());
     }
 
-    /// <summary>3 key points, 2 continuous-blend segments -> 2 compiled G1 steps, no G4.</summary>
+    /// <summary>
+    /// 3 key points, all continuous-blend -> 3 compiled G1 steps, no G4: segment 0 is the
+    /// self-move confirming the machine is at the first key point, segments 1-2 are the real
+    /// moves between the points (JibProgram.Segments()).
+    /// </summary>
     private static void SeedTwoSegmentProgram(ProgramViewModel vm, FakeDeviceTransport transport)
     {
         foreach (var pose in new[] { "0,0,0,0", "10,0,0,0", "20,0,0,0" })
@@ -50,21 +54,75 @@ public class ProgramViewModelPlaybackTests
 
         var playTask = vm.PlayCommand.ExecuteAsync(null);
 
-        Assert.Equal(2, transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)));
+        Assert.Equal(3, transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)));
 
-        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok"); // acks segment 0 (self-move to the first key point)
         await WaitUntilAsync(() => vm.CurrentSegmentIndex == 0, TimeSpan.FromSeconds(1));
-        Assert.Equal(0.5, vm.OverallProgress);
+        Assert.Equal(1.0 / 3, vm.OverallProgress);
 
-        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok"); // acks segment 1 (move to the second key point)
+        await WaitUntilAsync(() => vm.CurrentSegmentIndex == 1, TimeSpan.FromSeconds(1));
+        Assert.Equal(2.0 / 3, vm.OverallProgress);
+
+        transport.SimulateReceivedLine("ok"); // acks segment 2 (move to the third key point)
         await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
         transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
         await playTask;
 
         Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
-        Assert.Equal(1, vm.CurrentSegmentIndex);
+        Assert.Equal(2, vm.CurrentSegmentIndex);
         Assert.Equal(1.0, vm.SegmentProgress);
         Assert.Equal(1.0, vm.OverallProgress);
+    }
+
+    /// <summary>
+    /// A 3-point program (each point: dwell 3s, transition 3s) dispatches one G93+G4 pair
+    /// per key point, including the first — see JibProgram.Segments().
+    /// </summary>
+    [Fact]
+    public async Task PlayAsync_ThreePointProgram_SendsThreeG93PlusG4PairsWithCorrectParameters()
+    {
+        var vm = CreateViewModel(out var transport);
+        await vm.Connection.ConnectCommand.Execute();
+
+        foreach (var pose in new[] { "0,0,0,0", "10,10,0,0", "20,20,0,0" })
+        {
+            transport.SimulateReceivedLine($"<Idle|WPos:{pose}|FS:0,0>");
+            vm.CaptureKeyPointCommand.Execute(null);
+        }
+
+        for (var i = 0; i < vm.KeyPoints.Count; i++)
+        {
+            vm.KeyPoints[i] = vm.KeyPoints[i] with { TransitionSeconds = 3, DwellSeconds = 3, Ease = EaseMode.None, ContinuousBlend = false };
+        }
+
+        vm.ProgramId = Guid.NewGuid();
+        vm.IsDirty = false;
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+
+        // F = 60 / TransitionSeconds = 60 / 3 = 20; dwell = "G4 P3" (DwellSeconds = 3).
+        var expectedLines = new[]
+        {
+            "G93 G1 X0 Y0 Z0 A0 F20", "G4 P3",
+            "G93 G1 X10 Y10 Z0 A0 F20", "G4 P3",
+            "G93 G1 X20 Y20 Z0 A0 F20", "G4 P3",
+        };
+        var sentMoveAndDwellLines = transport.SentLines
+            .Where(l => l.StartsWith("G93", StringComparison.Ordinal) || l.StartsWith("G4", StringComparison.Ordinal))
+            .ToList();
+        Assert.Equal(expectedLines, sentMoveAndDwellLines);
+
+        foreach (var _ in sentMoveAndDwellLines)
+        {
+            transport.SimulateReceivedLine("ok");
+        }
+
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,20.000,0.000,0.000|FS:0,0>");
+        await playTask;
+
+        Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
     }
 
     [Fact]
@@ -101,6 +159,7 @@ public class ProgramViewModelPlaybackTests
         Assert.Contains((byte)'~', transport.SentRawBytes);
         Assert.Equal(sentLinesBeforePause, transport.SentLines.Count);
 
+        transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
         await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
@@ -165,7 +224,11 @@ public class ProgramViewModelPlaybackTests
 
         var firstPlayTask = vm.PlayCommand.ExecuteAsync(null);
         await vm.StopCommand.ExecuteAsync(null);
-        transport.SimulateReceivedLine("ok"); // resolves the command that was already in flight
+        // Drains all 3 lines the first play had already dispatched (synchronously, before Stop
+        // could intervene) — otherwise a leftover pending ack would consume one of the second
+        // play's "ok"s below, throwing off its own count.
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
         await firstPlayTask;
         Assert.Equal(PlaybackState.Stopped, vm.PlaybackState);
@@ -176,8 +239,9 @@ public class ProgramViewModelPlaybackTests
         // Without clearing the hold left by Stop's feed-hold, the controller
         // would keep ignoring motion commands even though PlaybackState looks Running.
         Assert.Contains((byte)'~', transport.SentRawBytes.Skip(rawBytesBeforeSecondPlay));
-        Assert.Equal(4, transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)));
+        Assert.Equal(6, transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal))); // 3 (first play) + 3 (second play)
 
+        transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
         await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
@@ -235,8 +299,12 @@ public class ProgramViewModelPlaybackTests
         Assert.Null(vm.CurrentlyExecutingKeyPointId);
     }
 
+    /// <summary>
+    /// Segment 0 (the self-move confirming the machine is at the first key point) hasn't been
+    /// acknowledged yet right after Play, so nothing is confirmed as "current" until its ack lands.
+    /// </summary>
     [Fact]
-    public async Task CurrentlyExecutingKeyPointId_TargetsFirstKeyPoint_AsSoonAsPlayStarts_BeforeAnyAck()
+    public async Task CurrentlyExecutingKeyPointId_IsNullBeforeAnyAck_ThenTargetsFirstKeyPointOnceItsSelfMoveIsAcked()
     {
         var vm = CreateViewModel(out var transport);
         await vm.Connection.ConnectCommand.Execute();
@@ -244,6 +312,10 @@ public class ProgramViewModelPlaybackTests
 
         var playTask = vm.PlayCommand.ExecuteAsync(null);
 
+        Assert.Null(vm.CurrentlyExecutingKeyPointId);
+
+        transport.SimulateReceivedLine("ok"); // acks segment 0 (self-move to the first key point)
+        await WaitUntilAsync(() => vm.CurrentSegmentIndex == 0, TimeSpan.FromSeconds(1));
         Assert.Equal(vm.KeyPoints[0].Id, vm.CurrentlyExecutingKeyPointId);
 
         transport.SimulateReceivedLine("ok");
@@ -261,13 +333,17 @@ public class ProgramViewModelPlaybackTests
         SeedTwoSegmentProgram(vm, transport);
 
         var playTask = vm.PlayCommand.ExecuteAsync(null);
+        Assert.Null(vm.CurrentlyExecutingKeyPointId);
+
+        transport.SimulateReceivedLine("ok"); // acks segment 0 (self-move to the first key point)
+        await WaitUntilAsync(() => vm.CurrentSegmentIndex == 0, TimeSpan.FromSeconds(1));
         Assert.Equal(vm.KeyPoints[0].Id, vm.CurrentlyExecutingKeyPointId);
 
-        transport.SimulateReceivedLine("ok");
-        await WaitUntilAsync(() => vm.CurrentSegmentIndex == 0, TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("ok"); // acks segment 1 (move to the second key point)
+        await WaitUntilAsync(() => vm.CurrentSegmentIndex == 1, TimeSpan.FromSeconds(1));
         Assert.Equal(vm.KeyPoints[1].Id, vm.CurrentlyExecutingKeyPointId);
 
-        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok"); // acks segment 2 (move to the third key point)
         await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
         transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
         await playTask;
@@ -284,6 +360,9 @@ public class ProgramViewModelPlaybackTests
         SeedTwoSegmentProgram(vm, transport);
 
         var playTask = vm.PlayCommand.ExecuteAsync(null);
+        transport.SimulateReceivedLine("ok"); // acks segment 0, confirming we're at the first key point
+        await WaitUntilAsync(() => vm.CurrentSegmentIndex == 0, TimeSpan.FromSeconds(1));
+
         await vm.PauseCommand.ExecuteAsync(null);
 
         Assert.Equal(PlaybackState.Paused, vm.PlaybackState);
@@ -306,6 +385,7 @@ public class ProgramViewModelPlaybackTests
 
         var playTask = vm.PlayCommand.ExecuteAsync(null);
 
+        transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
         await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
@@ -335,6 +415,7 @@ public class ProgramViewModelPlaybackTests
 
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
         await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
         transport.SimulateReceivedLine("<Run|WPos:5.000,0.000,0.000,0.000|FS:500,0>");
         Assert.False(playTask.IsCompleted);
@@ -356,6 +437,7 @@ public class ProgramViewModelPlaybackTests
 
         var playTask = vm.PlayCommand.ExecuteAsync(null);
 
+        transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
         await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
@@ -387,6 +469,7 @@ public class ProgramViewModelPlaybackTests
 
         var playTask = vm.PlayCommand.ExecuteAsync(null);
 
+        transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
         await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
@@ -465,27 +548,34 @@ public class ProgramViewModelPlaybackTests
         vm.IsDirty = false; // completion-settings changes above must not re-trigger the save gate
 
         var playTask = vm.PlayCommand.ExecuteAsync(null);
-        Assert.Equal(vm.KeyPoints[0].Id, vm.CurrentlyExecutingKeyPointId);
+        Assert.Null(vm.CurrentlyExecutingKeyPointId); // segment 0's self-move ack hasn't landed yet
 
-        // Forward leg: 2 acks, no idle wait in between passes.
+        // Forward leg: 3 acks (self-move to point 0, then the two real moves), no idle wait in between passes.
         transport.SimulateReceivedLine("ok");
         await WaitUntilAsync(() => vm.CurrentSegmentIndex == 0, TimeSpan.FromSeconds(1));
+        Assert.Equal(vm.KeyPoints[0].Id, vm.CurrentlyExecutingKeyPointId);
+
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.CurrentSegmentIndex == 1, TimeSpan.FromSeconds(1));
         Assert.Equal(vm.KeyPoints[1].Id, vm.CurrentlyExecutingKeyPointId);
 
         transport.SimulateReceivedLine("ok");
         await WaitUntilAsync(
-            () => transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)) == 4,
+            () => transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)) == 6,
             TimeSpan.FromSeconds(1));
         Assert.False(vm.IsAwaitingMotionIdle, "no physical-idle wait should happen between the forward and backward legs");
 
-        // Backward leg: highlight now counts down from the last key point.
-        Assert.Equal(vm.KeyPoints[2].Id, vm.CurrentlyExecutingKeyPointId);
+        // Backward leg dispatches its own self-move to the last key point first, so nothing is
+        // confirmed as "current" again until that ack lands.
+        Assert.Null(vm.CurrentlyExecutingKeyPointId);
 
-        transport.SimulateReceivedLine("ok");
-        await WaitUntilAsync(() => vm.CurrentSegmentIndex == 0 && vm.SegmentProgress == 1.0, TimeSpan.FromSeconds(1));
-        Assert.Equal(vm.KeyPoints[1].Id, vm.CurrentlyExecutingKeyPointId);
+        transport.SimulateReceivedLine("ok"); // acks the backward leg's self-move to the last key point
+        await WaitUntilAsync(() => vm.CurrentlyExecutingKeyPointId == vm.KeyPoints[2].Id, TimeSpan.FromSeconds(1));
 
-        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok"); // acks the backward leg's move to the middle key point
+        await WaitUntilAsync(() => vm.CurrentlyExecutingKeyPointId == vm.KeyPoints[1].Id, TimeSpan.FromSeconds(1));
+
+        transport.SimulateReceivedLine("ok"); // acks the backward leg's move to the first key point
         await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
         Assert.Equal(vm.KeyPoints[0].Id, vm.CurrentlyExecutingKeyPointId);
 
@@ -508,34 +598,39 @@ public class ProgramViewModelPlaybackTests
 
         var playTask = vm.PlayCommand.ExecuteAsync(null);
 
-        // First pair, forward leg (2 acks) — backward leg is only dispatched once the forward
-        // pass's own RunPassAsync call returns, so wait for its G1 lines to appear before
-        // acking them (acking blind would race the dispatch and the "ok" would be dropped:
-        // BufferAwareCommandQueue.Complete no-ops when nothing is in-flight yet).
+        // First pair, forward leg (3 acks: self-move to the first key point + the two real
+        // moves) — backward leg is only dispatched once the forward pass's own RunPassAsync call
+        // returns, so wait for its G1 lines to appear before acking them (acking blind would race
+        // the dispatch and the "ok" would be dropped: BufferAwareCommandQueue.Complete no-ops
+        // when nothing is in-flight yet).
         transport.SimulateReceivedLine("ok");
-        transport.SimulateReceivedLine("ok");
-        await WaitUntilAsync(
-            () => transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)) == 4,
-            TimeSpan.FromSeconds(1));
-
-        // First pair, backward leg (2 acks) — completes cycle 1. Not the last cycle
-        // (RepeatCount = 2), so the second pair's forward leg dispatches immediately after,
-        // with no idle wait in between.
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
         await WaitUntilAsync(
             () => transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)) == 6,
             TimeSpan.FromSeconds(1));
 
-        // Second pair, forward leg (2 acks) — its own backward leg dispatches right after.
+        // First pair, backward leg (3 acks) — completes cycle 1. Not the last cycle
+        // (RepeatCount = 2), so the second pair's forward leg dispatches immediately after,
+        // with no idle wait in between.
+        transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
         await WaitUntilAsync(
-            () => transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)) == 8,
+            () => transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)) == 9,
             TimeSpan.FromSeconds(1));
 
-        // Second (last) pair, backward leg (2 acks) — cycle 2 reaches RepeatCount, so the run
+        // Second pair, forward leg (3 acks) — its own backward leg dispatches right after.
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(
+            () => transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)) == 12,
+            TimeSpan.FromSeconds(1));
+
+        // Second (last) pair, backward leg (3 acks) — cycle 2 reaches RepeatCount, so the run
         // now waits for real motion to finish instead of dispatching a third pair.
+        transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
         await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
@@ -543,7 +638,7 @@ public class ProgramViewModelPlaybackTests
         await playTask;
 
         Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
-        Assert.Equal(8, transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)));
+        Assert.Equal(12, transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)));
     }
 
     [Fact]
@@ -558,23 +653,27 @@ public class ProgramViewModelPlaybackTests
 
         var playTask = vm.PlayCommand.ExecuteAsync(null);
 
-        // Cycle 1: 2 forward G1 lines.
+        // Cycle 1: 3 forward G1 lines (self-move to the first key point + the two real moves).
+        transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
 
-        // The implicit return-to-start move is dispatched right after cycle 1's acks.
+        // The implicit return-to-start move is dispatched right after cycle 1's acks. It happens
+        // to be textually identical to the forward pass's own self-move (both target the first
+        // key point with its own transition), so detect it by count, not by content.
         await WaitUntilAsync(
-            () => transport.SentLines.Contains("G93 G1 X0 Y0 Z0 A0 F12"),
+            () => transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)) == 4,
             TimeSpan.FromSeconds(1));
         Assert.False(vm.IsAwaitingMotionIdle, "the return-to-start move between cycles must not wait for physical idle");
 
         transport.SimulateReceivedLine("ok"); // acks the return-to-start move
 
-        // Cycle 2 (the last one, RepeatCount == 2): 2 more forward G1 lines, no further return move.
+        // Cycle 2 (the last one, RepeatCount == 2): 3 more forward G1 lines, no further return move.
         await WaitUntilAsync(
-            () => transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)) == 5,
+            () => transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)) == 7,
             TimeSpan.FromSeconds(1));
 
+        transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
         await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
@@ -582,7 +681,7 @@ public class ProgramViewModelPlaybackTests
         await playTask;
 
         Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
-        Assert.Equal(5, transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)));
+        Assert.Equal(7, transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)));
     }
 
     [Fact]
@@ -597,7 +696,8 @@ public class ProgramViewModelPlaybackTests
 
         var playTask = vm.PlayCommand.ExecuteAsync(null);
 
-        // Run through 3 full cycles (2 forward acks + 1 return-move ack each) without ever completing.
+        // Run through 3 full cycles (3 forward acks + 1 return-move ack each, 4 G93 lines per
+        // cycle) without ever completing.
         for (var i = 0; i < 3; i++)
         {
             // The forward pass for this cycle is only dispatched once the previous cycle's
@@ -606,14 +706,15 @@ public class ProgramViewModelPlaybackTests
             // acking them, or the "ok"s race the dispatch and get dropped (BufferAwareCommandQueue.Complete
             // no-ops when nothing is in-flight yet).
             await WaitUntilAsync(
-                () => transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)) == (3 * i) + 2,
+                () => transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)) == (4 * i) + 3,
                 TimeSpan.FromSeconds(1));
+            transport.SimulateReceivedLine("ok");
             transport.SimulateReceivedLine("ok");
             transport.SimulateReceivedLine("ok");
             await WaitUntilAsync(
-                () => transport.SentLines.Count(l => l == "G93 G1 X0 Y0 Z0 A0 F12") == i + 1,
+                () => transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)) == (4 * i) + 4,
                 TimeSpan.FromSeconds(1));
-            transport.SimulateReceivedLine("ok");
+            transport.SimulateReceivedLine("ok"); // acks the return-to-start move
         }
 
         Assert.False(playTask.IsCompleted);
@@ -639,10 +740,15 @@ public class ProgramViewModelPlaybackTests
 
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
         await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
         transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
 
-        await WaitUntilAsync(() => transport.SentLines.Contains("G93 G1 X0 Y0 Z0 A0 F12"), TimeSpan.FromSeconds(1));
+        // The return-to-start move is textually identical to the forward pass's own self-move
+        // (both target the first key point with its own transition), so detect it by count.
+        await WaitUntilAsync(
+            () => transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)) == 4,
+            TimeSpan.FromSeconds(1));
         Assert.False(playTask.IsCompleted, "must wait for the return-to-start move's own physical completion before finishing");
 
         transport.SimulateReceivedLine("ok");
@@ -668,7 +774,9 @@ public class ProgramViewModelPlaybackTests
         await playTask;
 
         Assert.Equal(PlaybackState.Stopped, vm.PlaybackState);
-        Assert.DoesNotContain("G93 G1 X0 Y0 Z0 A0 F12", transport.SentLines);
+        // Only the forward pass's 3 lines (dispatched synchronously before Stop could intervene) —
+        // no extra line for a return-to-start move, which Stop must suppress.
+        Assert.Equal(3, transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)));
     }
 
     /// <summary>
@@ -679,7 +787,7 @@ public class ProgramViewModelPlaybackTests
     /// </summary>
     private static async Task ParkAtPausedPassBoundaryAsync(ProgramViewModel vm, FakeDeviceTransport transport)
     {
-        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok"); // acks segment 0 (self-move to the first key point)
         await WaitUntilAsync(() => vm.CurrentSegmentIndex == 0, TimeSpan.FromSeconds(1));
 
         // Pause is legal here (still Running) and lands before the pass's last ack is processed,
@@ -688,9 +796,12 @@ public class ProgramViewModelPlaybackTests
         await vm.PauseCommand.ExecuteAsync(null);
         Assert.Equal(PlaybackState.Paused, vm.PlaybackState);
 
-        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok"); // acks segment 1
+        await WaitUntilAsync(() => vm.CurrentSegmentIndex == 1, TimeSpan.FromSeconds(1));
+
+        transport.SimulateReceivedLine("ok"); // acks segment 2 — the pass's last segment
         await WaitUntilAsync(
-            () => vm.CurrentSegmentIndex == 1 && vm.SegmentProgress == 1.0,
+            () => vm.CurrentSegmentIndex == 2 && vm.SegmentProgress == 1.0,
             TimeSpan.FromSeconds(1));
 
         // Give the continuation thread room to run past the boundary if it were going to.
@@ -717,19 +828,23 @@ public class ProgramViewModelPlaybackTests
         Assert.False(playTask.IsCompleted, "a Pause at the pass boundary must park the run, not abandon it");
         Assert.Equal(PlaybackState.Paused, vm.PlaybackState);
         Assert.True(vm.IsProgramLocked);
-        Assert.DoesNotContain("G93 G1 X0 Y0 Z0 A0 F12", transport.SentLines);
+        // Only the forward pass's 3 lines so far — no return-to-start move dispatched yet.
+        Assert.Equal(3, transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)));
 
         // The resume click must actually wake the parked cycle loop.
         await vm.PlayCommand.ExecuteAsync(null);
         Assert.Equal(PlaybackState.Running, vm.PlaybackState);
 
-        await WaitUntilAsync(() => transport.SentLines.Contains("G93 G1 X0 Y0 Z0 A0 F12"), TimeSpan.FromSeconds(1));
+        await WaitUntilAsync(
+            () => transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)) == 4,
+            TimeSpan.FromSeconds(1));
         transport.SimulateReceivedLine("ok"); // acks the return-to-start move
 
-        // Cycle 2's forward pass: 2 more G1 lines (5 in total, incl. the return move).
+        // Cycle 2's forward pass: 3 more G1 lines (7 in total, incl. the return move).
         await WaitUntilAsync(
-            () => transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)) == 5,
+            () => transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)) == 7,
             TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
 
@@ -738,7 +853,7 @@ public class ProgramViewModelPlaybackTests
         await playTask;
 
         Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
-        Assert.Equal(5, transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)));
+        Assert.Equal(7, transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)));
     }
 
     [Fact]
@@ -767,8 +882,8 @@ public class ProgramViewModelPlaybackTests
 
         Assert.Equal(PlaybackState.Stopped, vm.PlaybackState);
         Assert.False(vm.IsProgramLocked);
-        Assert.DoesNotContain("G93 G1 X0 Y0 Z0 A0 F12", transport.SentLines);
-        Assert.Equal(2, transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)));
+        // Only the forward pass's 3 lines — no return-to-start move dispatched.
+        Assert.Equal(3, transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)));
     }
 
     [Fact]
@@ -783,10 +898,13 @@ public class ProgramViewModelPlaybackTests
 
         var playTask = vm.PlayCommand.ExecuteAsync(null);
 
-        // Cycle 1's forward pass, then the implicit return-to-start move it triggers.
+        // Cycle 1's forward pass (3 acks), then the implicit return-to-start move it triggers.
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
-        await WaitUntilAsync(() => transport.SentLines.Contains("G93 G1 X0 Y0 Z0 A0 F12"), TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(
+            () => transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)) == 4,
+            TimeSpan.FromSeconds(1));
 
         // Pause while the return-to-start move is still in flight, so its own boundary check —
         // a different call site from the pass helper's — observes Paused once the ack lands.
@@ -798,14 +916,15 @@ public class ProgramViewModelPlaybackTests
 
         Assert.False(playTask.IsCompleted, "a Pause at the cycle boundary must park the run, not abandon it");
         Assert.Equal(PlaybackState.Paused, vm.PlaybackState);
-        Assert.Equal(3, transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)));
+        Assert.Equal(4, transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)));
 
         await vm.PlayCommand.ExecuteAsync(null);
 
         // Cycle 2's forward pass only dispatches if the parked cycle loop actually woke up.
         await WaitUntilAsync(
-            () => transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)) == 5,
+            () => transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)) == 7,
             TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
 

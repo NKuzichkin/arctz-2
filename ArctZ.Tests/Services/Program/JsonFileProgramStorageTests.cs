@@ -189,11 +189,12 @@ public class JsonFileProgramStorageTests : IDisposable
         Assert.Equal(0, loaded.KeyPoints[1].TransitionSeconds);
 
         // End-to-end: the rescue actually happens — TrajectoryCompiler must emit the 5-second
-        // default (F12), not F<huge> from an unclamped 60/0.
+        // default (F12), not F<huge> from an unclamped 60/0. Point A also compiles to its own
+        // self-move (segment 0, rescued the same way), so pick the move to B specifically.
         var steps = new TrajectoryCompiler().Compile(loaded);
         var motionLine = steps
             .Select(s => ((GCodeLineCommand)s.Command).Line)
-            .Single(l => l.StartsWith("G93", StringComparison.Ordinal));
+            .Single(l => l.StartsWith("G93", StringComparison.Ordinal) && l.Contains("X60", StringComparison.Ordinal));
 
         Assert.Equal("G93 G1 X60 Y0 Z0 A0 F12", motionLine);
     }

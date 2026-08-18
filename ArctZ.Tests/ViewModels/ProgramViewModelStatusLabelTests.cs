@@ -60,6 +60,7 @@ public class ProgramViewModelStatusLabelTests
 
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
         await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
         transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
         await playTask;
@@ -80,6 +81,7 @@ public class ProgramViewModelStatusLabelTests
         // Раньше прогон завершался сам: последний ack приходил в состоянии Paused, и проход
         // возвращал false, молча бросая программу. Теперь он паркуется на границе прохода и ждёт
         // возобновления или отмены, поэтому прогон здесь нужно завершить явно.
+        transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
         await vm.StopCommand.ExecuteAsync(null);
@@ -110,6 +112,7 @@ public class ProgramViewModelStatusLabelTests
         var playTask = vm.PlayCommand.ExecuteAsync(null);
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
         await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
         transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
         await playTask;
@@ -129,10 +132,11 @@ public class ProgramViewModelStatusLabelTests
 
         Assert.Equal("Остановлено", vm.StatusLabel);
 
-        // Both compiled G1 lines were already sent (fit the default RX buffer in one shot,
+        // All 3 compiled G1 lines were already sent (fit the default RX buffer in one shot,
         // per PlayAsync_DispatchesAllStepsBeforeAwaitingAcks_ThenTracksProgress) and are still
-        // in-flight — AbortPendingCommands only drains not-yet-sent commands, so both need an
+        // in-flight — AbortPendingCommands only drains not-yet-sent commands, so all 3 need an
         // "ok" to fully drain the queue, same as PlayAsync_AfterStop_SendsResumeBeforeDispatchingFreshProgram.
+        transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
         await playTask;
@@ -171,6 +175,7 @@ public class ProgramViewModelStatusLabelTests
         var playTask = vm.PlayCommand.ExecuteAsync(null);
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
         await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
         transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
         await playTask;
@@ -202,8 +207,9 @@ public class ProgramViewModelStatusLabelTests
         await WaitUntilAsync(() => vm.PlaybackState == PlaybackState.Idle, TimeSpan.FromSeconds(1));
         Assert.Equal("Ожидание", vm.StatusLabel);
 
-        // Both dispatched G1 lines are still in-flight (see StatusLabel_Stopped_AfterStop) —
-        // drain both so playTask actually completes.
+        // All 3 dispatched G1 lines are still in-flight (see StatusLabel_Stopped_AfterStop) —
+        // drain all 3 so playTask actually completes.
+        transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
         await playTask;
@@ -219,8 +225,9 @@ public class ProgramViewModelStatusLabelTests
 
         var playTask = vm.PlayCommand.ExecuteAsync(null);
         await vm.StopCommand.ExecuteAsync(null);
-        // Both dispatched G1 lines are still in-flight (see StatusLabel_Stopped_AfterStop) —
-        // drain both so playTask actually completes.
+        // All 3 dispatched G1 lines are still in-flight (see StatusLabel_Stopped_AfterStop) —
+        // drain all 3 so playTask actually completes and none leak into the second play's acks.
+        transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
         await playTask;
@@ -235,6 +242,7 @@ public class ProgramViewModelStatusLabelTests
         await Task.Delay(400);
         Assert.Equal(PlaybackState.Running, vm.PlaybackState);
 
+        transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
         await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
@@ -267,6 +275,7 @@ public class ProgramViewModelStatusLabelTests
         var playTask = vm.PlayCommand.ExecuteAsync(null);
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
         await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
         transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
         await playTask;
@@ -292,8 +301,9 @@ public class ProgramViewModelStatusLabelTests
         await vm.StopCommand.ExecuteAsync(null);
         Assert.Equal(PlaybackState.Stopped, vm.PlaybackState);
 
-        // Both dispatched G1 lines are still in-flight (see StatusLabel_Stopped_AfterStop) —
-        // drain both so playTask actually completes.
+        // All 3 dispatched G1 lines are still in-flight (see StatusLabel_Stopped_AfterStop) —
+        // drain all 3 so playTask actually completes.
+        transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
         await playTask;

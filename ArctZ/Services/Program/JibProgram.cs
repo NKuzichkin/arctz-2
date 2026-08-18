@@ -18,12 +18,24 @@ public sealed class JibProgram
 
     public List<KeyPoint> KeyPoints { get; } = new();
 
-    /// <summary>Segment i describes the move from KeyPoints[i] to KeyPoints[i+1], using KeyPoints[i+1]'s own feed/ease/dwell settings.</summary>
+    /// <summary>
+    /// Segment i describes the move to KeyPoints[i], using that point's own feed/ease/dwell
+    /// settings. Segment 0 targets KeyPoints[0] itself (From == To, zero distance) so the very
+    /// first key point is dispatched to the controller — and dwells there — like every other
+    /// point, instead of being silently assumed as the machine's starting pose.
+    /// </summary>
     public IEnumerable<ProgramSegment> Segments()
     {
-        for (var i = 0; i < KeyPoints.Count - 1; i++)
+        if (KeyPoints.Count == 0)
         {
-            yield return new ProgramSegment(i, KeyPoints[i], KeyPoints[i + 1]);
+            yield break;
+        }
+
+        yield return new ProgramSegment(0, KeyPoints[0], KeyPoints[0]);
+
+        for (var i = 1; i < KeyPoints.Count; i++)
+        {
+            yield return new ProgramSegment(i, KeyPoints[i - 1], KeyPoints[i]);
         }
     }
 }

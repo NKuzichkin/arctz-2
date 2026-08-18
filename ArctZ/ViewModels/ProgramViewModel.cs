@@ -932,10 +932,15 @@ public partial class ProgramViewModel : ViewModelBase
                 return null;
             }
 
+            // Segment index now equals the target key point's own index within the pass's
+            // own KeyPoints order (segment 0 targets that order's first point) — see
+            // JibProgram.Segments(). The backward pass runs over ReversedProgram's KeyPoints
+            // (source order reversed), so its segment index maps back into the forward
+            // KeyPoints list via Count - 1 - segmentIndex.
             var segmentIndex = CurrentSegmentIndex ?? -1;
             var targetIndex = _currentPassBackward
-                ? KeyPoints.Count - 2 - segmentIndex
-                : segmentIndex + 1;
+                ? KeyPoints.Count - 1 - segmentIndex
+                : segmentIndex;
             return targetIndex >= 0 && targetIndex < KeyPoints.Count
                 ? KeyPoints[targetIndex].Id
                 : null;
@@ -1110,7 +1115,7 @@ public partial class ProgramViewModel : ViewModelBase
         CurrentSegmentIndex = null;
         SegmentProgress = 0;
         FaultedAtSegmentIndex = null;
-        TotalSegments = Math.Max(0, KeyPoints.Count - 1);
+        TotalSegments = KeyPoints.Count;
 
         var cycle = 0;
         while (true)

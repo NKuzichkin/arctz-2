@@ -20,21 +20,25 @@ public class TrajectoryCompilerTests
         bool continuousBlend = false) =>
         new(Guid.NewGuid(), number, Label: null, pose, dwellSeconds, transitionSeconds, ease, continuousBlend);
 
+    /// <summary>
+    /// The anchor point (index 0) now compiles to its own self-segment (JibProgram.Segments()),
+    /// so every program built from this helper has 2 segments: the anchor's own no-op move
+    /// (ContinuousBlend so it never appends a stray G4) at SegmentIndex 0, then the real "to"
+    /// segment under test at SegmentIndex 1. MotionSteps/MotionLines below isolate the latter.
+    /// </summary>
     private static JibProgram SingleSegmentProgram(KeyPoint to)
     {
         var program = new JibProgram();
-        program.KeyPoints.Add(Point(1, MachinePose.Zero));
+        program.KeyPoints.Add(Point(1, MachinePose.Zero, continuousBlend: true));
         program.KeyPoints.Add(to);
         return program;
     }
 
     private static string[] MotionLines(System.Collections.Generic.IReadOnlyList<CompiledStep> steps) =>
-        steps.Select(s => ((GCodeLineCommand)s.Command).Line)
-             .Where(l => l.StartsWith("G93", StringComparison.Ordinal))
-             .ToArray();
+        MotionSteps(steps).Select(s => ((GCodeLineCommand)s.Command).Line).ToArray();
 
     private static CompiledStep[] MotionSteps(System.Collections.Generic.IReadOnlyList<CompiledStep> steps) =>
-        steps.Where(s => ((GCodeLineCommand)s.Command).Line.StartsWith("G93", StringComparison.Ordinal)).ToArray();
+        steps.Where(s => s.SegmentIndex == 1 && ((GCodeLineCommand)s.Command).Line.StartsWith("G93", StringComparison.Ordinal)).ToArray();
 
     private static double ParseFeed(string line)
     {
@@ -146,7 +150,7 @@ public class TrajectoryCompilerTests
         var program = SingleSegmentProgram(to);
 
         var steps = _compiler.Compile(program);
-        var dwellStep = steps[1];
+        var dwellStep = steps.Single(s => ((GCodeLineCommand)s.Command).Line.StartsWith("G4", StringComparison.Ordinal));
 
         Assert.Equal(2.5, dwellStep.EstimatedDurationSeconds);
     }
@@ -159,11 +163,11 @@ public class TrajectoryCompilerTests
 
         var steps = _compiler.Compile(program);
 
-        Assert.Equal(2, steps.Count);
-        var dwellStep = steps[1];
+        Assert.Equal(3, steps.Count); // anchor's own no-op move (segment 0) + the "to" segment's move + G4
+        var dwellStep = steps.Single(s => ((GCodeLineCommand)s.Command).Line.StartsWith("G4", StringComparison.Ordinal));
         Assert.Equal("G4 P2.5", ((GCodeLineCommand)dwellStep.Command).Line);
         Assert.Equal(1.0, dwellStep.SegmentProgress);
-        Assert.Equal(0, dwellStep.SegmentIndex);
+        Assert.Equal(1, dwellStep.SegmentIndex);
     }
 
     [Fact]
@@ -174,7 +178,7 @@ public class TrajectoryCompilerTests
 
         var steps = _compiler.Compile(program);
 
-        Assert.Single(steps);
+        Assert.Equal(2, steps.Count); // anchor's own no-op move (segment 0) + the "to" segment's move
         Assert.DoesNotContain(steps, s => ((GCodeLineCommand)s.Command).Line.StartsWith("G4", StringComparison.Ordinal));
     }
 
@@ -188,9 +192,11 @@ public class TrajectoryCompilerTests
 
         var steps = _compiler.Compile(program);
 
-        Assert.Equal(4, steps.Count); // 2 segments x (1 move + 1 G4, since ContinuousBlend=false)
+        // 3 segments (incl. the self-segment to the first point) x (1 move + 1 G4, since ContinuousBlend=false everywhere)
+        Assert.Equal(6, steps.Count);
         Assert.All(steps.Take(2), s => Assert.Equal(0, s.SegmentIndex));
-        Assert.All(steps.Skip(2), s => Assert.Equal(1, s.SegmentIndex));
-        Assert.Equal(2, MotionLines(steps).Length);
+        Assert.All(steps.Skip(2).Take(2), s => Assert.Equal(1, s.SegmentIndex));
+        Assert.All(steps.Skip(4).Take(2), s => Assert.Equal(2, s.SegmentIndex));
+        Assert.Equal(3, steps.Count(s => ((GCodeLineCommand)s.Command).Line.StartsWith("G93", StringComparison.Ordinal)));
     }
 }

@@ -8,7 +8,8 @@ namespace ArctZ.Services.Program;
 /// there and how long it stays. Number is the point's 1-based position in
 /// JibProgram.KeyPoints, kept in sync by whoever mutates that list.
 /// TransitionSeconds — время перехода В эту точку (секунды); у первой точки
-/// оно используется только для возврата в начальную позицию по завершении.
+/// оно также используется при самом первом ходе программы (JibProgram.Segments()
+/// сегмент 0, нулевой дистанции) и при возврате в начальную позицию по завершении.
 /// </summary>
 public sealed record KeyPoint(
     Guid Id,

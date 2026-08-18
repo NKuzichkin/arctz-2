@@ -11,7 +11,7 @@ public class JibProgramTests
         new(Guid.NewGuid(), number, label, pose, DwellSeconds: 0, TransitionSeconds: 5, EaseMode.None, ContinuousBlend: false);
 
     [Fact]
-    public void Segments_ZipsConsecutiveKeyPointsInOrder()
+    public void Segments_ZipsConsecutiveKeyPointsInOrder_WithASelfSegmentForTheFirstPoint()
     {
         var program = new JibProgram();
         var a = Point(1, "A", new MachinePose(0, 0, 0, 0));
@@ -21,16 +21,29 @@ public class JibProgramTests
 
         var segments = program.Segments().ToList();
 
-        Assert.Equal(2, segments.Count);
-        Assert.Equal((0, a, b), (segments[0].Index, segments[0].From, segments[0].To));
-        Assert.Equal((1, b, c), (segments[1].Index, segments[1].From, segments[1].To));
+        Assert.Equal(3, segments.Count);
+        Assert.Equal((0, a, a), (segments[0].Index, segments[0].From, segments[0].To));
+        Assert.Equal((1, a, b), (segments[1].Index, segments[1].From, segments[1].To));
+        Assert.Equal((2, b, c), (segments[2].Index, segments[2].From, segments[2].To));
     }
 
     [Fact]
-    public void Segments_FewerThanTwoKeyPoints_IsEmpty()
+    public void Segments_SingleKeyPoint_YieldsOneSelfSegment()
     {
         var program = new JibProgram();
-        program.KeyPoints.Add(Point(1, "A", MachinePose.Zero));
+        var a = Point(1, "A", MachinePose.Zero);
+        program.KeyPoints.Add(a);
+
+        var segments = program.Segments().ToList();
+
+        Assert.Single(segments);
+        Assert.Equal((0, a, a), (segments[0].Index, segments[0].From, segments[0].To));
+    }
+
+    [Fact]
+    public void Segments_NoKeyPoints_IsEmpty()
+    {
+        var program = new JibProgram();
 
         Assert.Empty(program.Segments());
     }
