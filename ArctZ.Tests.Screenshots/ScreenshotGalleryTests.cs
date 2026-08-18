@@ -32,10 +32,10 @@ public class ScreenshotGalleryTests
         var demoProgram = new JibProgram { Name = "Демо программа" };
         demoProgram.KeyPoints.Add(new KeyPoint(
             Guid.NewGuid(), 1, "Точка 1", new MachinePose(0, 0, 0, 0),
-            DwellSeconds: 0, FeedRateUnitsPerMin: 500, EaseMode.None, ContinuousBlend: false));
+            DwellSeconds: 0, TransitionSeconds: 5, EaseMode.None, ContinuousBlend: false));
         demoProgram.KeyPoints.Add(new KeyPoint(
             Guid.NewGuid(), 2, "Точка 2", new MachinePose(120, 45, 80, 15),
-            DwellSeconds: 1, FeedRateUnitsPerMin: 500, EaseMode.None, ContinuousBlend: false));
+            DwellSeconds: 1, TransitionSeconds: 5, EaseMode.None, ContinuousBlend: false));
         await storage.SaveAsync(demoProgram);
 
         var connection = new ConnectionViewModel(

@@ -7,6 +7,8 @@ namespace ArctZ.Services.Program;
 /// A single stop in a program: a machine pose plus how the machine gets
 /// there and how long it stays. Number is the point's 1-based position in
 /// JibProgram.KeyPoints, kept in sync by whoever mutates that list.
+/// TransitionSeconds — время перехода В эту точку (секунды); у первой точки
+/// оно используется только для возврата в начальную позицию по завершении.
 /// </summary>
 public sealed record KeyPoint(
     Guid Id,
@@ -14,7 +16,7 @@ public sealed record KeyPoint(
     string? Label,
     MachinePose Pose,
     double DwellSeconds,
-    double FeedRateUnitsPerMin,
+    double TransitionSeconds,
     EaseMode Ease,
     bool ContinuousBlend)
 {

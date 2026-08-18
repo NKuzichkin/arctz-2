@@ -338,7 +338,7 @@ public class ProgramViewModelAuthoringTests
     }
 
     [Fact]
-    public async Task MoveMachineToKeyPoint_SendsG1MoveToThePointsPoseAndFeed()
+    public async Task MoveMachineToKeyPoint_SendsInverseTimeMoveToThePointsPoseAndTime()
     {
         var vm = CreateViewModel(out var transport, out _);
         await vm.Connection.ConnectCommand.Execute();
@@ -347,7 +347,7 @@ public class ProgramViewModelAuthoringTests
 
         _ = vm.MoveMachineToKeyPointCommand.ExecuteAsync(vm.KeyPoints[0]);
 
-        Assert.Contains(transport.SentLines, l => l == "G1 X0 Y0 Z0 A0 F500");
+        Assert.Contains(transport.SentLines, l => l == "G93 G1 X0 Y0 Z0 A0 F12");
     }
 
     [Fact]

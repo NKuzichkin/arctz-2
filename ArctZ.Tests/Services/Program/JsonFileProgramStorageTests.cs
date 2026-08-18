@@ -42,8 +42,8 @@ public class JsonFileProgramStorageTests : IDisposable
     private static JibProgram SampleProgram(string name)
     {
         var program = new JibProgram { Name = name };
-        program.KeyPoints.Add(new KeyPoint(Guid.NewGuid(), 1, "A", new MachinePose(1, 2, 3, 4), DwellSeconds: 0, FeedRateUnitsPerMin: 500, EaseMode.None, ContinuousBlend: false));
-        program.KeyPoints.Add(new KeyPoint(Guid.NewGuid(), 2, "B", new MachinePose(5, 6, 7, 8), DwellSeconds: 1.5, FeedRateUnitsPerMin: 500, EaseMode.EaseInOut, ContinuousBlend: true));
+        program.KeyPoints.Add(new KeyPoint(Guid.NewGuid(), 1, "A", new MachinePose(1, 2, 3, 4), DwellSeconds: 0, TransitionSeconds: 5, EaseMode.None, ContinuousBlend: false));
+        program.KeyPoints.Add(new KeyPoint(Guid.NewGuid(), 2, "B", new MachinePose(5, 6, 7, 8), DwellSeconds: 1.5, TransitionSeconds: 5, EaseMode.EaseInOut, ContinuousBlend: true));
         return program;
     }
 

@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using System.Globalization;
 using ArctZ.Services.Device;
@@ -23,9 +22,9 @@ public sealed class TrajectoryCompiler : ITrajectoryCompiler
             }
             else
             {
-                var command = MoveCommand(segment.To.Pose, segment.To.FeedRateUnitsPerMin);
-                var duration = EstimateDuration(Distance(segment.From.Pose, segment.To.Pose), segment.To.FeedRateUnitsPerMin);
-                steps.Add(new CompiledStep(segment.Index, command, SegmentProgress: 1.0, EstimatedDurationSeconds: duration));
+                var seconds = InverseTimeMove.EffectiveSeconds(segment.To.TransitionSeconds);
+                var command = new GCodeLineCommand(InverseTimeMove.Line(segment.To.Pose, seconds));
+                steps.Add(new CompiledStep(segment.Index, command, SegmentProgress: 1.0, EstimatedDurationSeconds: seconds));
             }
 
             if (segment.To.StopsAtWaypoint)
@@ -38,18 +37,35 @@ public sealed class TrajectoryCompiler : ITrajectoryCompiler
         return steps;
     }
 
+    /// <summary>
+    /// Подшаги равны по расстоянию, поэтому профиль скорости превращается в
+    /// профиль времени: время i-го подшага обратно пропорционально множителю
+    /// скорости. Нормировка по сумме весов даёт точное совпадение суммарной
+    /// длительности сегмента с заданной — при G94 этого не было.
+    /// </summary>
     private static void CompileEased(ProgramSegment segment, List<CompiledStep> steps)
     {
-        var previousPose = segment.From.Pose;
+        var total = InverseTimeMove.EffectiveSeconds(segment.To.TransitionSeconds);
+
+        var weights = new double[EaseSubdivisions];
+        var weightSum = 0.0;
+        for (var i = 1; i <= EaseSubdivisions; i++)
+        {
+            var weight = 1.0 / FeedMultiplier((double)i / EaseSubdivisions);
+            weights[i - 1] = weight;
+            weightSum += weight;
+        }
 
         for (var i = 1; i <= EaseSubdivisions; i++)
         {
             var t = (double)i / EaseSubdivisions;
             var pose = Interpolate(segment.From.Pose, segment.To.Pose, t);
-            var feed = FeedMultiplier(t) * segment.To.FeedRateUnitsPerMin;
-            var duration = EstimateDuration(Distance(previousPose, pose), feed);
-            steps.Add(new CompiledStep(segment.Index, MoveCommand(pose, feed), SegmentProgress: t, EstimatedDurationSeconds: duration));
-            previousPose = pose;
+            var seconds = total * weights[i - 1] / weightSum;
+            steps.Add(new CompiledStep(
+                segment.Index,
+                new GCodeLineCommand(InverseTimeMove.Line(pose, seconds)),
+                SegmentProgress: t,
+                EstimatedDurationSeconds: seconds));
         }
     }
 
@@ -75,16 +91,6 @@ public sealed class TrajectoryCompiler : ITrajectoryCompiler
         Y: from.Y + (to.Y - from.Y) * t,
         Z: from.Z + (to.Z - from.Z) * t,
         A: from.A + (to.A - from.A) * t);
-
-    /// <summary>Euclidean distance across all 4 axes — a UI-facing time estimate, not a controller-accurate one.</summary>
-    private static double Distance(MachinePose a, MachinePose b) => Math.Sqrt(
-        Math.Pow(b.X - a.X, 2) + Math.Pow(b.Y - a.Y, 2) + Math.Pow(b.Z - a.Z, 2) + Math.Pow(b.A - a.A, 2));
-
-    private static double EstimateDuration(double distance, double feedUnitsPerMin) =>
-        feedUnitsPerMin > 0 ? distance / feedUnitsPerMin * 60 : 0;
-
-    private static GCodeLineCommand MoveCommand(MachinePose pose, double feed) => new(
-        $"G1 X{Format(pose.X)} Y{Format(pose.Y)} Z{Format(pose.Z)} A{Format(pose.A)} F{Format(feed)}");
 
     private static string Format(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
 }

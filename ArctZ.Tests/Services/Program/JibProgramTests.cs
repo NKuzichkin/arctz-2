@@ -8,7 +8,7 @@ namespace ArctZ.Tests.Services.Program;
 public class JibProgramTests
 {
     private static KeyPoint Point(int number, string label, MachinePose pose) =>
-        new(Guid.NewGuid(), number, label, pose, DwellSeconds: 0, FeedRateUnitsPerMin: 500, EaseMode.None, ContinuousBlend: false);
+        new(Guid.NewGuid(), number, label, pose, DwellSeconds: 0, TransitionSeconds: 5, EaseMode.None, ContinuousBlend: false);
 
     [Fact]
     public void Segments_ZipsConsecutiveKeyPointsInOrder()

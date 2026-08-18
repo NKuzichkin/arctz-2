@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Globalization;
 using System.Linq;
 using System.Reactive.Concurrency;
 using System.Threading;
@@ -513,7 +512,7 @@ public partial class ProgramViewModel : ViewModelBase
             Label: $"Точка {number}",
             pose.Value,
             DwellSeconds: 0,
-            FeedRateUnitsPerMin: 500,
+            TransitionSeconds: InverseTimeMove.DefaultTransitionSeconds,
             EaseMode.None,
             ContinuousBlend: false));
     }
@@ -647,11 +646,9 @@ public partial class ProgramViewModel : ViewModelBase
         }
 
         var pose = keyPoint.Pose;
-        var line = $"G1 X{FormatAxis(pose.X)} Y{FormatAxis(pose.Y)} Z{FormatAxis(pose.Z)} A{FormatAxis(pose.A)} F{FormatAxis(keyPoint.FeedRateUnitsPerMin)}";
+        var line = InverseTimeMove.Line(pose, keyPoint.TransitionSeconds);
         await session.SendGCodeAsync(line);
     }
-
-    private static string FormatAxis(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
 
     public void OnLeftJoystickDown(JoystickEventArgs e) => OnStickDown(isLeft: true, e);
 
@@ -1225,7 +1222,7 @@ public partial class ProgramViewModel : ViewModelBase
         }
 
         var start = KeyPoints[0];
-        var line = $"G1 X{FormatAxis(start.Pose.X)} Y{FormatAxis(start.Pose.Y)} Z{FormatAxis(start.Pose.Z)} A{FormatAxis(start.Pose.A)} F{FormatAxis(start.FeedRateUnitsPerMin)}";
+        var line = InverseTimeMove.Line(start.Pose, start.TransitionSeconds);
         var result = await Connection.Session!.SendGCodeAsync(line);
 
         if (PlaybackState == PlaybackState.Stopped)

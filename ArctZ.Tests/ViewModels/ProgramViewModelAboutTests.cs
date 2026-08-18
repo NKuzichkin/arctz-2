@@ -25,7 +25,7 @@ public class ProgramViewModelAboutTests
     }
 
     private static KeyPoint Point(int number) =>
-        new(Guid.NewGuid(), number, Label: null, MachinePose.Zero, DwellSeconds: 0, FeedRateUnitsPerMin: 500, EaseMode.None, ContinuousBlend: false);
+        new(Guid.NewGuid(), number, Label: null, MachinePose.Zero, DwellSeconds: 0, TransitionSeconds: 5, EaseMode.None, ContinuousBlend: false);
 
     [Fact]
     public void OpenAbout_ShowsTheDialogAndClosesTheSideMenu()

@@ -30,7 +30,7 @@ public class ProgramViewModelStatusLabelTests
 
         for (var i = 0; i < vm.KeyPoints.Count; i++)
         {
-            vm.KeyPoints[i] = vm.KeyPoints[i] with { FeedRateUnitsPerMin = 500, DwellSeconds = 0, Ease = EaseMode.None, ContinuousBlend = true };
+            vm.KeyPoints[i] = vm.KeyPoints[i] with { TransitionSeconds = 5, DwellSeconds = 0, Ease = EaseMode.None, ContinuousBlend = true };
         }
 
         // Play now requires a saved, clean program (EnsureProgramSavedAsync); mark it

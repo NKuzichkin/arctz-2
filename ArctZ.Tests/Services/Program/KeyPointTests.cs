@@ -7,7 +7,7 @@ namespace ArctZ.Tests.Services.Program;
 public class KeyPointTests
 {
     private static KeyPoint Point(double dwellSeconds, bool continuousBlend) =>
-        new(Guid.NewGuid(), Number: 1, Label: null, MachinePose.Zero, dwellSeconds, FeedRateUnitsPerMin: 500, EaseMode.None, continuousBlend);
+        new(Guid.NewGuid(), Number: 1, Label: null, MachinePose.Zero, dwellSeconds, TransitionSeconds: 5, EaseMode.None, continuousBlend);
 
     [Fact]
     public void StopsAtWaypoint_NotContinuousBlend_IsTrue()
