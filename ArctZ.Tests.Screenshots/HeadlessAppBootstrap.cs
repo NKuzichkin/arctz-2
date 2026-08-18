@@ -27,6 +27,27 @@ namespace ArctZ.Tests.Screenshots;
 /// ProgramViewModel/MainView from fakes independently of this one for actual
 /// capture.
 /// </summary>
+/// <summary>
+/// Every test class in this project must join this collection. AppBuilder.Setup binds
+/// Avalonia to whichever thread called it, and HeadlessAppBootstrap calls it exactly once
+/// per process — so all Avalonia work in this assembly has to happen on that one thread.
+/// xUnit runs each test class as its own collection by default and can dispatch different
+/// collections onto different ThreadPool threads; whichever class loses that race then
+/// builds controls from a foreign thread. That surfaces as unrelated-looking failures —
+/// "The calling thread cannot access this object", or a corrupted static registry inside
+/// MenuItem/RadioButtonGroupManager — rather than as an obvious threading error.
+///
+/// DisableParallelization alone would not be enough: it only stops collections running
+/// concurrently, not from running on different threads. Naming ONE collection for every
+/// class is what makes xUnit treat them as a single sequential unit. Same reasoning, and
+/// same fix, as ArctZ.Tests' "AvaloniaHeadless" collection.
+/// </summary>
+[CollectionDefinition(Name, DisableParallelization = true)]
+public class HeadlessAppCollection
+{
+    public const string Name = "HeadlessApp";
+}
+
 public static class HeadlessAppBootstrap
 {
     private static readonly Lazy<bool> Init = new(() =>

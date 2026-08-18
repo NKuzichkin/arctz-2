@@ -613,7 +613,10 @@
                                 </StackPanel>
                             </Button>
 
-                            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                            <!-- Horizontal scrolling stays off deliberately: it would hand the
+                                 lines an unbounded width, which stops TextWrapping from ever
+                                 applying and clips long values (OS version, firmware banner). -->
+                            <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                                 <ItemsControl ItemsSource="{Binding About.Sections}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="diagnostics:DiagnosticsSection">

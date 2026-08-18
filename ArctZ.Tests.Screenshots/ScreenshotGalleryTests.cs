@@ -14,6 +14,7 @@ using ArctZ.Views;
 
 namespace ArctZ.Tests.Screenshots;
 
+[Collection(HeadlessAppCollection.Name)]
 public class ScreenshotGalleryTests
 {
     public ScreenshotGalleryTests() => HeadlessAppBootstrap.EnsureInitialized();

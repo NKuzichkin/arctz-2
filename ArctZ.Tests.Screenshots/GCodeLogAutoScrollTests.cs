@@ -21,6 +21,7 @@ namespace ArctZ.Tests.Screenshots;
 /// element bookkeeping has settled from the preceding Remove, could hand it a rect with
 /// a NaN/negative component, which Avalonia's Layoutable.Arrange rejects.
 /// </summary>
+[Collection(HeadlessAppCollection.Name)]
 public class GCodeLogAutoScrollTests
 {
     public GCodeLogAutoScrollTests() => HeadlessAppBootstrap.EnsureInitialized();

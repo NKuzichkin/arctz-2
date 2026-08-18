@@ -15,3 +15,4 @@
 | 9 | Боковое меню (`side-menu`) | [09-side-menu.png](09-side-menu.png) |
 | 10 | Лог G-code (`gcode-log`) | [10-gcode-log.png](10-gcode-log.png) |
 | 11 | Настройки мока (`mock-settings`) | [11-mock-settings.png](11-mock-settings.png) |
+| 12 | О программе (диагностика) (`about`) | [12-about.png](12-about.png) |
