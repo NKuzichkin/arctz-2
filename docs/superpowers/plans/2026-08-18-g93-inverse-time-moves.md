@@ -1074,10 +1074,14 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 Run:
 ```bash
 cd "z:/Jib S/Application/ArctZ"
-grep -rn "не использовать\|не задавать через .G93\|FeedRateUnitsPerMin" docs/ AI_AGENT_README.md
+grep -rn "не использовать\|не задавать через .G93\|FeedRateUnitsPerMin"   docs/firmware docs/protocol docs/software AI_AGENT_README.md
 ```
 Expected: ни одного попадания про запрет `G93` и ни одного упоминания
 `FeedRateUnitsPerMin`.
+
+`docs/superpowers/` в проверку намеренно не входит: спеки и планы прошлых
+фич — исторический документ, они законно называют старое поле, и
+переписывать их нельзя.
 
 - [ ] **Step 5: Commit**
 
