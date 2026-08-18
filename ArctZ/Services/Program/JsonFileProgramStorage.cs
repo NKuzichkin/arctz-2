@@ -18,6 +18,8 @@ public sealed class JsonFileProgramStorage : IProgramStorage
 
     private readonly string _directoryPath;
 
+    public string? Location => _directoryPath;
+
     public JsonFileProgramStorage(string directoryPath)
     {
         _directoryPath = directoryPath;

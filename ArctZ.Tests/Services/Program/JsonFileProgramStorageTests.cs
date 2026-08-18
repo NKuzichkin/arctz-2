@@ -17,6 +17,20 @@ public class JsonFileProgramStorageTests : IDisposable
         _storage = new JsonFileProgramStorage(_directory);
     }
 
+    [Fact]
+    public void Location_IsTheDirectoryProgramsAreStoredIn()
+    {
+        Assert.Equal(_directory, _storage.Location);
+    }
+
+    [Fact]
+    public void Location_IsUnknownForAStorageThatIsNotOnDisk()
+    {
+        IProgramStorage storage = new FakeProgramStorage();
+
+        Assert.Null(storage.Location);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_directory))

@@ -59,7 +59,6 @@ public static class EnvironmentInfo
     {
         $"Среда: {Describe(RuntimeInformation.FrameworkDescription)}",
         $"Идентификатор среды: {Describe(RuntimeInformation.RuntimeIdentifier)}",
-        $"Логических процессоров: {Environment.ProcessorCount}",
     };
 
     private static IReadOnlyList<string> BuildLibraryLines() => new[]

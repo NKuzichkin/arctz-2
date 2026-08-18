@@ -8,7 +8,20 @@ public class DiagnosticsReportBuilderTests
 {
     private static readonly DateTimeOffset CommitAt = new(2026, 8, 17, 22, 44, 2, TimeSpan.FromHours(3));
 
+    private static HardwareSnapshot Hardware(
+        string? cpuModel = "AMD Ryzen 7 5800X 8-Core Processor",
+        int logicalProcessors = 16,
+        long? totalMemoryBytes = 34252226560,
+        long? usedMemoryBytes = 13314351104,
+        long processMemoryBytes = 155189248,
+        string? storageLocation = @"C:\Users\Test\AppData\Roaming\ArctZ\Programs",
+        long? totalStorageBytes = 499289948160,
+        long? usedStorageBytes = 224680734720) =>
+        new(cpuModel, logicalProcessors, totalMemoryBytes, usedMemoryBytes, processMemoryBytes,
+            storageLocation, totalStorageBytes, usedStorageBytes);
+
     private static DiagnosticsSnapshot Snapshot(
+        HardwareSnapshot? hardware = null,
         BuildInfo? build = null,
         TimeSpan? uptime = null,
         string connectionState = "Подключено",
@@ -21,6 +34,7 @@ public class DiagnosticsReportBuilderTests
         DiagnosticErrorEntry[]? errors = null,
         DeviceExchangeEntry[]? exchange = null) =>
         new(
+            hardware ?? Hardware(),
             build ?? BuildInfo.Create("7bf6f5f-dirty", "1.0.0.0", CommitAt.ToString("o")),
             uptime ?? new TimeSpan(0, 5, 3),
             connectionState,
@@ -46,6 +60,7 @@ public class DiagnosticsReportBuilderTests
             {
                 "Приложение",
                 "Платформа",
+                "Оборудование",
                 "Среда выполнения",
                 "Библиотеки",
                 "Подключение",
@@ -75,6 +90,47 @@ public class DiagnosticsReportBuilderTests
             Snapshot(build: BuildInfo.Create("7bf6f5f", "1.0.0.0", null)));
 
         Assert.Contains("Дата сборки: неизвестно", SectionLines(report, "Приложение"));
+    }
+
+    [Fact]
+    public void Build_DescribesTheHardware()
+    {
+        var report = DiagnosticsReportBuilder.Build(Snapshot());
+
+        var lines = SectionLines(report, "Оборудование");
+        Assert.Contains("Процессор: AMD Ryzen 7 5800X 8-Core Processor", lines);
+        Assert.Contains("Ядер (логических): 16", lines);
+        Assert.Contains("ОЗУ: занято 12,4 ГБ из 31,9 ГБ (39 %)", lines);
+        Assert.Contains("ОЗУ приложения: 148,0 МБ", lines);
+        Assert.Contains("Хранилище: занято 209,3 ГБ из 465,0 ГБ (45 %)", lines);
+        Assert.Contains(@"Каталог программ: C:\Users\Test\AppData\Roaming\ArctZ\Programs", lines);
+    }
+
+    [Fact]
+    public void Build_MarksHardwareTheHostWouldNotRevealRatherThanOmittingIt()
+    {
+        var report = DiagnosticsReportBuilder.Build(Snapshot(hardware: Hardware(
+            cpuModel: null,
+            totalMemoryBytes: null,
+            usedMemoryBytes: null,
+            storageLocation: null,
+            totalStorageBytes: null,
+            usedStorageBytes: null)));
+
+        var lines = SectionLines(report, "Оборудование");
+        Assert.Contains("Процессор: —", lines);
+        Assert.Contains("ОЗУ: —", lines);
+        Assert.Contains("Хранилище: —", lines);
+        Assert.Contains("Каталог программ: —", lines);
+    }
+
+    [Fact]
+    public void Build_KeepsTheProcessorCountOutOfTheRuntimeSection()
+    {
+        var report = DiagnosticsReportBuilder.Build(Snapshot());
+
+        // It moved to "Оборудование", where it belongs next to the processor it counts.
+        Assert.DoesNotContain(SectionLines(report, "Среда выполнения"), l => l.Contains("процессор"));
     }
 
     [Fact]

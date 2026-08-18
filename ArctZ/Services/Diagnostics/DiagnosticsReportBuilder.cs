@@ -11,6 +11,7 @@ namespace ArctZ.Services.Diagnostics;
 /// and can be assembled — and tested — without any UI.
 /// </summary>
 public sealed record DiagnosticsSnapshot(
+    HardwareSnapshot Hardware,
     BuildInfo Build,
     TimeSpan Uptime,
     string ConnectionState,
@@ -35,6 +36,7 @@ public static class DiagnosticsReportBuilder
             $"Время работы: {UptimeFormatter.Format(snapshot.Uptime)}",
         }),
         new DiagnosticsSection("Платформа", EnvironmentInfo.PlatformLines),
+        new DiagnosticsSection("Оборудование", BuildHardwareLines(snapshot.Hardware)),
         new DiagnosticsSection("Среда выполнения", EnvironmentInfo.RuntimeLines),
         new DiagnosticsSection("Библиотеки", EnvironmentInfo.LibraryLines),
         new DiagnosticsSection("Подключение", new[]
@@ -53,6 +55,30 @@ public static class DiagnosticsReportBuilder
         new DiagnosticsSection("Последние ошибки", snapshot.Errors.Select(e => e.Format()).ToArray()),
         new DiagnosticsSection("Обмен с устройством", snapshot.Exchange.Select(e => e.Format()).ToArray()),
     });
+
+    private static IReadOnlyList<string> BuildHardwareLines(HardwareSnapshot hardware) => new[]
+    {
+        $"Процессор: {OrDash(hardware.CpuModel)}",
+        $"Ядер (логических): {hardware.LogicalProcessors}",
+        $"ОЗУ: {FormatUsage(hardware.UsedMemoryBytes, hardware.TotalMemoryBytes)}",
+        $"ОЗУ приложения: {ByteSizeFormatter.Format(hardware.ProcessMemoryBytes)}",
+        $"Хранилище: {FormatUsage(hardware.UsedStorageBytes, hardware.TotalStorageBytes)}",
+        $"Каталог программ: {OrDash(hardware.StorageLocation)}",
+    };
+
+    /// <summary>"занято X из Y (N %)", or a dash when the platform wouldn't give up the numbers.</summary>
+    private static string FormatUsage(long? used, long? total)
+    {
+        if (used is not { } usedBytes || total is not { } totalBytes)
+        {
+            return EnvironmentInfo.Unknown;
+        }
+
+        var percent = ByteSizeFormatter.Percent(usedBytes, totalBytes);
+        var share = percent is { } value ? $" ({value} %)" : string.Empty;
+
+        return $"занято {ByteSizeFormatter.Format(usedBytes)} из {ByteSizeFormatter.Format(totalBytes)}{share}";
+    }
 
     private static string FormatBuildDate(DateTimeOffset? commitDate) => commitDate is { } date
         ? date.ToString("dd.MM.yyyy HH:mm", CultureInfo.InvariantCulture)

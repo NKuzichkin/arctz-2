@@ -211,6 +211,7 @@ public partial class ProgramViewModel : ViewModelBase
     /// <summary>Freezes everything the report describes at the instant the dialog opens,
     /// so a machine that keeps talking cannot change the text out from under the reader.</summary>
     private DiagnosticsSnapshot CaptureDiagnostics() => new(
+        HardwareInfo.Capture(_storage.Location),
         BuildInfo.Current,
         _now() - _startedAt,
         Connection.ConnectionStateLabel,
