@@ -91,6 +91,22 @@ public sealed class MockDeviceTransport : IDeviceTransport, IMockDeviceControl
         }
     }
 
+    public void SetPose(MachinePose pose)
+    {
+        lock (_lock)
+        {
+            _currentPose = _limits.Clamp(pose);
+
+            // Движение обязано отмениться: иначе ближайший тик пересчитает позу от
+            // _moveStartPose (G93) или дошагает к старой цели (G0/G1/jog), и телепорт
+            // откатится назад. Авария, feed hold, пауза G4 и очередь строк — отдельные
+            // ручки мока и здесь не трогаются.
+            _targetPose = null;
+            _moveTotalSeconds = 0;
+            _moveElapsedSeconds = 0;
+        }
+    }
+
     public Task ConnectAsync(string deviceId, CancellationToken cancellationToken = default)
     {
         IsConnected = true;

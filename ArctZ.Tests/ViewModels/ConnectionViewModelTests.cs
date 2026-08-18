@@ -455,6 +455,50 @@ public class ConnectionViewModelTests
         Assert.True(vm.IsAlarmModalVisible);
     }
 
+    /// <summary>Поля позиции — стартовая точка для правки, поэтому при каждом открытии
+    /// диалога они берут актуальную позу станка, а не то, что осталось от прошлого раза.</summary>
+    [Fact]
+    public async Task ToggleMockSettingsCommand_Opening_PrefillsPoseFieldsFromDeviceStatus()
+    {
+        var demoTransport = new FakeDeviceTransport();
+        var vm = await CreateVmAsync(new FakeDeviceTransport(), demoTransport);
+        vm.SelectedEndpoint = vm.AvailableEndpoints.Single(e => e.Kind == ConnectionEndpointKind.Demo);
+        await vm.ConnectCommand.Execute();
+        demoTransport.SimulateReceivedLine("<Idle|MPos:12.000,34.000,180.000,45.000|Bf:15,128>");
+        await WaitUntilAsync(() => vm.DeviceStatus is not null, TimeSpan.FromSeconds(2));
+
+        vm.ToggleMockSettingsCommand.Execute(null);
+
+        Assert.Equal(12, vm.MockPoseX);
+        Assert.Equal(34, vm.MockPoseY);
+        Assert.Equal(180, vm.MockPoseZ);
+        Assert.Equal(45, vm.MockPoseA);
+    }
+
+    [Fact]
+    public async Task ApplyMockPoseCommand_WhileConnectedToRealMockTransport_TeleportsTheMock()
+    {
+        var ticker = new ManualPeriodicTimer();
+        var mockTransport = new MockDeviceTransport(MachineLimits.Default, ticker, TimeSpan.FromMilliseconds(100));
+        var vm = await CreateVmAsync(new FakeDeviceTransport(), mockTransport);
+        vm.SelectedEndpoint = vm.AvailableEndpoints.Single(e => e.Kind == ConnectionEndpointKind.Demo);
+        await vm.ConnectCommand.Execute();
+
+        vm.MockPoseX = 12;
+        vm.MockPoseY = 34;
+        vm.MockPoseZ = 180;
+        vm.MockPoseA = 45;
+        vm.ApplyMockPoseCommand.Execute(null);
+
+        string? statusLine = null;
+        void Handler(string line) => statusLine = line.StartsWith('<') ? line : statusLine;
+        mockTransport.LineReceived += Handler;
+        await mockTransport.SendRawByteAsync((byte)'?');
+        mockTransport.LineReceived -= Handler;
+
+        Assert.Contains("WPos:12.000,34.000,180.000,45.000", statusLine);
+    }
+
     [Fact]
     public async Task MockResponseDelayMs_ChangedWhileConnected_DelaysNextCommandAck()
     {

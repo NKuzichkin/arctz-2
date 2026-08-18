@@ -383,4 +383,50 @@ public class MockDeviceTransportTests
         var status = QueryStatus();
         Assert.Equal(new MachinePose(11.2, 0, 0, 0), status.WPos);
     }
+
+    /// <summary>Телепорт из настроек мока: позиция меняется мгновенно, без движения и без ok-ответа.</summary>
+    [Fact]
+    public async Task SetPose_ReportedInTheNextStatusReport()
+    {
+        await _mock.ConnectAsync("demo");
+
+        _mock.SetPose(new MachinePose(12, 34, 180, 45));
+
+        var status = QueryStatus();
+        Assert.Equal(new MachinePose(12, 34, 180, 45), status.WPos);
+        Assert.Equal(MachineState.Idle, status.State);
+    }
+
+    /// <summary>Мок остаётся физичным: недостижимая для станка поза клампится теми же лимитами, что и G0/G1.</summary>
+    [Fact]
+    public async Task SetPose_OutsideMachineLimits_IsClampedLikeAMove()
+    {
+        await _mock.ConnectAsync("demo");
+
+        _mock.SetPose(new MachinePose(999, 34, 400, -30));
+
+        var status = QueryStatus();
+        Assert.Equal(65, status.WPos.X);   // X: -15..65
+        Assert.Equal(34, status.WPos.Y);   // Y без лимитов
+        Assert.Equal(40, status.WPos.Z);   // Z заворачивается по 360
+        Assert.Equal(330, status.WPos.A);  // A заворачивается по 360
+    }
+
+    /// <summary>Без отмены текущего движения телепорт был бы виден лишь до следующего тика:
+    /// G93-интерполяция пересчитывает позу от своей стартовой и затёрла бы её.</summary>
+    [Fact]
+    public async Task SetPose_DuringInverseTimeMove_CancelsTheMove()
+    {
+        await _mock.ConnectAsync("demo");
+        await _mock.SendLineAsync("G93 G1 X60 Y0 Z0 A0 F12");
+        _ticker.RaiseElapsed(); // ack + первый шаг
+        Assert.Equal(MachineState.Run, QueryStatus().State);
+
+        _mock.SetPose(new MachinePose(10, 0, 0, 0));
+        _ticker.RaiseElapsed();
+
+        var status = QueryStatus();
+        Assert.Equal(new MachinePose(10, 0, 0, 0), status.WPos);
+        Assert.Equal(MachineState.Idle, status.State);
+    }
 }

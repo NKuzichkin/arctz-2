@@ -557,7 +557,7 @@
                 </Border>
 
                 <Border IsVisible="{Binding Connection.IsMockSettingsOpen}" Background="{StaticResource HudScrimBrush}">
-                    <Border Width="320" Background="{StaticResource HudPanelElevatedBrush}"
+                    <Border Width="360" Background="{StaticResource HudPanelElevatedBrush}"
                             BorderBrush="{StaticResource HudBorderStrongBrush}" BorderThickness="1"
                             Padding="20" HorizontalAlignment="Center" VerticalAlignment="Center">
                         <StackPanel Spacing="14">
@@ -583,6 +583,33 @@
                                 <TextBlock Text="{Binding Connection.MockResponseDelayMs, StringFormat='Задержка ответа: {0} мс'}" />
                                 <Slider Minimum="0" Maximum="5000" TickFrequency="250" IsSnapToTickEnabled="True"
                                         Value="{Binding Connection.MockResponseDelayMs}" />
+                            </StackPanel>
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Позиция устройства" />
+                                <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="6">
+                                    <StackPanel Grid.Row="0" Grid.Column="0" Spacing="2">
+                                        <TextBlock Text="X" />
+                                        <NumericUpDown Value="{Binding Connection.MockPoseX}" FormatString="0.00" Increment="1" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Row="0" Grid.Column="1" Spacing="2">
+                                        <TextBlock Text="Y" />
+                                        <NumericUpDown Value="{Binding Connection.MockPoseY}" FormatString="0.00" Increment="1" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Row="1" Grid.Column="0" Spacing="2">
+                                        <TextBlock Text="Z" />
+                                        <NumericUpDown Value="{Binding Connection.MockPoseZ}" FormatString="0.00" Increment="1" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Row="1" Grid.Column="1" Spacing="2">
+                                        <TextBlock Text="A" />
+                                        <NumericUpDown Value="{Binding Connection.MockPoseA}" FormatString="0.00" Increment="1" />
+                                    </StackPanel>
+                                </Grid>
+                                <Button Command="{Binding Connection.ApplyMockPoseCommand}" HorizontalAlignment="Stretch">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <materialIcons:MaterialIcon Kind="CrosshairsGps" Width="16" Height="16" VerticalAlignment="Center" />
+                                        <TextBlock Text="Установить позицию" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
                             </StackPanel>
                         </StackPanel>
                     </Border>

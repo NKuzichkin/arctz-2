@@ -13,4 +13,7 @@ public interface IMockDeviceControl
 
     /// <summary>Extra delay before ok/error is returned for each queued line command, on top of the normal one-line-per-tick pacing.</summary>
     void SetResponseDelay(TimeSpan delay);
+
+    /// <summary>Teleports the simulated machine to a pose (clamped to the machine limits), cancelling any move in flight.</summary>
+    void SetPose(MachinePose pose);
 }

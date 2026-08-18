@@ -57,6 +57,14 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
     [Reactive] private bool isMockSettingsOpen;
     [Reactive] private int mockResponseDelayMs;
 
+    // Черновик позы для телепорта мока. Значения живут только в диалоге и попадают
+    // в мок лишь по ApplyMockPoseCommand; открытие диалога перезаписывает их
+    // текущей позой станка.
+    [Reactive] private double mockPoseX;
+    [Reactive] private double mockPoseY;
+    [Reactive] private double mockPoseZ;
+    [Reactive] private double mockPoseA;
+
     // Set by ProgramViewModel to mirror its IsProgramLocked. Disconnect tears
     // down the link out from under an in-flight program dispatch loop
     // (ProgramViewModel.PlayAsync captures Connection.Session per step), so it
@@ -164,6 +172,7 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
     public IEnhancedCommand<Unit> ToggleMockSettingsCommand { get; }
     public IEnhancedCommand<Unit> TriggerMockErrorCommand { get; }
     public IEnhancedCommand<Unit> TriggerMockAlarmCommand { get; }
+    public IEnhancedCommand<Unit> ApplyMockPoseCommand { get; }
 
     public ConnectionViewModel(
         IDeviceTransport realTransport,
@@ -203,12 +212,25 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
             .Enhance(text: "Поиск", name: "ScanCommand"));
         ToggleGCodeLogCommand = Track(ReactiveCommand.Create(() => { IsGCodeLogOpen = !IsGCodeLogOpen; })
             .Enhance(text: "Лог G-code", name: "ToggleGCodeLogCommand"));
-        ToggleMockSettingsCommand = Track(ReactiveCommand.Create(() => { IsMockSettingsOpen = !IsMockSettingsOpen; })
+        ToggleMockSettingsCommand = Track(ReactiveCommand.Create(() =>
+            {
+                if (!IsMockSettingsOpen)
+                {
+                    LoadMockPoseFromDeviceStatus();
+                }
+
+                IsMockSettingsOpen = !IsMockSettingsOpen;
+            })
             .Enhance(text: "Настройки мока", name: "ToggleMockSettingsCommand"));
         TriggerMockErrorCommand = Track(ReactiveCommand.Create(() => { _currentMockControl?.ForceNextCommandError(MockErrorCode); })
             .Enhance(text: "Смоделировать ошибку", name: "TriggerMockErrorCommand"));
         TriggerMockAlarmCommand = Track(ReactiveCommand.Create(() => { _currentMockControl?.TriggerAlarm(MockAlarmCode); })
             .Enhance(text: "Смоделировать аварию", name: "TriggerMockAlarmCommand"));
+        ApplyMockPoseCommand = Track(ReactiveCommand.Create(() =>
+            {
+                _currentMockControl?.SetPose(new MachinePose(MockPoseX, MockPoseY, MockPoseZ, MockPoseA));
+            })
+            .Enhance(text: "Установить позицию", name: "ApplyMockPoseCommand"));
 
         // Immediately mirror a newly-assigned session's state, then keep mirroring it
         // as ConnectionStateChanged fires later (on a background thread for the
@@ -324,6 +346,18 @@ public partial class ConnectionViewModel : ReactiveViewModelBase
             .DisposeWith(Disposables);
 
         RefreshEndpointsCommand.Execute().Subscribe().DisposeWith(Disposables);
+    }
+
+    /// <summary>Seeds the mock-pose fields from where the machine currently is, so the dialog
+    /// opens on a pose the user can nudge instead of on a leftover draft. No status yet
+    /// (never connected) leaves the fields at zero — the machine's own home.</summary>
+    private void LoadMockPoseFromDeviceStatus()
+    {
+        var pose = DeviceStatus?.WPos ?? MachinePose.Zero;
+        MockPoseX = pose.X;
+        MockPoseY = pose.Y;
+        MockPoseZ = pose.Z;
+        MockPoseA = pose.A;
     }
 
     /// <summary>Entry point for the "Подключить" button. Cancels any in-flight AutoConnectAsync
