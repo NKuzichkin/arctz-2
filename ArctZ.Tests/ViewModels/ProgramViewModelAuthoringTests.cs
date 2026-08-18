@@ -305,6 +305,34 @@ public class ProgramViewModelAuthoringTests
     }
 
     [Fact]
+    public async Task EditKeyPoint_OpensEditorPrefilledWithTheTransitionTime()
+    {
+        var vm = CreateViewModel(out var transport, out _);
+        await vm.Connection.ConnectCommand.Execute();
+        transport.SimulateReceivedLine("<Idle|WPos:0,0,0,0|FS:0,0>");
+        vm.CaptureKeyPointCommand.Execute(null);
+
+        vm.EditKeyPointCommand.Execute(vm.KeyPoints[0]);
+
+        Assert.Equal(5, vm.KeyPointEditor!.TransitionSeconds);
+    }
+
+    [Fact]
+    public async Task EditKeyPoint_Save_UpdatesTheTransitionTime()
+    {
+        var vm = CreateViewModel(out var transport, out _);
+        await vm.Connection.ConnectCommand.Execute();
+        transport.SimulateReceivedLine("<Idle|WPos:0,0,0,0|FS:0,0>");
+        vm.CaptureKeyPointCommand.Execute(null);
+
+        vm.EditKeyPointCommand.Execute(vm.KeyPoints[0]);
+        vm.KeyPointEditor!.TransitionSeconds = 12.5;
+        vm.KeyPointEditor.SaveCommand.Execute(null);
+
+        Assert.Equal(12.5, vm.KeyPoints[0].TransitionSeconds);
+    }
+
+    [Fact]
     public async Task EditKeyPoint_Cancel_LeavesThePointUnchangedAndClosesEditor()
     {
         var vm = CreateViewModel(out var transport, out _);

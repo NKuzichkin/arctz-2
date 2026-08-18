@@ -6,7 +6,7 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace ArctZ.ViewModels;
 
-/// <summary>Editable draft of a KeyPoint's coordinates and dwell time, shown in an overlay while editing.</summary>
+/// <summary>Editable draft of a KeyPoint's coordinates, transition time and dwell time, shown in an overlay while editing.</summary>
 public partial class KeyPointEditorViewModel : ViewModelBase
 {
     private readonly KeyPoint _source;
@@ -29,6 +29,9 @@ public partial class KeyPointEditorViewModel : ViewModelBase
     private double _a;
 
     [ObservableProperty]
+    private double _transitionSeconds;
+
+    [ObservableProperty]
     private double _dwellSeconds;
 
     public int Number => _source.Number;
@@ -43,11 +46,18 @@ public partial class KeyPointEditorViewModel : ViewModelBase
         Y = source.Pose.Y;
         Z = source.Pose.Z;
         A = source.Pose.A;
+        TransitionSeconds = source.TransitionSeconds;
         DwellSeconds = source.DwellSeconds;
     }
 
     [RelayCommand]
-    private void Save() => _onSave(_source with { Label = Label, Pose = new MachinePose(X, Y, Z, A), DwellSeconds = DwellSeconds });
+    private void Save() => _onSave(_source with
+    {
+        Label = Label,
+        Pose = new MachinePose(X, Y, Z, A),
+        TransitionSeconds = TransitionSeconds,
+        DwellSeconds = DwellSeconds
+    });
 
     [RelayCommand]
     private void Cancel() => _onCancel();
