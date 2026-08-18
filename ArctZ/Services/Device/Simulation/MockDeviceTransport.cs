@@ -34,6 +34,13 @@ public sealed class MockDeviceTransport : IDeviceTransport, IMockDeviceControl
     private MachinePose _currentPose = MachinePose.Zero;
     private MachinePose? _targetPose;
     private double _feedUnitsPerMin = 1;
+
+    // Второй режим движения: для G93 задано время, а не скорость, поэтому поза
+    // интерполируется от стартовой к целевой по накопленному времени, и все оси
+    // приходят одновременно. _moveTotalSeconds > 0 означает «идёт G93-движение».
+    private MachinePose _moveStartPose = MachinePose.Zero;
+    private double _moveTotalSeconds;
+    private double _moveElapsedSeconds;
     private double _dwellSecondsRemaining;
     private bool _alarm;
     private bool _held;
@@ -128,6 +135,7 @@ public sealed class MockDeviceTransport : IDeviceTransport, IMockDeviceControl
                     break;
                 case 0x85: // jog cancel
                     _targetPose = null;
+                    _moveTotalSeconds = 0;
                     break;
                 case 0x18: // soft reset (Ctrl-X)
                     // В отличие от feed hold, выбрасывает всё принятое, но ещё не исполненное:
@@ -135,6 +143,7 @@ public sealed class MockDeviceTransport : IDeviceTransport, IMockDeviceControl
                     _pendingLines.Clear();
                     _rxBytesInFlight = 0;
                     _targetPose = null;
+                    _moveTotalSeconds = 0;
                     _dwellSecondsRemaining = 0;
                     _held = false;
                     break;
@@ -232,7 +241,8 @@ public sealed class MockDeviceTransport : IDeviceTransport, IMockDeviceControl
 
         if (trimmed.StartsWith("$J=", StringComparison.OrdinalIgnoreCase) ||
             trimmed.StartsWith("G0", StringComparison.OrdinalIgnoreCase) ||
-            trimmed.StartsWith("G1", StringComparison.OrdinalIgnoreCase))
+            trimmed.StartsWith("G1", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.StartsWith("G93", StringComparison.OrdinalIgnoreCase))
         {
             var tokens = ParseAxisTokens(trimmed);
             var isRelative = trimmed.Contains("G91", StringComparison.OrdinalIgnoreCase);
@@ -245,9 +255,23 @@ public sealed class MockDeviceTransport : IDeviceTransport, IMockDeviceControl
 
             _targetPose = _limits.Clamp(target);
 
-            if (tokens.TryGetValue('F', out var feed) && feed > 0)
+            tokens.TryGetValue('F', out var feed);
+
+            if (trimmed.Contains("G93", StringComparison.OrdinalIgnoreCase) && feed > 0)
             {
-                _feedUnitsPerMin = feed;
+                _moveStartPose = _currentPose;
+                _moveTotalSeconds = 60.0 / feed;
+                _moveElapsedSeconds = 0;
+                // FS: должен показывать эффективную подачу, а не 1/t.
+                _feedUnitsPerMin = Distance(_currentPose, _targetPose.Value) / _moveTotalSeconds * 60.0;
+            }
+            else
+            {
+                _moveTotalSeconds = 0;
+                if (feed > 0)
+                {
+                    _feedUnitsPerMin = feed;
+                }
             }
         }
     }
@@ -270,6 +294,33 @@ public sealed class MockDeviceTransport : IDeviceTransport, IMockDeviceControl
 
         if (_targetPose is not { } target || target == _currentPose)
         {
+            return;
+        }
+
+        if (_moveTotalSeconds > 0)
+        {
+            _moveElapsedSeconds += elapsedSeconds;
+            // Tolerance mirrors the dwell countdown above: summing elapsedSeconds tick by tick
+            // accumulates IEEE-754 error (50 * 0.1 = 4.999999999999998, not 5.0), which would
+            // otherwise strand the move a hair short of its commanded arrival tick.
+            var progress = _moveElapsedSeconds + 1e-9 >= _moveTotalSeconds
+                ? 1.0
+                : _moveElapsedSeconds / _moveTotalSeconds;
+
+            _currentPose = progress >= 1.0
+                ? target
+                : new MachinePose(
+                    X: _moveStartPose.X + (target.X - _moveStartPose.X) * progress,
+                    Y: _moveStartPose.Y + (target.Y - _moveStartPose.Y) * progress,
+                    Z: _moveStartPose.Z + (target.Z - _moveStartPose.Z) * progress,
+                    A: _moveStartPose.A + (target.A - _moveStartPose.A) * progress);
+
+            if (progress >= 1.0)
+            {
+                _targetPose = null;
+                _moveTotalSeconds = 0;
+            }
+
             return;
         }
 
@@ -322,6 +373,9 @@ public sealed class MockDeviceTransport : IDeviceTransport, IMockDeviceControl
 
         return MachineState.Idle;
     }
+
+    private static double Distance(MachinePose a, MachinePose b) => Math.Sqrt(
+        Math.Pow(b.X - a.X, 2) + Math.Pow(b.Y - a.Y, 2) + Math.Pow(b.Z - a.Z, 2) + Math.Pow(b.A - a.A, 2));
 
     private static Dictionary<char, double> ParseAxisTokens(string line)
     {

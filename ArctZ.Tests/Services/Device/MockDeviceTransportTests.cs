@@ -311,4 +311,76 @@ public class MockDeviceTransportTests
         var status = QueryStatus();
         Assert.Equal(MachineState.Idle, status.State);
     }
+
+    /// <summary>
+    /// G93: F — это 1/t в минутах, а не единиц в минуту. F12 = 5 секунд;
+    /// при тике 100 мс это ровно 50 тиков до цели, независимо от дистанции.
+    /// </summary>
+    [Fact]
+    public async Task SendLineAsync_InverseTimeMove_ArrivesAfterTheCommandedTime()
+    {
+        await _mock.ConnectAsync("demo");
+
+        await _mock.SendLineAsync("G93 G1 X60 Y0 Z0 A0 F12");
+        _ticker.RaiseElapsed(); // dequeues + acks
+
+        // Тик, снявший строку с очереди, уже двигает: до цели ровно 50 тиков по 100 мс.
+        for (var i = 0; i < 48; i++)
+        {
+            _ticker.RaiseElapsed();
+        }
+
+        var beforeArrival = QueryStatus();
+        Assert.NotEqual(new MachinePose(60, 0, 0, 0), beforeArrival.WPos);
+
+        _ticker.RaiseElapsed();
+
+        var status = QueryStatus();
+        Assert.Equal(new MachinePose(60, 0, 0, 0), status.WPos);
+        Assert.Equal(MachineState.Idle, status.State);
+    }
+
+    /// <summary>Координированное движение: обе оси приходят одновременно, а не по очереди.</summary>
+    [Fact]
+    public async Task SendLineAsync_InverseTimeMove_MovesAllAxesProportionally()
+    {
+        await _mock.ConnectAsync("demo");
+
+        await _mock.SendLineAsync("G93 G1 X60 Y6 Z0 A0 F12");
+        _ticker.RaiseElapsed(); // ack + первый шаг
+        for (var i = 0; i < 24; i++)
+        {
+            _ticker.RaiseElapsed();
+        }
+
+        var halfway = QueryStatus(); // 25 тиков = 2.5 с из 5 с
+
+        Assert.Equal(30.0, halfway.WPos.X, 3);
+        Assert.Equal(3.0, halfway.WPos.Y, 3);
+    }
+
+    /// <summary>Джог остаётся скоростным: F600 = 600 ед/мин = 1 единица за тик 100 мс.</summary>
+    [Fact]
+    public async Task SendLineAsync_JogAfterInverseTimeMove_StillUsesFeedRateSemantics()
+    {
+        await _mock.ConnectAsync("demo");
+        await _mock.SendLineAsync("G93 G1 X60 Y0 Z0 A0 F12");
+        // Этот тик и снимает строку с очереди, и сразу двигает на 1/50 пути (X=1.2) —
+        // как и для jog/G1, снятие строки с очереди и AdvanceMotion идут в одном OnTick.
+        _ticker.RaiseElapsed();
+        // Soft reset останавливает движение немедленно, как в реальном FluidNC (Ctrl-X —
+        // это hard stop, а не откат позиции), поэтому X=1.2 остаётся; дальше не должен течь
+        // ни _moveTotalSeconds, ни какое-либо другое G93-состояние.
+        await _mock.SendRawByteAsync(0x18);
+
+        await _mock.SendLineAsync("$J=G91 G21 X10 Y0 Z0 A0 F600");
+        _ticker.RaiseElapsed(); // ack + first 1-unit step
+        for (var i = 0; i < 20; i++)
+        {
+            _ticker.RaiseElapsed();
+        }
+
+        var status = QueryStatus();
+        Assert.Equal(new MachinePose(11.2, 0, 0, 0), status.WPos);
+    }
 }
