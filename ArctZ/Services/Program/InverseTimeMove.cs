@@ -9,7 +9,7 @@ namespace ArctZ.Services.Program;
 /// G93 повторяется в каждой строке намеренно — иначе любой путь останова
 /// (Stop, StopAndDrain, ошибка, обрыв связи) был бы обязан вернуть G94, и
 /// один пропущенный возврат оставил бы машину в режиме, где команда без F
-/// даёт error:2.
+/// даёт error:22.
 /// </summary>
 public static class InverseTimeMove
 {
@@ -20,10 +20,13 @@ public static class InverseTimeMove
     /// Непозитивное время нельзя клампить к «почти нулю»: F стремился бы к
     /// бесконечности, и переход превратился бы в бросок на максимальной
     /// скорости оси. Это худший ответ и на пустое поле ввода, и на старый файл
-    /// программы, где TransitionSeconds десериализуется в 0.
+    /// программы, где TransitionSeconds десериализуется в 0. Симметрично
+    /// отбраковывается и бесконечное/NaN время: +∞ иначе даёт F0 — ту же
+    /// error:22 (GcodeUndefinedFeedRate), которую весь этот класс существует,
+    /// чтобы не допустить.
     /// </summary>
     public static double EffectiveSeconds(double seconds) =>
-        seconds > 0 ? seconds : DefaultTransitionSeconds;
+        seconds > 0 && double.IsFinite(seconds) ? seconds : DefaultTransitionSeconds;
 
     public static string Line(MachinePose pose, double seconds) =>
         $"G93 G1 X{Axis(pose.X)} Y{Axis(pose.Y)} Z{Axis(pose.Z)} A{Axis(pose.A)} F{Feed(seconds)}";

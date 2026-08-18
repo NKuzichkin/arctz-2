@@ -1,8 +1,10 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using ArctZ.Services.Device;
+using ArctZ.Services.Device.Commands;
 using ArctZ.Services.Program;
 
 namespace ArctZ.Tests.Services.Program;
@@ -136,5 +138,63 @@ public class JsonFileProgramStorageTests : IDisposable
         Assert.Equal(ProgramCompletionMode.Stop, loaded.CompletionMode);
         Assert.False(loaded.ReturnToStartOnFinish);
         Assert.Null(loaded.RepeatCount);
+    }
+
+    /// <summary>
+    /// Pins the production-safety claim the G93 design relies on: a pre-G93 program file has
+    /// "FeedRateUnitsPerMin" and no "TransitionSeconds" at all. System.Text.Json silently skips
+    /// the unknown member and leaves TransitionSeconds at its default (0) rather than throwing —
+    /// today, because Options carries no [JsonConstructor]/required member/RespectRequiredConstructorParameters/
+    /// source-generated context that would change that. If any of those were ever introduced, this
+    /// test (not just the InverseTimeMove/TrajectoryCompiler rescue tests) is what would catch it.
+    /// </summary>
+    [Fact]
+    public async Task LoadAsync_LegacyFileWithFeedRateInsteadOfTransitionSeconds_TransitionSecondsDefaultsToZero()
+    {
+        var id = Guid.NewGuid();
+        Directory.CreateDirectory(_directory);
+        var legacyJson = $$"""
+    {
+      "Id": "{{id}}",
+      "Name": "Старая программа с подачей",
+      "KeyPoints": [
+        {
+          "Id": "{{Guid.NewGuid()}}",
+          "Number": 1,
+          "Label": "A",
+          "Pose": { "X": 0, "Y": 0, "Z": 0, "A": 0 },
+          "DwellSeconds": 0,
+          "FeedRateUnitsPerMin": 500,
+          "Ease": 0,
+          "ContinuousBlend": false
+        },
+        {
+          "Id": "{{Guid.NewGuid()}}",
+          "Number": 2,
+          "Label": "B",
+          "Pose": { "X": 60, "Y": 0, "Z": 0, "A": 0 },
+          "DwellSeconds": 0,
+          "FeedRateUnitsPerMin": 500,
+          "Ease": 0,
+          "ContinuousBlend": false
+        }
+      ]
+    }
+    """;
+        await File.WriteAllTextAsync(Path.Combine(_directory, $"{id}.json"), legacyJson);
+
+        var loaded = await _storage.LoadAsync(id);
+
+        Assert.Equal(0, loaded.KeyPoints[0].TransitionSeconds);
+        Assert.Equal(0, loaded.KeyPoints[1].TransitionSeconds);
+
+        // End-to-end: the rescue actually happens — TrajectoryCompiler must emit the 5-second
+        // default (F12), not F<huge> from an unclamped 60/0.
+        var steps = new TrajectoryCompiler().Compile(loaded);
+        var motionLine = steps
+            .Select(s => ((GCodeLineCommand)s.Command).Line)
+            .Single(l => l.StartsWith("G93", StringComparison.Ordinal));
+
+        Assert.Equal("G93 G1 X60 Y0 Z0 A0 F12", motionLine);
     }
 }

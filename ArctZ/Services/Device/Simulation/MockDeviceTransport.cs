@@ -239,10 +239,12 @@ public sealed class MockDeviceTransport : IDeviceTransport, IMockDeviceControl
             return;
         }
 
+        var isInverseTime = trimmed.Contains("G93", StringComparison.OrdinalIgnoreCase);
+
         if (trimmed.StartsWith("$J=", StringComparison.OrdinalIgnoreCase) ||
             trimmed.StartsWith("G0", StringComparison.OrdinalIgnoreCase) ||
             trimmed.StartsWith("G1", StringComparison.OrdinalIgnoreCase) ||
-            trimmed.StartsWith("G93", StringComparison.OrdinalIgnoreCase))
+            isInverseTime)
         {
             var tokens = ParseAxisTokens(trimmed);
             var isRelative = trimmed.Contains("G91", StringComparison.OrdinalIgnoreCase);
@@ -257,7 +259,7 @@ public sealed class MockDeviceTransport : IDeviceTransport, IMockDeviceControl
 
             tokens.TryGetValue('F', out var feed);
 
-            if (trimmed.Contains("G93", StringComparison.OrdinalIgnoreCase) && feed > 0)
+            if (isInverseTime && feed > 0)
             {
                 _moveStartPose = _currentPose;
                 _moveTotalSeconds = 60.0 / feed;
