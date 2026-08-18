@@ -28,7 +28,8 @@
   доступного буфера контроллера (`Bf:` из статус-отчёта).
 - `Services/Program/` — программы-траектории: `JibProgram`/`KeyPoint` (ключевые
   точки), `TrajectoryCompiler` (компиляция в сегменты движения с ease-режимами),
-  `JsonFileProgramStorage` (сохранение/загрузка на диск).
+  `InverseTimeMove` (единственное место, формирующее строку перемещения —
+  `G93 G1 ... F<60/t>`), `JsonFileProgramStorage` (сохранение/загрузка на диск).
 
 Слой ViewModels/Views:
 
