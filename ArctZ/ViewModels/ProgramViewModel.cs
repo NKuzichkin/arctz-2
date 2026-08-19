@@ -57,6 +57,29 @@ public partial class ProgramViewModel : ViewModelBase
 
     public bool IsEditingKeyPoint => KeyPointEditor is not null;
 
+    // Session-only: not part of the saved program, keyed by KeyPoint.Id (stable across edits —
+    // EditKeyPoint/FillKeyPointFromCurrentPosition use `with`, which preserves Id).
+    private readonly Dictionary<Guid, List<KeyPointMessage>> _keyPointMessages = new();
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsShowingKeyPointMessages))]
+    [NotifyPropertyChangedFor(nameof(KeyPointMessagesTitle))]
+    [NotifyPropertyChangedFor(nameof(SelectedKeyPointMessages))]
+    [NotifyPropertyChangedFor(nameof(HasNoKeyPointMessages))]
+    private KeyPoint? _keyPointMessagesTarget;
+
+    public bool IsShowingKeyPointMessages => KeyPointMessagesTarget is not null;
+
+    public string KeyPointMessagesTitle => KeyPointMessagesTarget is { } point
+        ? $"Сообщения — {point.Label}"
+        : string.Empty;
+
+    public IReadOnlyList<KeyPointMessage> SelectedKeyPointMessages => KeyPointMessagesTarget is { } point
+        ? GetKeyPointMessages(point.Id)
+        : Array.Empty<KeyPointMessage>();
+
+    public bool HasNoKeyPointMessages => SelectedKeyPointMessages.Count == 0;
+
     public ObservableCollection<KeyPoint> KeyPoints { get; } = new();
 
     public ObservableCollection<ProgramLibraryItem> Library { get; } = new();
@@ -330,6 +353,7 @@ public partial class ProgramViewModel : ViewModelBase
             ReturnToStartOnFinish = false;
             RepeatCount = null;
             KeyPoints.Clear();
+            _keyPointMessages.Clear();
             SelectedKeyPoint = null;
         }
         finally
@@ -355,6 +379,7 @@ public partial class ProgramViewModel : ViewModelBase
             RepeatCount = program.RepeatCount;
 
             KeyPoints.Clear();
+            _keyPointMessages.Clear();
             foreach (var keyPoint in program.KeyPoints)
             {
                 KeyPoints.Add(keyPoint);
@@ -553,6 +578,7 @@ public partial class ProgramViewModel : ViewModelBase
 
         KeyPoints.RemoveAt(index);
         RenumberKeyPoints();
+        _keyPointMessages.Remove(keyPoint.Id);
 
         if (SelectedKeyPoint == keyPoint)
         {
@@ -612,6 +638,40 @@ public partial class ProgramViewModel : ViewModelBase
         var index = KeyPoints.IndexOf(KeyPoints.First(k => k.Id == updated.Id));
         KeyPoints[index] = updated;
         KeyPointEditor = null;
+    }
+
+    [RelayCommand]
+    private void ShowKeyPointMessages(KeyPoint keyPoint) => KeyPointMessagesTarget = keyPoint;
+
+    [RelayCommand]
+    private void CloseKeyPointMessages() => KeyPointMessagesTarget = null;
+
+    public IReadOnlyList<KeyPointMessage> GetKeyPointMessages(Guid keyPointId) =>
+        _keyPointMessages.TryGetValue(keyPointId, out var messages) ? messages : Array.Empty<KeyPointMessage>();
+
+    private void AddKeyPointMessage(Guid keyPointId, KeyPointMessage message)
+    {
+        if (!_keyPointMessages.TryGetValue(keyPointId, out var messages))
+        {
+            messages = new List<KeyPointMessage>();
+            _keyPointMessages[keyPointId] = messages;
+        }
+
+        if (!messages.Contains(message))
+        {
+            messages.Add(message);
+        }
+    }
+
+    private void OnSegmentTimeOverage(int segmentIndex, double actualSeconds, double estimatedSeconds)
+    {
+        if (Services.Program.JibProgram.TargetKeyPoint(KeyPoints, segmentIndex, _currentPassBackward) is not { } keyPointId)
+        {
+            return;
+        }
+
+        AddKeyPointMessage(keyPointId, new KeyPointMessage(MessageLevel.Warning,
+            $"Превышение фактического времени перемещения ({actualSeconds:F0} сек.) над установленным ({estimatedSeconds:F0} сек)"));
     }
 
     [RelayCommand]
@@ -999,9 +1059,28 @@ public partial class ProgramViewModel : ViewModelBase
             return;
         }
 
-        _progressTracker.Changed -= OnProgressTrackerChanged;
+        DetachProgressTracker();
         _progressTracker = null;
         OnProgressTrackerChanged();
+    }
+
+    /// <summary>
+    /// Unsubscribes the current tracker and flushes its active segment's overage (covers the last
+    /// point of a pass, which never gets a "next segment" transition to report it naturally).
+    /// Callers that immediately assign a new pass must call this BEFORE updating
+    /// <see cref="_currentPassBackward"/> — the flush resolves the outgoing point's Id using
+    /// whatever direction the pass that's ending actually ran in, not the next one.
+    /// </summary>
+    private void DetachProgressTracker()
+    {
+        if (_progressTracker is null)
+        {
+            return;
+        }
+
+        _progressTracker.FlushCurrentSegment(_now());
+        _progressTracker.Changed -= OnProgressTrackerChanged;
+        _progressTracker.SegmentTimeOverage -= OnSegmentTimeOverage;
     }
 
     private IDeviceSession? _subscribedSession;
@@ -1314,18 +1393,18 @@ public partial class ProgramViewModel : ViewModelBase
             return false;
         }
 
+        // Must run before _currentPassBackward is overwritten below — see DetachProgressTracker's
+        // doc comment for why (it flushes the OLD tracker using the OLD pass's direction).
+        DetachProgressTracker();
+
         _currentPassBackward = backward;
         CurrentSegmentIndex = null;
         SegmentProgress = 0;
 
-        if (_progressTracker is not null)
-        {
-            _progressTracker.Changed -= OnProgressTrackerChanged;
-        }
-
         var startingPose = Connection.Session?.DeviceStatus?.WPos ?? MachinePose.Zero;
         _progressTracker = new TimeProgressTracker(steps, startingPose, _now());
         _progressTracker.Changed += OnProgressTrackerChanged;
+        _progressTracker.SegmentTimeOverage += OnSegmentTimeOverage;
         OnProgressTrackerChanged();
 
         var dispatched = new (CompiledStep Step, Task<CommandResult> Completion)[steps.Count];

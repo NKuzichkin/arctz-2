@@ -200,4 +200,69 @@ public class TimeProgressTrackerTests
 
         Assert.Equal(0.5, tracker.OverallFraction);
     }
+
+    [Fact]
+    public void SegmentTimeOverage_FiresWhenLeavingASegmentThatWasOverTime()
+    {
+        var steps = new List<CompiledStep> { Move(0, x: 10, estimatedSeconds: 10), Move(1, x: 20, estimatedSeconds: 10) };
+        var tracker = new TimeProgressTracker(steps, startingPose: MachinePose.Zero, passStartedAt: T0);
+        (int SegmentIndex, double ActualSeconds, double EstimatedSeconds)? raised = null;
+        tracker.SegmentTimeOverage += (segmentIndex, actualSeconds, estimatedSeconds) => raised = (segmentIndex, actualSeconds, estimatedSeconds);
+
+        tracker.OnClockTick(T0.AddSeconds(15)); // segment 0, 50% over its 10s estimate
+        Assert.Null(raised); // still inside the segment — nothing to report yet
+
+        tracker.OnPositionUpdated(new MachinePose(11, 0, 0, 0), T0.AddSeconds(15)); // real motion into segment 1
+
+        Assert.NotNull(raised);
+        Assert.Equal(0, raised!.Value.SegmentIndex);
+        Assert.Equal(15, raised.Value.ActualSeconds);
+        Assert.Equal(10, raised.Value.EstimatedSeconds);
+    }
+
+    [Fact]
+    public void SegmentTimeOverage_DoesNotFireWhenLeavingASegmentThatWasOnTime()
+    {
+        var steps = new List<CompiledStep> { Move(0, x: 10, estimatedSeconds: 10), Move(1, x: 20, estimatedSeconds: 10) };
+        var tracker = new TimeProgressTracker(steps, startingPose: MachinePose.Zero, passStartedAt: T0);
+        var raised = false;
+        tracker.SegmentTimeOverage += (_, _, _) => raised = true;
+
+        tracker.OnPositionUpdated(new MachinePose(11, 0, 0, 0), T0.AddSeconds(9)); // moved on comfortably within the 10s estimate
+
+        Assert.False(raised);
+    }
+
+    [Fact]
+    public void FlushCurrentSegment_ActiveSegmentIsOverTime_FiresTheEvent()
+    {
+        // The last point of a pass never gets a "next segment" to move into, so nothing would
+        // otherwise report its overage — FlushCurrentSegment covers that on pass end/stop.
+        var steps = new List<CompiledStep> { Move(0, x: 10, estimatedSeconds: 10) };
+        var tracker = new TimeProgressTracker(steps, startingPose: MachinePose.Zero, passStartedAt: T0);
+        (int SegmentIndex, double ActualSeconds, double EstimatedSeconds)? raised = null;
+        tracker.SegmentTimeOverage += (segmentIndex, actualSeconds, estimatedSeconds) => raised = (segmentIndex, actualSeconds, estimatedSeconds);
+
+        tracker.OnClockTick(T0.AddSeconds(15)); // 50% over the 10s estimate, no next segment to move into
+        tracker.FlushCurrentSegment(T0.AddSeconds(15));
+
+        Assert.NotNull(raised);
+        Assert.Equal(0, raised!.Value.SegmentIndex);
+        Assert.Equal(15, raised.Value.ActualSeconds);
+        Assert.Equal(10, raised.Value.EstimatedSeconds);
+    }
+
+    [Fact]
+    public void FlushCurrentSegment_ActiveSegmentIsOnTime_DoesNotFireTheEvent()
+    {
+        var steps = new List<CompiledStep> { Move(0, x: 10, estimatedSeconds: 10) };
+        var tracker = new TimeProgressTracker(steps, startingPose: MachinePose.Zero, passStartedAt: T0);
+        var raised = false;
+        tracker.SegmentTimeOverage += (_, _, _) => raised = true;
+
+        tracker.OnClockTick(T0.AddSeconds(5));
+        tracker.FlushCurrentSegment(T0.AddSeconds(5));
+
+        Assert.False(raised);
+    }
 }

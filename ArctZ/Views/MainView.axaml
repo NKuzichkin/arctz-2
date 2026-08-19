@@ -21,6 +21,8 @@
         <conv:KeyPointIsExecutingConverter x:Key="KeyPointIsExecuting" />
         <conv:FractionToArcConverter x:Key="FractionToArc" />
         <conv:KeyPointHasTimeWarningConverter x:Key="KeyPointHasTimeWarning" />
+        <conv:MessageLevelToIconConverter x:Key="MessageLevelToIcon" />
+        <conv:MessageLevelToBrushConverter x:Key="MessageLevelToBrush" />
         <conv:EnumEqualsConverter x:Key="EnumEquals" />
         <js:RadiusToSizeConverter x:Key="RadiusToSize" />
     </UserControl.Resources>
@@ -260,6 +262,12 @@
                                                                     <materialIcons:MaterialIcon Kind="ArrowDown" />
                                                                 </MenuItem.Icon>
                                                             </MenuItem>
+                                                            <MenuItem Header="Сообщения" CommandParameter="{Binding}"
+                                                                      Command="{Binding ((vm:ProgramViewModel)DataContext).ShowKeyPointMessagesCommand, ElementName=KeyPointsList}">
+                                                                <MenuItem.Icon>
+                                                                    <materialIcons:MaterialIcon Kind="MessageAlertOutline" />
+                                                                </MenuItem.Icon>
+                                                            </MenuItem>
                                                             <MenuItem Header="Удалить" CommandParameter="{Binding}"
                                                                       Command="{Binding ((vm:ProgramViewModel)DataContext).RemoveKeyPointCommand, ElementName=KeyPointsList}">
                                                                 <MenuItem.Icon>
@@ -432,6 +440,40 @@
                                 </Button>
                             </StackPanel>
                         </StackPanel>
+                    </Border>
+                </Border>
+
+                <Border IsVisible="{Binding IsShowingKeyPointMessages}" Background="{StaticResource HudScrimBrush}">
+                    <Border MaxWidth="440" MaxHeight="480" Margin="16" Background="{StaticResource HudPanelElevatedBrush}"
+                            BorderBrush="{StaticResource HudBorderStrongBrush}" BorderThickness="1"
+                            Padding="20" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <DockPanel>
+                            <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+                                <TextBlock Grid.Column="0" Classes="section-heading" Text="{Binding KeyPointMessagesTitle}" VerticalAlignment="Center" />
+                                <Button Grid.Column="1" Padding="8,2" Command="{Binding CloseKeyPointMessagesCommand}">
+                                    <materialIcons:MaterialIcon Kind="Close" Width="16" Height="16" />
+                                </Button>
+                            </Grid>
+
+                            <TextBlock DockPanel.Dock="Top" Text="Нет сообщений" IsVisible="{Binding HasNoKeyPointMessages}"
+                                       Foreground="{StaticResource HudTextSecondaryBrush}" />
+
+                            <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding SelectedKeyPointMessages}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="program:KeyPointMessage">
+                                            <Grid ColumnDefinitions="Auto,*" Margin="0,0,0,10">
+                                                <materialIcons:MaterialIcon Grid.Column="0" Width="18" Height="18" Margin="0,1,10,0"
+                                                                           VerticalAlignment="Top"
+                                                                           Kind="{Binding Level, Converter={StaticResource MessageLevelToIcon}}"
+                                                                           Foreground="{Binding Level, Converter={StaticResource MessageLevelToBrush}}" />
+                                                <TextBlock Grid.Column="1" Text="{Binding Text}" TextWrapping="Wrap" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </DockPanel>
                     </Border>
                 </Border>
 

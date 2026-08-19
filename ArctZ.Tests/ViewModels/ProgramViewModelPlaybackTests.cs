@@ -1220,4 +1220,95 @@ public class ProgramViewModelPlaybackTests
         transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
         await playTask;
     }
+
+    [Fact]
+    public async Task PlayAsync_SegmentEndsOverTime_RecordsAKeyPointMessageForThatPoint()
+    {
+        var currentTime = new DateTimeOffset(2026, 8, 19, 12, 0, 0, TimeSpan.Zero);
+        var vm = CreateViewModel(out var transport, out var progressTimer, () => currentTime);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport); // each key point's TransitionSeconds is 5
+        transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
+        var firstPointId = vm.KeyPoints[0].Id;
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+
+        // Segment 0's estimate is 5s; 6s elapsed is 20% over, past the 15% warning threshold.
+        currentTime = currentTime.AddSeconds(6);
+        progressTimer.RaiseElapsed();
+        Assert.Empty(vm.GetKeyPointMessages(firstPointId)); // still inside the segment — nothing recorded yet
+
+        // Real motion into segment 1 — leaving segment 0 while it was still over time.
+        transport.SimulateReceivedLine("<Run|WPos:5.000,0.000,0.000,0.000|FS:0,0>");
+
+        var messages = vm.GetKeyPointMessages(firstPointId);
+        var message = Assert.Single(messages);
+        Assert.Equal(MessageLevel.Warning, message.Level);
+        Assert.Equal("Превышение фактического времени перемещения (6 сек.) над установленным (5 сек)", message.Text);
+
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
+        await playTask;
+    }
+
+    [Fact]
+    public async Task PlayAsync_RepeatedIdenticalOverageAcrossTwoRuns_DoesNotDuplicateTheMessage()
+    {
+        var currentTime = new DateTimeOffset(2026, 8, 19, 12, 0, 0, TimeSpan.Zero);
+        var vm = CreateViewModel(out var transport, out var progressTimer, () => currentTime);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+        transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
+        var firstPointId = vm.KeyPoints[0].Id;
+
+        async Task RunOnePassWithTheSameOverageAsync()
+        {
+            var playTask = vm.PlayCommand.ExecuteAsync(null);
+            currentTime = currentTime.AddSeconds(6); // identical overage every run: 6 of 5s estimated
+            progressTimer.RaiseElapsed();
+            transport.SimulateReceivedLine("<Run|WPos:5.000,0.000,0.000,0.000|FS:0,0>");
+
+            transport.SimulateReceivedLine("ok");
+            transport.SimulateReceivedLine("ok");
+            transport.SimulateReceivedLine("ok");
+            await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+            transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
+            await playTask;
+        }
+
+        await RunOnePassWithTheSameOverageAsync();
+        Assert.Single(vm.GetKeyPointMessages(firstPointId));
+
+        transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>"); // machine back at the start for the next run
+        await RunOnePassWithTheSameOverageAsync();
+
+        Assert.Single(vm.GetKeyPointMessages(firstPointId)); // identical text both times — deduped, not appended again
+    }
+
+    [Fact]
+    public async Task StopAsync_LastPointStillOverTime_FlushesAMessageForThatPoint()
+    {
+        var currentTime = new DateTimeOffset(2026, 8, 19, 12, 0, 0, TimeSpan.Zero);
+        var vm = CreateViewModel(out var transport, out var progressTimer, () => currentTime);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+        transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
+        var firstPointId = vm.KeyPoints[0].Id;
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+        currentTime = currentTime.AddSeconds(6); // still mid-segment 0 — no natural transition to report this
+        progressTimer.RaiseElapsed();
+        Assert.Empty(vm.GetKeyPointMessages(firstPointId));
+
+        await vm.StopCommand.ExecuteAsync(null);
+        transport.SimulateReceivedLine("ok"); // resolves the command already in flight so playTask completes
+        await playTask;
+
+        var messages = vm.GetKeyPointMessages(firstPointId);
+        var message = Assert.Single(messages);
+        Assert.Equal("Превышение фактического времени перемещения (6 сек.) над установленным (5 сек)", message.Text);
+    }
 }

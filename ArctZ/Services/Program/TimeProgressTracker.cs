@@ -48,6 +48,14 @@ public sealed class TimeProgressTracker
 
     public event Action? Changed;
 
+    /// <summary>
+    /// Fires once when the machine leaves a segment that was over its 15% warning threshold at
+    /// the moment it left (int segmentIndex, double actualSeconds, double estimatedSeconds). The
+    /// last segment of a pass never triggers this naturally — call <see cref="FlushCurrentSegment"/>
+    /// when the pass ends to cover it.
+    /// </summary>
+    public event Action<int, double, double>? SegmentTimeOverage;
+
     public TimeProgressTracker(IReadOnlyList<CompiledStep> steps, MachinePose startingPose, DateTimeOffset passStartedAt)
     {
         _passStartedAt = passStartedAt;
@@ -127,6 +135,19 @@ public sealed class TimeProgressTracker
     public void OnClockTick(DateTimeOffset now) => Recompute(now);
 
     /// <summary>
+    /// Reports the currently active segment's overage, if any, without waiting for a transition
+    /// into a next segment — the last point of a pass has no next segment to move into, so the
+    /// caller must flush it explicitly (on pass end/stop) to still get its message.
+    /// </summary>
+    public void FlushCurrentSegment(DateTimeOffset now)
+    {
+        if (_lastSegmentIndex is { } index)
+        {
+            EmitOverageIfNeeded(index, now);
+        }
+    }
+
+    /// <summary>
     /// Shifts the pass-start and current-segment-entry clocks forward by a paused interval, so
     /// time spent paused — including an arbitrarily long link-loss reconnect (see
     /// ProgramViewModel.ApplySessionConnectionState) — never counts as elapsed progress or
@@ -143,6 +164,11 @@ public sealed class TimeProgressTracker
         var segmentIndex = CurrentSegmentIndex;
         if (segmentIndex != _lastSegmentIndex)
         {
+            if (_lastSegmentIndex is { } finishedIndex)
+            {
+                EmitOverageIfNeeded(finishedIndex, now);
+            }
+
             _lastSegmentIndex = segmentIndex;
             _currentSegmentEnteredAt = now;
         }
@@ -155,6 +181,17 @@ public sealed class TimeProgressTracker
         OverallFraction = _totalEstimatedSeconds <= 0 ? 1.0 : Math.Clamp((now - _passStartedAt).TotalSeconds / _totalEstimatedSeconds, 0, 1);
 
         Changed?.Invoke();
+    }
+
+    private void EmitOverageIfNeeded(int segmentIndex, DateTimeOffset now)
+    {
+        var estimatedForSegment = _segmentEstimatedSeconds.GetValueOrDefault(segmentIndex);
+        var elapsedInSegment = (now - _currentSegmentEnteredAt).TotalSeconds;
+
+        if (estimatedForSegment > 0 && elapsedInSegment > estimatedForSegment * 1.15)
+        {
+            SegmentTimeOverage?.Invoke(segmentIndex, elapsedInSegment, estimatedForSegment);
+        }
     }
 
     private int FindEdgeIndexAt(double cumulative)
