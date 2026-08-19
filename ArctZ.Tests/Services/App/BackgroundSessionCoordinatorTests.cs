@@ -95,6 +95,24 @@ public class BackgroundSessionCoordinatorTests
         Assert.Equal(0, _host.StopCallCount);
     }
 
+    /// <summary>Во время выполнения программы DeviceStatus меняется на каждый статус-репорт
+    /// (позиция движется), и ProgramViewModel безусловно перевызывает StatusLabel — но пока
+    /// PlaybackState остаётся Running, сам текст метки не меняется. Без дедупликации это
+    /// дёргало Android-уведомление (пересоздание StartForeground) на каждый статус-репорт.</summary>
+    [Fact]
+    public void WhilePositionChangesDuringRun_UnchangedProjectionDoesNotReUpdateTheHost()
+    {
+        using var coordinator = CreateCoordinator();
+        Connect();
+        _program.PlaybackState = PlaybackState.Running;
+        var updatesAfterRunningStarted = _host.Updates.Count;
+
+        _program.Connection.DeviceStatus = new DeviceStatus(MachineState.Run, new MachinePose(1, 0, 0, 0), null, null);
+        _program.Connection.DeviceStatus = new DeviceStatus(MachineState.Run, new MachinePose(2, 0, 0, 0), null, null);
+
+        Assert.Equal(updatesAfterRunningStarted, _host.Updates.Count);
+    }
+
     [Fact]
     public void AfterDispose_ViewModelChangesAreIgnored()
     {

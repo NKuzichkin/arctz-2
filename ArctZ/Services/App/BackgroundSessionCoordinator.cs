@@ -14,6 +14,7 @@ public sealed class BackgroundSessionCoordinator : IDisposable
     private readonly ProgramViewModel _program;
     private readonly IBackgroundSessionHost _host;
     private bool _shown;
+    private BackgroundSessionState? _lastSent;
 
     public BackgroundSessionCoordinator(ProgramViewModel program, IBackgroundSessionHost host)
     {
@@ -63,6 +64,7 @@ public sealed class BackgroundSessionCoordinator : IDisposable
             if (_shown)
             {
                 _shown = false;
+                _lastSent = null;
                 _host.Stop();
             }
 
@@ -70,9 +72,21 @@ public sealed class BackgroundSessionCoordinator : IDisposable
         }
 
         _shown = true;
-        _host.Update(BackgroundSessionProjector.Project(
+
+        // ProgramViewModel forces a StatusLabel PropertyChanged on every status report while
+        // running (position moves, the label text doesn't) — without this dedup, that reposted
+        // the Android notification (StartForeground) on every poll and made it visibly jitter.
+        var state = BackgroundSessionProjector.Project(
             _program.PlaybackState,
             _program.StatusLabel,
-            _program.ProgramName));
+            _program.ProgramName);
+
+        if (_lastSent == state)
+        {
+            return;
+        }
+
+        _lastSent = state;
+        _host.Update(state);
     }
 }
