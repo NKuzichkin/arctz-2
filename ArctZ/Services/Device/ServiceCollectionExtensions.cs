@@ -30,7 +30,10 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<ConnectionViewModel>(),
             sp.GetRequiredService<IProgramStorage>(),
             sp.GetRequiredService<ITrajectoryCompiler>(),
-            sp.GetRequiredService<IAppExitService>()));
+            sp.GetRequiredService<IAppExitService>(),
+            now: null,
+            progressTimer: new SystemPeriodicTimer(),
+            progressTimerInterval: TimeSpan.FromMilliseconds(100)));
 
         // Обычный AddSingleton, а не TryAddSingleton: голова платформы (Android) регистрирует
         // свой хост после этого вызова, а при резолве одиночного сервиса выигрывает последняя

@@ -25,6 +25,9 @@ public partial class ProgramViewModel : ViewModelBase
     private readonly IAppExitService _exitService;
     private readonly Func<DateTimeOffset> _now;
     private readonly DateTimeOffset _startedAt;
+    private readonly IPeriodicTimer _progressTimer;
+    private readonly TimeSpan _progressTimerInterval;
+    private PhysicalProgressTracker? _progressTracker;
     private JoystickAxisInput _leftInput;
     private JoystickAxisInput _rightInput;
     private bool _leftActive;
@@ -106,13 +109,18 @@ public partial class ProgramViewModel : ViewModelBase
         IProgramStorage storage,
         ITrajectoryCompiler compiler,
         IAppExitService exitService,
-        Func<DateTimeOffset>? now = null)
+        Func<DateTimeOffset>? now = null,
+        IPeriodicTimer? progressTimer = null,
+        TimeSpan? progressTimerInterval = null)
     {
         Connection = connection;
         _storage = storage;
         _compiler = compiler;
         _exitService = exitService;
         _now = now ?? (() => DateTimeOffset.Now);
+        _progressTimer = progressTimer ?? new SystemPeriodicTimer();
+        _progressTimerInterval = progressTimerInterval ?? TimeSpan.FromMilliseconds(100);
+        _progressTimer.Elapsed += OnProgressTimerElapsed;
 
         // This view model is a singleton built during startup, so its construction is the
         // closest thing to "the app started" available without a platform-specific process API.
@@ -135,6 +143,11 @@ public partial class ProgramViewModel : ViewModelBase
         {
             IsDirty = true;
         }
+    }
+
+    private void OnProgressTimerElapsed()
+    {
+        _progressTracker?.OnTimerElapsed(_progressTimerInterval);
     }
 
     partial void OnProgramNameChanged(string value) => MarkDirtyIfTracking();
