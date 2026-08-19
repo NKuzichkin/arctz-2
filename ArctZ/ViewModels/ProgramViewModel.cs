@@ -1048,7 +1048,7 @@ public partial class ProgramViewModel : ViewModelBase
     private void OnSessionDeviceStatusChanged()
     {
         var status = Connection.Session?.DeviceStatus;
-        if (status is { } value)
+        if (status is { } value && PlaybackState != PlaybackState.Paused)
         {
             _progressTracker?.OnPositionUpdated(value.WPos, _now());
         }

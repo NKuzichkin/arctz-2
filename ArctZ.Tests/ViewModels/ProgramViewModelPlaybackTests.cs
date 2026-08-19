@@ -1150,6 +1150,41 @@ public class ProgramViewModelPlaybackTests
     }
 
     [Fact]
+    public async Task WhileStatusReportsArriveDuringAPause_ProgressDoesNotAdvance()
+    {
+        var currentTime = new DateTimeOffset(2026, 8, 19, 12, 0, 0, TimeSpan.Zero);
+        var vm = CreateViewModel(out var transport, out var progressTimer, () => currentTime);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+        transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+        currentTime = currentTime.AddSeconds(3);
+        progressTimer.RaiseElapsed();
+        Assert.Equal(0.2, vm.PhysicalOverallProgress); // 3 of the 15s total estimate (3 points x 5s)
+
+        await vm.PauseCommand.ExecuteAsync(null);
+        currentTime = currentTime.AddSeconds(50);
+        // StatusPoller keeps polling through a real Pause — this simulates one of those reports
+        // arriving mid-pause. It must NOT feed the tracker, or PhysicalOverallProgress would climb
+        // even though the machine hasn't moved and this run isn't "supposed" to be progressing.
+        transport.SimulateReceivedLine("<Hold|WPos:5.000,0.000,0.000,0.000|FS:0,0>");
+        Assert.Equal(0.2, vm.PhysicalOverallProgress); // unchanged despite the report and the elapsed 50s
+
+        await vm.PlayCommand.ExecuteAsync(null); // resume — shifts the tracker's clocks by the 50s pause
+        currentTime = currentTime.AddSeconds(4.5);
+        progressTimer.RaiseElapsed();
+        Assert.Equal(0.5, vm.PhysicalOverallProgress); // 3s (before pause) + 4.5s (after resume) = 7.5 of 15s — the 50s paused gap and the mid-pause status report must not count
+
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
+        await playTask;
+    }
+
+    [Fact]
     public void PhysicalOverallProgress_WithNoActiveTracker_DefaultsToZero()
     {
         var vm = CreateViewModel(out _, out _);
