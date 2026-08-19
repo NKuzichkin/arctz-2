@@ -935,32 +935,36 @@ public class ProgramViewModelPlaybackTests
         Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
     }
 
-    private static ProgramViewModel CreateViewModel(out FakeDeviceTransport transport, out ManualPeriodicTimer progressTimer)
+    private static ProgramViewModel CreateViewModel(out FakeDeviceTransport transport, out ManualPeriodicTimer progressTimer, Func<DateTimeOffset>? now = null)
     {
         transport = new FakeDeviceTransport();
         var storage = new FakeProgramStorage();
         var connection = new ConnectionViewModel(transport, () => new FakeDeviceTransport(), new DeviceSessionFactory(MachineLimits.Default), new SingleRealDeviceEndpointProvider());
         progressTimer = new ManualPeriodicTimer();
-        return new ProgramViewModel(connection, storage, new TrajectoryCompiler(), new FakeAppExitService(), progressTimer: progressTimer);
+        return new ProgramViewModel(connection, storage, new TrajectoryCompiler(), new FakeAppExitService(), now, progressTimer: progressTimer);
     }
 
     [Fact]
-    public async Task PlayAsync_AsThePositionAdvancesTowardTheFirstPoint_PhysicalOverallProgressTracksIt()
+    public async Task PlayAsync_AsTimeElapsesDuringThePass_PhysicalOverallProgressTracksIt()
     {
-        var vm = CreateViewModel(out var transport, out var progressTimer);
+        var currentTime = new DateTimeOffset(2026, 8, 19, 12, 0, 0, TimeSpan.Zero);
+        var vm = CreateViewModel(out var transport, out var progressTimer, () => currentTime);
         await vm.Connection.ConnectCommand.Execute();
         SeedTwoSegmentProgram(vm, transport);
         // SeedTwoSegmentProgram leaves the simulated machine at the last captured pose (20,0,0,0) —
         // reset it to the program's actual starting pose before Play, so the tracker's captured
-        // starting vertex matches what these assertions assume (a clean 0->10->20 path, 20 units total).
+        // starting vertex matches what these assertions assume.
         transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
 
         var playTask = vm.PlayCommand.ExecuteAsync(null);
         Assert.Equal(0, vm.PhysicalOverallProgress);
 
-        transport.SimulateReceivedLine("<Run|WPos:5.000,0.000,0.000,0.000|FS:0,0>");
+        // 3 key points at TransitionSeconds=5 each (SeedTwoSegmentProgram) = 15s total estimate for
+        // the whole pass, including segment 0's zero-distance self-move; halfway is 7.5s.
+        currentTime = currentTime.AddSeconds(7.5);
+        progressTimer.RaiseElapsed();
 
-        Assert.Equal(0.25, vm.PhysicalOverallProgress); // 5 of 20 total units across both segments
+        Assert.Equal(0.5, vm.PhysicalOverallProgress);
 
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
@@ -1000,12 +1004,10 @@ public class ProgramViewModelPlaybackTests
     [Fact]
     public async Task PlayAsync_EachNewPass_ResetsPhysicalOverallProgressToZero()
     {
-        var vm = CreateViewModel(out var transport, out var progressTimer);
+        var currentTime = new DateTimeOffset(2026, 8, 19, 12, 0, 0, TimeSpan.Zero);
+        var vm = CreateViewModel(out var transport, out var progressTimer, () => currentTime);
         await vm.Connection.ConnectCommand.Execute();
         SeedTwoSegmentProgram(vm, transport);
-        // SeedTwoSegmentProgram leaves the simulated machine at the last captured pose (20,0,0,0) —
-        // reset it to the program's actual starting pose before Play, so the tracker's captured
-        // starting vertex matches what these assertions assume (a clean 0->10->20 path, 20 units total).
         transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
         // Setting CompletionMode/RepeatCount marks the program dirty again (MarkDirtyIfTracking),
         // which would make PlayAsync's EnsureProgramSavedAsync await an unanswered save-confirmation
@@ -1039,7 +1041,8 @@ public class ProgramViewModelPlaybackTests
         };
 
         var playTask = vm.PlayCommand.ExecuteAsync(null);
-        transport.SimulateReceivedLine("<Run|WPos:15.000,0.000,0.000,0.000|FS:0,0>"); // forward pass, well underway
+        currentTime = currentTime.AddSeconds(7.5); // forward pass, well underway (half its 15s estimate)
+        progressTimer.RaiseElapsed();
 
         transport.SimulateReceivedLine("ok");
         transport.SimulateReceivedLine("ok");
@@ -1059,16 +1062,15 @@ public class ProgramViewModelPlaybackTests
     [Fact]
     public async Task StopAsync_ClearsPhysicalProgress()
     {
-        var vm = CreateViewModel(out var transport, out var progressTimer);
+        var currentTime = new DateTimeOffset(2026, 8, 19, 12, 0, 0, TimeSpan.Zero);
+        var vm = CreateViewModel(out var transport, out var progressTimer, () => currentTime);
         await vm.Connection.ConnectCommand.Execute();
         SeedTwoSegmentProgram(vm, transport);
-        // SeedTwoSegmentProgram leaves the simulated machine at the last captured pose (20,0,0,0) —
-        // reset it to the program's actual starting pose before Play, so the tracker's captured
-        // starting vertex matches what these assertions assume (a clean 0->10->20 path, 20 units total).
         transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
 
         var playTask = vm.PlayCommand.ExecuteAsync(null);
-        transport.SimulateReceivedLine("<Run|WPos:5.000,0.000,0.000,0.000|FS:0,0>");
+        currentTime = currentTime.AddSeconds(5);
+        progressTimer.RaiseElapsed();
         Assert.True(vm.PhysicalOverallProgress > 0);
 
         await vm.StopCommand.ExecuteAsync(null);
@@ -1086,6 +1088,33 @@ public class ProgramViewModelPlaybackTests
 
         Assert.Equal(0, vm.PhysicalOverallProgress);
         Assert.Equal(1.0, vm.PhysicalPointRemainingFraction);
+        Assert.False(vm.PhysicalPointHasTimeWarning);
         Assert.Null(vm.PhysicallyExecutingKeyPointId);
+    }
+
+    [Fact]
+    public async Task PlayAsync_WhenASegmentTakesTooLong_PhysicalPointHasTimeWarningBecomesTrue()
+    {
+        var currentTime = new DateTimeOffset(2026, 8, 19, 12, 0, 0, TimeSpan.Zero);
+        var vm = CreateViewModel(out var transport, out var progressTimer, () => currentTime);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport); // each key point's TransitionSeconds is 5
+        transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+        Assert.False(vm.PhysicalPointHasTimeWarning);
+
+        // Segment 0's estimate is 5s; 6s elapsed is 20% over, past the 15% warning threshold.
+        currentTime = currentTime.AddSeconds(6);
+        progressTimer.RaiseElapsed();
+
+        Assert.True(vm.PhysicalPointHasTimeWarning);
+
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
+        await playTask;
     }
 }

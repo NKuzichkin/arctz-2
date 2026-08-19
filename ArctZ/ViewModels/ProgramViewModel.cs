@@ -119,7 +119,7 @@ public partial class ProgramViewModel : ViewModelBase
         _exitService = exitService;
         _now = now ?? (() => DateTimeOffset.Now);
         _progressTimer = progressTimer ?? new SystemPeriodicTimer();
-        _progressTimerInterval = progressTimerInterval ?? TimeSpan.FromMilliseconds(100);
+        _progressTimerInterval = progressTimerInterval ?? TimeSpan.FromMilliseconds(200);
         _progressTimer.Elapsed += OnProgressTimerElapsed;
 
         // This view model is a singleton built during startup, so its construction is the
@@ -958,6 +958,8 @@ public partial class ProgramViewModel : ViewModelBase
         var tracker => 1.0 - tracker.CurrentStepFraction,
     };
 
+    public bool PhysicalPointHasTimeWarning => _progressTracker?.CurrentPointHasWarning ?? false;
+
     public Guid? PhysicallyExecutingKeyPointId => _progressTracker is null
         ? null
         : Services.Program.JibProgram.TargetKeyPoint(KeyPoints, _progressTracker.CurrentSegmentIndex, _currentPassBackward);
@@ -966,6 +968,7 @@ public partial class ProgramViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(PhysicalOverallProgress));
         OnPropertyChanged(nameof(PhysicalPointRemainingFraction));
+        OnPropertyChanged(nameof(PhysicalPointHasTimeWarning));
         OnPropertyChanged(nameof(PhysicallyExecutingKeyPointId));
     }
 

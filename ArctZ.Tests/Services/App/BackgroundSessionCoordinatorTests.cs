@@ -131,9 +131,10 @@ public class BackgroundSessionCoordinatorTests
     [Fact]
     public async Task WhilePositionAdvancesDuringRun_HostIsUpdatedOnlyWhenTheRoundedPercentChanges()
     {
+        var currentTime = new DateTimeOffset(2026, 8, 19, 12, 0, 0, TimeSpan.Zero);
         var transport = new FakeDeviceTransport();
         var connection = new ConnectionViewModel(transport, () => new FakeDeviceTransport(), new DeviceSessionFactory(MachineLimits.Default), new SingleRealDeviceEndpointProvider());
-        var program = new ProgramViewModel(connection, new FakeProgramStorage(), new TrajectoryCompiler(), new FakeAppExitService());
+        var program = new ProgramViewModel(connection, new FakeProgramStorage(), new TrajectoryCompiler(), new FakeAppExitService(), () => currentTime);
         using var coordinator = new BackgroundSessionCoordinator(program, _host);
 
         await program.Connection.ConnectCommand.Execute();
@@ -151,17 +152,20 @@ public class BackgroundSessionCoordinatorTests
 
         // Capturing left the simulated machine at the last captured pose (100,0,0,0) — reset it
         // to the program's actual starting pose before Play, so the tracker's captured starting
-        // vertex matches the "N of 100 units" comments below (same pattern as
-        // ProgramViewModelPlaybackTests.PlayAsync_AsThePositionAdvancesTowardTheFirstPoint_PhysicalOverallProgressTracksIt).
+        // vertex matches what these assertions assume.
         transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
 
         var playTask = program.PlayCommand.ExecuteAsync(null);
         var updatesBeforeMotion = _host.Updates.Count;
 
-        transport.SimulateReceivedLine("<Run|WPos:1.000,0.000,0.000,0.000|FS:0,0>"); // 1 of 100 units: rounds to 0%
+        // 2 key points at TransitionSeconds=5 each = 10s total estimate for the pass (segment 0's
+        // zero-distance self-move included, same as segment 1's real move — both cost 5s).
+        currentTime = currentTime.AddSeconds(0.1); // 0.1 of 10s = 1%: rounds to 0%
+        transport.SimulateReceivedLine("<Run|WPos:1.000,0.000,0.000,0.000|FS:0,0>");
         Assert.Equal(updatesBeforeMotion, _host.Updates.Count);
 
-        transport.SimulateReceivedLine("<Run|WPos:5.000,0.000,0.000,0.000|FS:0,0>"); // 5 of 100: rounds to 5%
+        currentTime = currentTime.AddSeconds(0.4); // 0.5 of 10s = 5%: rounds to 5%
+        transport.SimulateReceivedLine("<Run|WPos:5.000,0.000,0.000,0.000|FS:0,0>");
         Assert.True(_host.Updates.Count > updatesBeforeMotion);
         Assert.Equal(5, _host.LastUpdate!.Value.ProgressPercent);
 
