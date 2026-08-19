@@ -27,7 +27,7 @@ public partial class ProgramViewModel : ViewModelBase
     private readonly DateTimeOffset _startedAt;
     private readonly IPeriodicTimer _progressTimer;
     private readonly TimeSpan _progressTimerInterval;
-    private PhysicalProgressTracker? _progressTracker;
+    private TimeProgressTracker? _progressTracker;
     private JoystickAxisInput _leftInput;
     private JoystickAxisInput _rightInput;
     private bool _leftActive;
@@ -147,7 +147,7 @@ public partial class ProgramViewModel : ViewModelBase
 
     private void OnProgressTimerElapsed()
     {
-        _progressTracker?.OnTimerElapsed(_progressTimerInterval);
+        _progressTracker?.OnClockTick(_now());
     }
 
     partial void OnProgramNameChanged(string value) => MarkDirtyIfTracking();
@@ -955,8 +955,7 @@ public partial class ProgramViewModel : ViewModelBase
     public double PhysicalPointRemainingFraction => _progressTracker switch
     {
         null => 1.0,
-        { IsDwelling: true } tracker => tracker.DwellFraction,
-        var tracker => 1.0 - tracker.ApproachFraction,
+        var tracker => 1.0 - tracker.CurrentStepFraction,
     };
 
     public Guid? PhysicallyExecutingKeyPointId => _progressTracker is null
@@ -1028,7 +1027,7 @@ public partial class ProgramViewModel : ViewModelBase
         var status = Connection.Session?.DeviceStatus;
         if (status is { } value)
         {
-            _progressTracker?.OnPositionUpdated(value.WPos);
+            _progressTracker?.OnPositionUpdated(value.WPos, _now());
         }
 
         if (status?.State == MachineState.Idle)
@@ -1302,7 +1301,7 @@ public partial class ProgramViewModel : ViewModelBase
         }
 
         var startingPose = Connection.Session?.DeviceStatus?.WPos ?? MachinePose.Zero;
-        _progressTracker = new PhysicalProgressTracker(steps, startingPose);
+        _progressTracker = new TimeProgressTracker(steps, startingPose, _now());
         _progressTracker.Changed += OnProgressTrackerChanged;
         OnProgressTrackerChanged();
 

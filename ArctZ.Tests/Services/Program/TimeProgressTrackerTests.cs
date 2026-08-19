@@ -1,0 +1,203 @@
+using System;
+using System.Collections.Generic;
+using ArctZ.Services.Device;
+using ArctZ.Services.Device.Commands;
+using ArctZ.Services.Program;
+using Xunit;
+
+namespace ArctZ.Tests.Services.Program;
+
+public class TimeProgressTrackerTests
+{
+    private static readonly DateTimeOffset T0 = new(2026, 8, 19, 12, 0, 0, TimeSpan.Zero);
+
+    private static CompiledStep Move(int segmentIndex, double x, double estimatedSeconds = 5, bool isDwell = false) =>
+        new(segmentIndex, new GCodeLineCommand("G93 G1 X" + x), SegmentProgress: 1.0, EstimatedDurationSeconds: estimatedSeconds, Pose: new MachinePose(x, 0, 0, 0), IsDwellStep: isDwell);
+
+    [Fact]
+    public void OnClockTick_HalfwayThroughTheEstimatedTimeOfTheOnlySegment_ReportsHalfOverallAndHalfStep()
+    {
+        var steps = new List<CompiledStep> { Move(0, x: 10, estimatedSeconds: 10) };
+        var tracker = new TimeProgressTracker(steps, startingPose: MachinePose.Zero, passStartedAt: T0);
+
+        tracker.OnClockTick(T0.AddSeconds(5));
+
+        Assert.Equal(0.5, tracker.OverallFraction);
+        Assert.Equal(0.5, tracker.CurrentStepFraction);
+        Assert.Equal(0, tracker.CurrentSegmentIndex);
+    }
+
+    [Fact]
+    public void OnClockTick_TimeDoesNotDependOnPosition_KeepsGrowingWhileTheMachineStandsStill()
+    {
+        var steps = new List<CompiledStep> { Move(0, x: 10, estimatedSeconds: 10) };
+        var tracker = new TimeProgressTracker(steps, startingPose: MachinePose.Zero, passStartedAt: T0);
+
+        // Position never changes (as if the machine were dwelling) — OnPositionUpdated isn't even called.
+        tracker.OnClockTick(T0.AddSeconds(3));
+        var afterThree = tracker.OverallFraction;
+        tracker.OnClockTick(T0.AddSeconds(6));
+
+        Assert.True(tracker.OverallFraction > afterThree);
+    }
+
+    [Fact]
+    public void OnPositionUpdated_MovingIntoTheNextSegment_ResetsCurrentStepFractionForThatSegment()
+    {
+        var steps = new List<CompiledStep> { Move(0, x: 10, estimatedSeconds: 10), Move(1, x: 20, estimatedSeconds: 10) };
+        var tracker = new TimeProgressTracker(steps, startingPose: MachinePose.Zero, passStartedAt: T0);
+
+        tracker.OnPositionUpdated(new MachinePose(15, 0, 0, 0), T0.AddSeconds(12)); // crosses into segment 1's territory
+        Assert.Equal(1, tracker.CurrentSegmentIndex);
+        Assert.Equal(0.0, tracker.CurrentStepFraction); // just entered, no time elapsed in segment 1 yet
+
+        tracker.OnClockTick(T0.AddSeconds(14)); // 2s later, still in segment 1
+
+        Assert.Equal(0.2, tracker.CurrentStepFraction); // 2 of 10s estimate for segment 1
+    }
+
+    [Fact]
+    public void OnPositionUpdated_NoisyPositionThatLooksLikeItWentBackward_NeverDecreasesTheActiveSegment()
+    {
+        var steps = new List<CompiledStep> { Move(0, x: 10, estimatedSeconds: 10), Move(1, x: 20, estimatedSeconds: 10) };
+        var tracker = new TimeProgressTracker(steps, startingPose: MachinePose.Zero, passStartedAt: T0);
+
+        tracker.OnPositionUpdated(new MachinePose(15, 0, 0, 0), T0.AddSeconds(12));
+        Assert.Equal(1, tracker.CurrentSegmentIndex);
+
+        tracker.OnPositionUpdated(new MachinePose(12, 0, 0, 0), T0.AddSeconds(13)); // controller cornering smoothing noise
+
+        Assert.Equal(1, tracker.CurrentSegmentIndex);
+    }
+
+    [Fact]
+    public void OnPositionUpdated_ZeroLengthFirstSegment_CurrentSegmentIndexIsZeroFromConstruction()
+    {
+        // Real segment 0 is From == To == KeyPoints[0] in the model; here the compiled step's own
+        // pose equals the starting pose, producing a zero-length edge — but its estimated time
+        // still applies, since EstimatedDurationSeconds is a time estimate, not a distance one.
+        var steps = new List<CompiledStep> { Move(0, x: 0, estimatedSeconds: 5) };
+        var tracker = new TimeProgressTracker(steps, startingPose: MachinePose.Zero, passStartedAt: T0);
+
+        Assert.Equal(0, tracker.CurrentSegmentIndex);
+
+        tracker.OnClockTick(T0.AddSeconds(2.5));
+
+        Assert.Equal(0.5, tracker.CurrentStepFraction);
+    }
+
+    [Fact]
+    public void Construction_DoesNotResetTheEntryClockOnTheFirstTick()
+    {
+        // If the first Recompute call mistook "no prior recorded segment" for "just entered this
+        // segment", it would reset the entry clock to whenever that first call happens instead of
+        // passStartedAt — undercounting elapsed time for segment 0 by however long the caller
+        // waited before the first tick/position update.
+        var steps = new List<CompiledStep> { Move(0, x: 10, estimatedSeconds: 5) };
+        var tracker = new TimeProgressTracker(steps, startingPose: MachinePose.Zero, passStartedAt: T0);
+
+        tracker.OnClockTick(T0.AddSeconds(2));
+
+        Assert.Equal(0.4, tracker.CurrentStepFraction); // 2 of 5, measured from passStartedAt, not from this first tick
+    }
+
+    [Fact]
+    public void Changed_FiresOnPositionUpdateAndOnClockTick()
+    {
+        var steps = new List<CompiledStep> { Move(0, x: 10) };
+        var tracker = new TimeProgressTracker(steps, startingPose: MachinePose.Zero, passStartedAt: T0);
+        var raiseCount = 0;
+        tracker.Changed += () => raiseCount++;
+
+        tracker.OnPositionUpdated(new MachinePose(5, 0, 0, 0), T0.AddSeconds(1));
+        tracker.OnClockTick(T0.AddSeconds(2));
+
+        Assert.Equal(2, raiseCount);
+    }
+
+    [Fact]
+    public void CurrentPointHasWarning_ElapsedTwentyPercentOverEstimate_IsTrue()
+    {
+        var steps = new List<CompiledStep> { Move(0, x: 10, estimatedSeconds: 10) };
+        var tracker = new TimeProgressTracker(steps, startingPose: MachinePose.Zero, passStartedAt: T0);
+
+        tracker.OnClockTick(T0.AddSeconds(12)); // 12 of 10 estimated = 20% over
+
+        Assert.True(tracker.CurrentPointHasWarning);
+    }
+
+    [Fact]
+    public void CurrentPointHasWarning_ElapsedTenPercentOverEstimate_IsFalse()
+    {
+        var steps = new List<CompiledStep> { Move(0, x: 10, estimatedSeconds: 10) };
+        var tracker = new TimeProgressTracker(steps, startingPose: MachinePose.Zero, passStartedAt: T0);
+
+        tracker.OnClockTick(T0.AddSeconds(11)); // 11 of 10 estimated = 10% over, under the 15% threshold
+
+        Assert.False(tracker.CurrentPointHasWarning);
+    }
+
+    [Fact]
+    public void CurrentPointHasWarning_ClearsImmediatelyOnMovingToTheNextSegment()
+    {
+        var steps = new List<CompiledStep> { Move(0, x: 10, estimatedSeconds: 10), Move(1, x: 20, estimatedSeconds: 10) };
+        var tracker = new TimeProgressTracker(steps, startingPose: MachinePose.Zero, passStartedAt: T0);
+
+        tracker.OnClockTick(T0.AddSeconds(15)); // segment 0, 50% over its 10s estimate
+        Assert.True(tracker.CurrentPointHasWarning);
+
+        tracker.OnPositionUpdated(new MachinePose(11, 0, 0, 0), T0.AddSeconds(15)); // real motion into segment 1
+
+        Assert.False(tracker.CurrentPointHasWarning);
+    }
+
+    [Fact]
+    public void CurrentStepFraction_ZeroEstimatedSecondsForTheSegment_IsOneAndNeverWarns()
+    {
+        var steps = new List<CompiledStep> { Move(0, x: 10, estimatedSeconds: 0) };
+        var tracker = new TimeProgressTracker(steps, startingPose: MachinePose.Zero, passStartedAt: T0);
+
+        tracker.OnClockTick(T0.AddSeconds(5));
+
+        Assert.Equal(1.0, tracker.CurrentStepFraction);
+        Assert.False(tracker.CurrentPointHasWarning);
+    }
+
+    [Fact]
+    public void OverallFraction_ZeroTotalEstimatedSeconds_IsOne()
+    {
+        var steps = new List<CompiledStep> { Move(0, x: 10, estimatedSeconds: 0) };
+        var tracker = new TimeProgressTracker(steps, startingPose: MachinePose.Zero, passStartedAt: T0);
+
+        tracker.OnClockTick(T0.AddSeconds(5));
+
+        Assert.Equal(1.0, tracker.OverallFraction);
+    }
+
+    [Fact]
+    public void OverallFraction_TimeBeyondTheWholePassEstimate_ClampsAtOne()
+    {
+        var steps = new List<CompiledStep> { Move(0, x: 10, estimatedSeconds: 10) };
+        var tracker = new TimeProgressTracker(steps, startingPose: MachinePose.Zero, passStartedAt: T0);
+
+        tracker.OnClockTick(T0.AddSeconds(50));
+
+        Assert.Equal(1.0, tracker.OverallFraction);
+    }
+
+    [Fact]
+    public void OverallFraction_SumsEstimatedSecondsAcrossAllStepsIncludingDwell()
+    {
+        var steps = new List<CompiledStep>
+        {
+            Move(0, x: 10, estimatedSeconds: 10),
+            new(0, new GCodeLineCommand("G4 P5"), SegmentProgress: 1.0, EstimatedDurationSeconds: 5, Pose: new MachinePose(10, 0, 0, 0), IsDwellStep: true),
+        };
+        var tracker = new TimeProgressTracker(steps, startingPose: MachinePose.Zero, passStartedAt: T0);
+
+        // Total estimated for the pass is 10 (transition) + 5 (dwell) = 15; halfway through that is 7.5s.
+        tracker.OnClockTick(T0.AddSeconds(7.5));
+
+        Assert.Equal(0.5, tracker.OverallFraction);
+    }
+}
