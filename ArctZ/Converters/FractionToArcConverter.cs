@@ -6,10 +6,11 @@ using Avalonia.Media;
 
 namespace ArctZ.Converters;
 
-/// <summary>Converts a 0..1 "remaining" fraction into a pie-slice Geometry, 12 o'clock start,
-/// clockwise sweep — the shrinking-circle key-point progress badge. 1.0 = full circle (just
-/// arrived at the point, or transition not yet started), 0.0 = empty (dwell finished / no dwell).</summary>
-public sealed class FractionToPieSliceConverter : IValueConverter
+/// <summary>Converts a 0..1 "remaining" fraction into an open arc Geometry (stroked, not filled),
+/// 12 o'clock start, clockwise sweep — the shrinking-ring key-point progress badge. 1.0 = full
+/// ring (just arrived at the point, or transition not yet started), 0.0 = empty (dwell finished /
+/// no dwell).</summary>
+public sealed class FractionToArcConverter : IValueConverter
 {
     private const double Diameter = 14;
     private const double Radius = Diameter / 2;
@@ -38,9 +39,8 @@ public sealed class FractionToPieSliceConverter : IValueConverter
         var start = new Point(center.X, center.Y - Radius);
         var end = new Point(center.X + Radius * Math.Sin(angle), center.Y - Radius * Math.Cos(angle));
 
-        var figure = new PathFigure { StartPoint = center, IsClosed = true };
-        figure.Segments!.Add(new LineSegment { Point = start });
-        figure.Segments.Add(new ArcSegment
+        var figure = new PathFigure { StartPoint = start, IsClosed = false };
+        figure.Segments!.Add(new ArcSegment
         {
             Point = end,
             Size = new Size(Radius, Radius),
