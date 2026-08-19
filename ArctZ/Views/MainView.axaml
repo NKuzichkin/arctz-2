@@ -20,6 +20,7 @@
         <conv:LabelLengthToFontSizeConverter x:Key="LabelLengthToFontSize" />
         <conv:KeyPointIsExecutingConverter x:Key="KeyPointIsExecuting" />
         <conv:FractionToPieSliceConverter x:Key="FractionToPieSlice" />
+        <conv:KeyPointHasTimeWarningConverter x:Key="KeyPointHasTimeWarning" />
         <conv:EnumEqualsConverter x:Key="EnumEquals" />
         <js:RadiusToSizeConverter x:Key="RadiusToSize" />
     </UserControl.Resources>
@@ -290,6 +291,17 @@
                                                         </MultiBinding>
                                                     </Path.IsVisible>
                                                 </Path>
+                                                <materialIcons:MaterialIcon Kind="Alert" IsHitTestVisible="False" Width="14" Height="14"
+                                                                             HorizontalAlignment="Left" VerticalAlignment="Top" Margin="4,4,0,0"
+                                                                             Foreground="{DynamicResource HudWarningBrush}">
+                                                    <materialIcons:MaterialIcon.IsVisible>
+                                                        <MultiBinding Converter="{StaticResource KeyPointHasTimeWarning}">
+                                                            <Binding Path="Id" />
+                                                            <Binding Path="((vm:ProgramViewModel)DataContext).PhysicallyExecutingKeyPointId" ElementName="KeyPointsList" />
+                                                            <Binding Path="((vm:ProgramViewModel)DataContext).PhysicalPointHasTimeWarning" ElementName="KeyPointsList" />
+                                                        </MultiBinding>
+                                                    </materialIcons:MaterialIcon.IsVisible>
+                                                </materialIcons:MaterialIcon>
                                             </Panel>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
