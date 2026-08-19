@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using ArctZ.Services.Device;
 using ArctZ.Services.Device.Commands;
@@ -89,5 +90,78 @@ public class PhysicalProgressTrackerTests
         tracker.OnPositionUpdated(new MachinePose(5, 0, 0, 0));
 
         Assert.Equal(1, raiseCount);
+    }
+
+    [Fact]
+    public void OnPositionUpdated_ArrivingAtAPointWithADwell_EntersDwellingWithFullDwellFraction()
+    {
+        var steps = new List<CompiledStep>
+        {
+            Move(0, x: 10),
+            new(0, new GCodeLineCommand("G4 P4"), SegmentProgress: 1.0, EstimatedDurationSeconds: 4, Pose: new MachinePose(10, 0, 0, 0), IsDwellStep: true),
+        };
+        var tracker = new PhysicalProgressTracker(steps, startingPose: MachinePose.Zero);
+
+        tracker.OnPositionUpdated(new MachinePose(10, 0, 0, 0));
+
+        Assert.True(tracker.IsDwelling);
+        Assert.Equal(1.0, tracker.DwellFraction);
+    }
+
+    [Fact]
+    public void OnTimerElapsed_WhileDwelling_CountsDownDwellFractionOverTheRealDwellSeconds()
+    {
+        var steps = new List<CompiledStep>
+        {
+            Move(0, x: 10),
+            new(0, new GCodeLineCommand("G4 P4"), SegmentProgress: 1.0, EstimatedDurationSeconds: 4, Pose: new MachinePose(10, 0, 0, 0), IsDwellStep: true),
+        };
+        var tracker = new PhysicalProgressTracker(steps, startingPose: MachinePose.Zero);
+        tracker.OnPositionUpdated(new MachinePose(10, 0, 0, 0));
+
+        tracker.OnTimerElapsed(TimeSpan.FromSeconds(1));
+
+        Assert.Equal(0.75, tracker.DwellFraction);
+    }
+
+    [Fact]
+    public void OnTimerElapsed_WhileNotDwelling_DoesNothing()
+    {
+        var steps = new List<CompiledStep> { Move(0, x: 10) };
+        var tracker = new PhysicalProgressTracker(steps, startingPose: MachinePose.Zero);
+
+        tracker.OnTimerElapsed(TimeSpan.FromSeconds(1));
+
+        Assert.False(tracker.IsDwelling);
+    }
+
+    [Fact]
+    public void OnPositionUpdated_RealMotionAwayFromADwellPoint_EndsDwellingRegardlessOfTheTimer()
+    {
+        var steps = new List<CompiledStep>
+        {
+            Move(0, x: 10),
+            new(0, new GCodeLineCommand("G4 P4"), SegmentProgress: 1.0, EstimatedDurationSeconds: 4, Pose: new MachinePose(10, 0, 0, 0), IsDwellStep: true),
+            Move(1, x: 20),
+        };
+        var tracker = new PhysicalProgressTracker(steps, startingPose: MachinePose.Zero);
+        tracker.OnPositionUpdated(new MachinePose(10, 0, 0, 0));
+        Assert.True(tracker.IsDwelling);
+
+        tracker.OnPositionUpdated(new MachinePose(11, 0, 0, 0)); // real motion toward the next point, timer never fired
+
+        Assert.False(tracker.IsDwelling);
+        Assert.Equal(1, tracker.CurrentSegmentIndex);
+    }
+
+    [Fact]
+    public void OnPositionUpdated_ArrivingAtAPointWithNoDwell_NeverEntersDwelling()
+    {
+        var steps = new List<CompiledStep> { Move(0, x: 10), Move(1, x: 20) };
+        var tracker = new PhysicalProgressTracker(steps, startingPose: MachinePose.Zero);
+
+        tracker.OnPositionUpdated(new MachinePose(10, 0, 0, 0));
+
+        Assert.False(tracker.IsDwelling);
     }
 }

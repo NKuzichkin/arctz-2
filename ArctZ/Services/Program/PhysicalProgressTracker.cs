@@ -24,6 +24,7 @@ public sealed class PhysicalProgressTracker
         public required int SegmentIndex { get; init; }
         public required double Length { get; init; }
         public required double CumulativeBefore { get; init; }
+        public required double DwellSeconds { get; init; }
     }
 
     private readonly Edge[] _edges;
@@ -31,6 +32,9 @@ public sealed class PhysicalProgressTracker
     private readonly Dictionary<int, (double Start, double Length)> _segmentSpans = new();
 
     private double _farthestCumulativeDistance;
+    private bool _isDwelling;
+    private double _dwellElapsedSeconds;
+    private double _dwellTotalSeconds;
 
     public event Action? Changed;
 
@@ -50,6 +54,7 @@ public sealed class PhysicalProgressTracker
                 SegmentIndex = steps[i].SegmentIndex,
                 Length = length,
                 CumulativeBefore = cumulative,
+                DwellSeconds = steps[i].IsDwellStep ? steps[i].EstimatedDurationSeconds : 0,
             };
 
             _segmentSpans[steps[i].SegmentIndex] = _segmentSpans.TryGetValue(steps[i].SegmentIndex, out var span)
@@ -80,6 +85,23 @@ public sealed class PhysicalProgressTracker
 
     public int? CurrentSegmentIndex => _edges.Length == 0 ? null : _edges[FindEdgeIndexAt(_farthestCumulativeDistance)].SegmentIndex;
 
+    public bool IsDwelling => _isDwelling;
+
+    public double DwellFraction => !_isDwelling || _dwellTotalSeconds <= 0
+        ? 0
+        : Math.Clamp(1 - _dwellElapsedSeconds / _dwellTotalSeconds, 0, 1);
+
+    public void OnTimerElapsed(TimeSpan interval)
+    {
+        if (!_isDwelling)
+        {
+            return;
+        }
+
+        _dwellElapsedSeconds += interval.TotalSeconds;
+        Changed?.Invoke();
+    }
+
     public void OnPositionUpdated(MachinePose position)
     {
         if (_edges.Length > 0)
@@ -105,7 +127,24 @@ public sealed class PhysicalProgressTracker
                 }
             }
 
+            var previousSegmentIndex = CurrentSegmentIndex;
             _farthestCumulativeDistance = Math.Max(_farthestCumulativeDistance, bestCumulative);
+
+            if (_isDwelling && CurrentSegmentIndex != previousSegmentIndex)
+            {
+                _isDwelling = false;
+            }
+
+            if (!_isDwelling && ApproachFraction >= 1.0)
+            {
+                var dwellEdge = FindDwellEdgeForSegment(CurrentSegmentIndex);
+                if (dwellEdge is { DwellSeconds: > 0 } edge)
+                {
+                    _isDwelling = true;
+                    _dwellElapsedSeconds = 0;
+                    _dwellTotalSeconds = edge.DwellSeconds;
+                }
+            }
         }
 
         Changed?.Invoke();
@@ -122,6 +161,24 @@ public sealed class PhysicalProgressTracker
         }
 
         return _edges.Length - 1;
+    }
+
+    private Edge? FindDwellEdgeForSegment(int? segmentIndex)
+    {
+        if (segmentIndex is not { } index)
+        {
+            return null;
+        }
+
+        foreach (var edge in _edges)
+        {
+            if (edge.SegmentIndex == index && edge.DwellSeconds > 0)
+            {
+                return edge;
+            }
+        }
+
+        return null;
     }
 
     private static double Distance(MachinePose a, MachinePose b) => Math.Sqrt(
