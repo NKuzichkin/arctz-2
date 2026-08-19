@@ -24,13 +24,13 @@ public sealed class TrajectoryCompiler : ITrajectoryCompiler
             {
                 var seconds = InverseTimeMove.EffectiveSeconds(segment.To.TransitionSeconds);
                 var command = new GCodeLineCommand(InverseTimeMove.Line(segment.To.Pose, seconds));
-                steps.Add(new CompiledStep(segment.Index, command, SegmentProgress: 1.0, EstimatedDurationSeconds: seconds));
+                steps.Add(new CompiledStep(segment.Index, command, SegmentProgress: 1.0, EstimatedDurationSeconds: seconds, Pose: segment.To.Pose, IsDwellStep: false));
             }
 
             if (segment.To.StopsAtWaypoint)
             {
                 var dwellLine = $"G4 P{Format(segment.To.DwellSeconds)}";
-                steps.Add(new CompiledStep(segment.Index, new GCodeLineCommand(dwellLine), SegmentProgress: 1.0, EstimatedDurationSeconds: segment.To.DwellSeconds));
+                steps.Add(new CompiledStep(segment.Index, new GCodeLineCommand(dwellLine), SegmentProgress: 1.0, EstimatedDurationSeconds: segment.To.DwellSeconds, Pose: segment.To.Pose, IsDwellStep: true));
             }
         }
 
@@ -65,7 +65,9 @@ public sealed class TrajectoryCompiler : ITrajectoryCompiler
                 segment.Index,
                 new GCodeLineCommand(InverseTimeMove.Line(pose, seconds)),
                 SegmentProgress: t,
-                EstimatedDurationSeconds: seconds));
+                EstimatedDurationSeconds: seconds,
+                Pose: pose,
+                IsDwellStep: false));
         }
     }
 

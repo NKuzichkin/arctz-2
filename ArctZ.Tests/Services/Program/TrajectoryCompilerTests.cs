@@ -199,4 +199,47 @@ public class TrajectoryCompilerTests
         Assert.All(steps.Skip(4).Take(2), s => Assert.Equal(2, s.SegmentIndex));
         Assert.Equal(3, steps.Count(s => ((GCodeLineCommand)s.Command).Line.StartsWith("G93", StringComparison.Ordinal)));
     }
+
+    [Fact]
+    public void Compile_StraightMove_StepCarriesTargetPoseAndIsNotADwellStep()
+    {
+        var program = new JibProgram();
+        program.KeyPoints.Add(new KeyPoint(Guid.NewGuid(), 1, "A", MachinePose.Zero, DwellSeconds: 0, TransitionSeconds: 5, EaseMode.None, ContinuousBlend: true));
+        program.KeyPoints.Add(new KeyPoint(Guid.NewGuid(), 2, "B", new MachinePose(10, 0, 0, 0), DwellSeconds: 0, TransitionSeconds: 5, EaseMode.None, ContinuousBlend: true));
+
+        var steps = new TrajectoryCompiler().Compile(program);
+        var moveStep = steps.Single(s => s.SegmentIndex == 1);
+
+        Assert.Equal(new MachinePose(10, 0, 0, 0), moveStep.Pose);
+        Assert.False(moveStep.IsDwellStep);
+    }
+
+    [Fact]
+    public void Compile_DwellStep_StepCarriesTheSameTargetPoseAsThePrecedingMoveAndIsADwellStep()
+    {
+        var program = new JibProgram();
+        program.KeyPoints.Add(new KeyPoint(Guid.NewGuid(), 1, "A", MachinePose.Zero, DwellSeconds: 2, TransitionSeconds: 5, EaseMode.None, ContinuousBlend: false));
+
+        var steps = new TrajectoryCompiler().Compile(program);
+        var dwellStep = steps.Single(s => s.SegmentIndex == 0 && s.IsDwellStep);
+
+        Assert.Equal(MachinePose.Zero, dwellStep.Pose);
+        Assert.Equal(2, dwellStep.EstimatedDurationSeconds);
+    }
+
+    [Fact]
+    public void Compile_EasedSubdivisions_EachStepCarriesItsOwnInterpolatedPoseAndIsNotADwellStep()
+    {
+        var program = new JibProgram();
+        program.KeyPoints.Add(new KeyPoint(Guid.NewGuid(), 1, "A", MachinePose.Zero, DwellSeconds: 0, TransitionSeconds: 6, EaseMode.None, ContinuousBlend: true));
+        program.KeyPoints.Add(new KeyPoint(Guid.NewGuid(), 2, "B", new MachinePose(12, 0, 0, 0), DwellSeconds: 0, TransitionSeconds: 6, EaseMode.EaseInOut, ContinuousBlend: true));
+
+        var steps = new TrajectoryCompiler().Compile(program);
+        var easedSteps = steps.Where(s => s.SegmentIndex == 1).ToList();
+
+        Assert.Equal(6, easedSteps.Count);
+        Assert.All(easedSteps, s => Assert.False(s.IsDwellStep));
+        Assert.Equal(2.0, easedSteps[0].Pose.X, precision: 6); // t = 1/6 of the 0->12 move
+        Assert.Equal(12.0, easedSteps[5].Pose.X, precision: 6); // t = 6/6, arrives exactly at target
+    }
 }
