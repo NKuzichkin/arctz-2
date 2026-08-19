@@ -19,6 +19,7 @@
         <conv:ConnectionStateToBrushConverter x:Key="StateToBrush" />
         <conv:LabelLengthToFontSizeConverter x:Key="LabelLengthToFontSize" />
         <conv:KeyPointIsExecutingConverter x:Key="KeyPointIsExecuting" />
+        <conv:FractionToPieSliceConverter x:Key="FractionToPieSlice" />
         <conv:EnumEqualsConverter x:Key="EnumEquals" />
         <js:RadiusToSizeConverter x:Key="RadiusToSize" />
     </UserControl.Resources>
@@ -278,6 +279,17 @@
                                                         </MultiBinding>
                                                     </Border.IsVisible>
                                                 </Border>
+                                                <Path IsHitTestVisible="False" Width="14" Height="14"
+                                                      HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,4,4,0"
+                                                      Fill="{DynamicResource HudAccentBrush}"
+                                                      Data="{Binding ((vm:ProgramViewModel)DataContext).PhysicalPointRemainingFraction, ElementName=KeyPointsList, Converter={StaticResource FractionToPieSlice}}">
+                                                    <Path.IsVisible>
+                                                        <MultiBinding Converter="{StaticResource KeyPointIsExecuting}">
+                                                            <Binding Path="Id" />
+                                                            <Binding Path="((vm:ProgramViewModel)DataContext).PhysicallyExecutingKeyPointId" ElementName="KeyPointsList" />
+                                                        </MultiBinding>
+                                                    </Path.IsVisible>
+                                                </Path>
                                             </Panel>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
