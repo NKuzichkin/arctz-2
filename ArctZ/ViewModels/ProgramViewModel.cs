@@ -829,6 +829,16 @@ public partial class ProgramViewModel : ViewModelBase
         if (value is PlaybackState.Stopped or PlaybackState.Faulted)
         {
             _motionIdleSignal?.TrySetResult(false);
+            ClearProgressTracker();
+        }
+
+        if (value == PlaybackState.Running)
+        {
+            _progressTimer.Start(_progressTimerInterval);
+        }
+        else
+        {
+            _progressTimer.Stop();
         }
 
         Connection.IsPlaybackLocked = IsProgramLocked;
@@ -940,6 +950,38 @@ public partial class ProgramViewModel : ViewModelBase
         ? Services.Program.JibProgram.TargetKeyPoint(KeyPoints, CurrentSegmentIndex, _currentPassBackward)
         : null;
 
+    public double PhysicalOverallProgress => _progressTracker?.OverallFraction ?? 0;
+
+    public double PhysicalPointRemainingFraction => _progressTracker switch
+    {
+        null => 1.0,
+        { IsDwelling: true } tracker => tracker.DwellFraction,
+        var tracker => 1.0 - tracker.ApproachFraction,
+    };
+
+    public Guid? PhysicallyExecutingKeyPointId => _progressTracker is null
+        ? null
+        : Services.Program.JibProgram.TargetKeyPoint(KeyPoints, _progressTracker.CurrentSegmentIndex, _currentPassBackward);
+
+    private void OnProgressTrackerChanged()
+    {
+        OnPropertyChanged(nameof(PhysicalOverallProgress));
+        OnPropertyChanged(nameof(PhysicalPointRemainingFraction));
+        OnPropertyChanged(nameof(PhysicallyExecutingKeyPointId));
+    }
+
+    private void ClearProgressTracker()
+    {
+        if (_progressTracker is null)
+        {
+            return;
+        }
+
+        _progressTracker.Changed -= OnProgressTrackerChanged;
+        _progressTracker = null;
+        OnProgressTrackerChanged();
+    }
+
     private IDeviceSession? _subscribedSession;
 
     private void OnConnectionPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -983,7 +1025,13 @@ public partial class ProgramViewModel : ViewModelBase
     // never changes — which would strand PlayAsync waiting for a notification that never comes.
     private void OnSessionDeviceStatusChanged()
     {
-        if (Connection.Session?.DeviceStatus?.State == MachineState.Idle)
+        var status = Connection.Session?.DeviceStatus;
+        if (status is { } value)
+        {
+            _progressTracker?.OnPositionUpdated(value.WPos);
+        }
+
+        if (status?.State == MachineState.Idle)
         {
             _motionIdleSignal?.TrySetResult(true);
         }
@@ -1247,6 +1295,16 @@ public partial class ProgramViewModel : ViewModelBase
         _currentPassBackward = backward;
         CurrentSegmentIndex = null;
         SegmentProgress = 0;
+
+        if (_progressTracker is not null)
+        {
+            _progressTracker.Changed -= OnProgressTrackerChanged;
+        }
+
+        var startingPose = Connection.Session?.DeviceStatus?.WPos ?? MachinePose.Zero;
+        _progressTracker = new PhysicalProgressTracker(steps, startingPose);
+        _progressTracker.Changed += OnProgressTrackerChanged;
+        OnProgressTrackerChanged();
 
         var dispatched = new (CompiledStep Step, Task<CommandResult> Completion)[steps.Count];
         for (var i = 0; i < steps.Count; i++)

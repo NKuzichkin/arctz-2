@@ -934,4 +934,158 @@ public class ProgramViewModelPlaybackTests
 
         Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
     }
+
+    private static ProgramViewModel CreateViewModel(out FakeDeviceTransport transport, out ManualPeriodicTimer progressTimer)
+    {
+        transport = new FakeDeviceTransport();
+        var storage = new FakeProgramStorage();
+        var connection = new ConnectionViewModel(transport, () => new FakeDeviceTransport(), new DeviceSessionFactory(MachineLimits.Default), new SingleRealDeviceEndpointProvider());
+        progressTimer = new ManualPeriodicTimer();
+        return new ProgramViewModel(connection, storage, new TrajectoryCompiler(), new FakeAppExitService(), progressTimer: progressTimer);
+    }
+
+    [Fact]
+    public async Task PlayAsync_AsThePositionAdvancesTowardTheFirstPoint_PhysicalOverallProgressTracksIt()
+    {
+        var vm = CreateViewModel(out var transport, out var progressTimer);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+        // SeedTwoSegmentProgram leaves the simulated machine at the last captured pose (20,0,0,0) —
+        // reset it to the program's actual starting pose before Play, so the tracker's captured
+        // starting vertex matches what these assertions assume (a clean 0->10->20 path, 20 units total).
+        transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+        Assert.Equal(0, vm.PhysicalOverallProgress);
+
+        transport.SimulateReceivedLine("<Run|WPos:5.000,0.000,0.000,0.000|FS:0,0>");
+
+        Assert.Equal(0.25, vm.PhysicalOverallProgress); // 5 of 20 total units across both segments
+
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
+        await playTask;
+    }
+
+    [Fact]
+    public async Task PlayAsync_PhysicallyExecutingKeyPointId_CanLagTheAckBasedHighlightWhenTheBufferRunsAhead()
+    {
+        var vm = CreateViewModel(out var transport, out var progressTimer);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+        // SeedTwoSegmentProgram leaves the simulated machine at the last captured pose (20,0,0,0) —
+        // reset it to the program's actual starting pose before Play, so the tracker's captured
+        // starting vertex matches what these assertions assume (a clean 0->10->20 path, 20 units total).
+        transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+
+        // Both remaining acks land before any position update — the ack-based highlight jumps to the
+        // last point, but the physically-executing point stays at the first (position never moved).
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.CurrentlyExecutingKeyPointId == vm.KeyPoints[2].Id, TimeSpan.FromSeconds(1));
+
+        Assert.Equal(vm.KeyPoints[0].Id, vm.PhysicallyExecutingKeyPointId);
+
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
+        await playTask;
+    }
+
+    [Fact]
+    public async Task PlayAsync_EachNewPass_ResetsPhysicalOverallProgressToZero()
+    {
+        var vm = CreateViewModel(out var transport, out var progressTimer);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+        // SeedTwoSegmentProgram leaves the simulated machine at the last captured pose (20,0,0,0) —
+        // reset it to the program's actual starting pose before Play, so the tracker's captured
+        // starting vertex matches what these assertions assume (a clean 0->10->20 path, 20 units total).
+        transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
+        // Setting CompletionMode/RepeatCount marks the program dirty again (MarkDirtyIfTracking),
+        // which would make PlayAsync's EnsureProgramSavedAsync await an unanswered save-confirmation
+        // dialog forever (see CLAUDE.md's async-dialog-gate note) — re-clear IsDirty after.
+        vm.CompletionMode = ProgramCompletionMode.PingPong;
+        vm.RepeatCount = 1;
+        vm.IsDirty = false;
+
+        // Timing between the forward pass's last ack and the backward pass's tracker Reset isn't
+        // pinned to a single observable predicate (both happen inside the same async continuation),
+        // so this records the whole PhysicalOverallProgress sequence instead of polling one instant:
+        // a reset-to-zero occurring only after the value has already gone positive is exactly the
+        // "each new pass starts over" behavior this test exists to catch a regression in.
+        var sawPositive = false;
+        var sawResetAfterPositive = false;
+        vm.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName != nameof(vm.PhysicalOverallProgress))
+            {
+                return;
+            }
+
+            if (vm.PhysicalOverallProgress > 0)
+            {
+                sawPositive = true;
+            }
+            else if (sawPositive)
+            {
+                sawResetAfterPositive = true;
+            }
+        };
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+        transport.SimulateReceivedLine("<Run|WPos:15.000,0.000,0.000,0.000|FS:0,0>"); // forward pass, well underway
+
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok"); // forward pass fully acked; backward pass starts and its tracker resets
+        await WaitUntilAsync(() => sawResetAfterPositive, TimeSpan.FromSeconds(1));
+
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
+        await playTask;
+
+        Assert.True(sawResetAfterPositive);
+    }
+
+    [Fact]
+    public async Task StopAsync_ClearsPhysicalProgress()
+    {
+        var vm = CreateViewModel(out var transport, out var progressTimer);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+        // SeedTwoSegmentProgram leaves the simulated machine at the last captured pose (20,0,0,0) —
+        // reset it to the program's actual starting pose before Play, so the tracker's captured
+        // starting vertex matches what these assertions assume (a clean 0->10->20 path, 20 units total).
+        transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+        transport.SimulateReceivedLine("<Run|WPos:5.000,0.000,0.000,0.000|FS:0,0>");
+        Assert.True(vm.PhysicalOverallProgress > 0);
+
+        await vm.StopCommand.ExecuteAsync(null);
+        transport.SimulateReceivedLine("ok"); // resolves the command already in flight so playTask completes
+        await playTask;
+
+        Assert.Equal(0, vm.PhysicalOverallProgress);
+        Assert.Null(vm.PhysicallyExecutingKeyPointId);
+    }
+
+    [Fact]
+    public void PhysicalOverallProgress_WithNoActiveTracker_DefaultsToZero()
+    {
+        var vm = CreateViewModel(out _, out _);
+
+        Assert.Equal(0, vm.PhysicalOverallProgress);
+        Assert.Equal(1.0, vm.PhysicalPointRemainingFraction);
+        Assert.Null(vm.PhysicallyExecutingKeyPointId);
+    }
 }
