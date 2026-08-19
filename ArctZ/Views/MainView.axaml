@@ -201,6 +201,17 @@
                                     </Button>
                                 </Grid>
                                 <TextBlock Classes="section-heading" Text="ТОЧКИ" Margin="0,8,0,0" />
+                                <ProgressBar Value="{Binding PhysicalOverallProgress}" Minimum="0" Maximum="1"
+                                             Height="4" Margin="0,4,0,0"
+                                             Foreground="{DynamicResource HudAccentBrush}"
+                                             Background="{DynamicResource HudPanelElevatedBrush}"
+                                             IsVisible="{Binding IsProgramLocked}">
+                                    <ProgressBar.Transitions>
+                                        <Transitions>
+                                            <DoubleTransition Property="Value" Duration="0:0:0.3" Easing="CubicEaseOut" />
+                                        </Transitions>
+                                    </ProgressBar.Transitions>
+                                </ProgressBar>
                                 <ItemsControl x:Name="KeyPointsList" ItemsSource="{Binding KeyPoints}"
                                               ScrollViewer.VerticalScrollBarVisibility="Disabled">
                                     <ItemsControl.ItemsPanel>
