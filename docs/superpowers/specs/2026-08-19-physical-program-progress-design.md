@@ -1,233 +1,306 @@
-# Прогресс выполнения программы: круг на точке, общий бар, Android-уведомление
+# Прогресс выполнения программы: круг на точке, общий бар, warning-индикатор, Android-уведомление
 
 ## Контекст
 
 Программа уже умеет вычислять ack-подтверждённый прогресс — `ProgramViewModel.OverallProgress`
 (`CurrentSegmentIndex`/`SegmentProgress`/`TotalSegments`, обновляется только по приходу `ok` на
 отправленную G-code строку) и подсветку текущей точки (`CurrentlyExecutingKeyPointId`, тот же
-источник). Видимого прогресс-бара в UI сейчас нет — он был реализован и полностью откачен
-(`f3b9d3e "fix: remove the visible program progress bar"`, 2026-08-08) после двух живых
-UI-тестов, потому что анимация строилась на **оценке по времени** (расстояние/подача из
-`TrajectoryCompiler`), синхронизированной с приходом ack. Оба захода задокументированы в
-`docs/superpowers/specs/2026-08-07-program-progress-time-interpolation-design.md` (и его двух
-ревизиях) и провалились по одной и той же причине: контроллер (и `MockDeviceTransport`, и
-реальный FluidNC) подтверждает G-code строку, как только она принята в приёмный буфер, а не
-когда движение физически завершено — буфер может принять несколько строк вперёд, пока станок
-ещё едет по предыдущей. Время «от отправки до ack» не коррелирует со временем движения, поэтому
-любая анимация, синхронизированная с ack, либо скачет назад, либо преждевременно долетает до
-100%.
+источник). Ack подтверждает, что строка G-code принята в приёмный буфер контроллера, а не что
+движение физически завершено — буфер может принять несколько строк вперёд, пока станок ещё едет
+по предыдущей. Эта ack-логика не меняется этим дизайном (см. «Вне рамок»).
 
-Этот дизайн намеренно не повторяет time-based подход. Вместо оценки используется **факт** —
-реальная позиция станка (`DeviceStatus.WPos`), которая уже парсится корректно
-(`project_status_parser_mpos_fix`) и приходит по статус-репортам каждые ~100мс через
-`IDeviceSession.DeviceStatusChanged` (тот же источник, на котором уже построен
-`WaitForMotionToFinishAsync`, дождавшийся именно этой развязки ack↔движение для корректного
-`PlaybackState.Completed`).
+Отдельно уже реализован (Tasks 1-11, коммиты `db0f04f..684e08f`) слой прогресса на основе реальной
+позиции станка (`DeviceStatus.WPos`, парсится корректно — `project_status_parser_mpos_fix`,
+приходит по статус-репортам каждые ~100мс через `IDeviceSession.DeviceStatusChanged`):
+`PhysicalProgressTracker`, свойства `ProgramViewModel.PhysicalOverallProgress` /
+`PhysicalPointRemainingFraction` / `PhysicallyExecutingKeyPointId`, прогресс-бар в `MainView.axaml`
+и уменьшающийся круг на тайле точки. Этот слой вычислял прогресс по **пройденной дистанции**
+(проекция WPos на ломаную из целевых поз шагов) — после живого тестирования пользователь запросил
+пересмотр: дистанционный прогресс визуально не даёт того, что нужно.
+
+**Ревизия 2 этого дизайна** заменяет дистанционную метрику на **временную**, сохраняя главную идею
+предыдущей версии — реальная позиция остаётся источником истины для того, *какая точка сейчас
+физически активна* (а не ack-индекс), просто единица измерения прогресса внутри точки и по
+программе в целом меняется с «пройденных миллиметров» на «прошедшие секунды против расчётных».
+Дополнительно вводится **warning-индикатор**: если станок физически не укладывается в расчётное
+время точки (перебор более чем на 15%), это сигнал, что `TransitionSeconds` для этой точки
+настроен слишком оптимистично, и пользователю стоит увеличить его вручную.
+
+`CompiledStep` уже содержит всё нужное для временной метрики без новых полей:
+`EstimatedDurationSeconds` — расчётная длительность именно этого шага (для eased-подшагов —
+их доля от `TransitionSeconds` точки, см. `TrajectoryCompiler.CompileEased`; для dwell-шага —
+`DwellSeconds`). Сумма `EstimatedDurationSeconds` всех шагов одного `SegmentIndex` — это полное
+расчётное время точки (переход + стоянка), ровно то, что просил пользователь.
 
 ## Требования
 
-1. Прогресс подъезда к текущей точке — уменьшающийся круг на тайле точки в `MainView`.
-2. Общий прогресс программы — прогресс-бар над списком точек (`ItemsControl x:Name="KeyPointsList"`,
-   `MainView.axaml:204`), сбрасывается в 0% на каждом новом проходе Loop/PingPong.
-3. Тот же общий прогресс — в Android foreground-уведомлении (`MachineSessionService`), шагом 5%
-   (обновление уведомления только при пересечении очередной границы кратной 5).
-4. Ни один из трёх слоёв не завязан на ack/`OverallProgress`/`CurrentlyExecutingKeyPointId` —
-   у них общий новый источник, построенный на реальной позиции станка.
-5. Существующая ack-логика (`OverallProgress`, `CurrentSegmentIndex`, `SegmentProgress`,
-   `CurrentlyExecutingKeyPointId` и подсветка точки, `FaultedMessage`) не меняется — ни
-   поведение, ни существующие тесты.
+1. **Прогресс на текущей точке** — один непрерывный круг на тайле точки (без отдельной фазы
+   «переход» / «стоянка» — это было в Ревизии 1 и убирается): растёт по времени от входа в точку
+   (физическое начало движения к ней) до её полного завершения (переход **плюс** стоянка).
+   Визуально круг остаётся «уменьшающимся» (полный → пустой), как в Ревизии 1 — см. §5.
+2. **Общий прогресс программы** — прогресс-бар над списком точек, растёт по прошедшему
+   астрономическому времени с начала прохода, делённому на сумму расчётного времени всех точек
+   прохода (переход + стоянка каждой). Сбрасывается в 0% на каждом новом проходе (Loop/PingPong) —
+   не меняется относительно Ревизии 1.
+3. **Warning-индикатор (!)** на тайле текущей физически активной точки, если время нахождения на
+   ней превышает расчётное более чем на **15%**. Живой сигнал: гаснет сразу при физическом переходе
+   к следующей точке, не накапливается в список/историю.
+4. **Частота обновления UI:** единый таймер **200мс** — раз в 200мс тик пересчитывает временные
+   доли (нужно даже когда позиция не меняется — станок стоит на dwell) и проталкивает их в
+   `[ObservableProperty]`-обёртки `ProgramViewModel`. Позиционные апдейты (~100мс от статус-
+   репортов) дополнительно триггерят немедленный пересчёт «какая точка сейчас активна» — не ждут
+   тика таймера для этой части.
+5. **Android foreground-уведомление** — тот же общий прогресс, шагом 5% (не меняется относительно
+   Ревизии 1).
+6. Ни один из слоёв не завязан на ack/`OverallProgress`/`CurrentlyExecutingKeyPointId`.
+7. Существующая ack-логика (`OverallProgress`, `CurrentSegmentIndex`, `SegmentProgress`,
+   `CurrentlyExecutingKeyPointId` и подсветка точки, `FaultedMessage`) не меняется — ни поведение,
+   ни существующие тесты.
 
 ## Решение
 
-### 1. `CompiledStep` получает целевую позу
+### 1. `CompiledStep.Pose` — уже реализовано, без изменений
 
-`CompiledStep` (`ArctZ/Services/Program/CompiledStep.cs`) сейчас — `(SegmentIndex, Command,
-SegmentProgress, EstimatedDurationSeconds)`, без позы (она "спрятана" внутри текстовой G-code
-команды). Добавляется поле `Pose` (`MachinePose`, target-поза этого шага):
+`CompiledStep` (`ArctZ/Services/Program/CompiledStep.cs`) уже содержит `Pose` (`MachinePose`,
+целевая поза шага) и `IsDwellStep` (`bool`) — добавлены в Ревизии 1, Task 1, не трогаются.
+`EstimatedDurationSeconds` (уже существовавшее поле, было «вне рамок» в Ревизии 1) теперь
+используется трекером напрямую — см. §3.
 
-- Обычный (не eased) сегмент — `segment.To.Pose` (`TrajectoryCompiler.cs:26-27`).
-- Eased-подшаг — уже вычисленный `pose` (`TrajectoryCompiler.cs:62`, `Interpolate(...)`).
-- Dwell-шаг (`G4`) — та же поза, что у предшествующего ему шага перемещения (`segment.To.Pose`) —
-  на ломаной это вершина нулевой длины, см. §3.
+### 2. Общий helper для маппинга `SegmentIndex → KeyPoint` — уже реализовано, без изменений
 
-`EstimatedDurationSeconds` не трогается (используется только тестами компилятора, не входит в
-новый прогресс-трекер — см. «Вне рамок»).
+`JibProgram.TargetKeyPoint(IReadOnlyList<KeyPoint> passKeyPoints, int? segmentIndex, bool
+backward)` (Ревизия 1, Task 2) — маппинг индекса сегмента на `KeyPoint.Id` с учётом направления
+прохода. Используется без изменений.
 
-### 2. Общий helper для маппинга `SegmentIndex → KeyPoint`
+### 3. `TimeProgressTracker` — переписывается из `PhysicalProgressTracker`
 
-Логика `CurrentlyExecutingKeyPointId` (`ProgramViewModel.cs:926-948`) — маппинг индекса сегмента
-на `KeyPoint.Id` с учётом направления прохода (forward/backward, backward — через
-`KeyPoints.Count - 1 - segmentIndex`) — выносится в статический helper (например,
-`JibProgram.TargetKeyPoint(IReadOnlyList<KeyPoint> passKeyPoints, int segmentIndex, bool
-backward)`), которым пользуются и существующее свойство (без изменения поведения/тестов), и
-новый трекер (§3). Не дублировать эту логику.
+Тот же файл `ArctZ/Services/Program/PhysicalProgressTracker.cs`, переименовать класс (и файл) в
+`TimeProgressTracker` — семантика вывода меняется с «доля пройденной дистанции» на «доля
+прошедшего времени», переименование отражает это для будущих читателей. Чистый класс без
+зависимостей от UI/Avalonia/потоков; время передаётся параметром (`DateTime`) в каждый вызов, не
+берётся из `DateTime.UtcNow` внутри — тестируемость синтетическими метками времени.
 
-### 3. `PhysicalProgressTracker` — новый класс, `ArctZ/Services/Program/`
+**Что остаётся от Ревизии 1 без изменений** (внутренняя, приватная механика):
 
-Чистый класс без зависимостей от UI/Avalonia/потоков (кроме таймера для dwell, см. §4),
-юнит-тестируемый напрямую.
+- Массив `Edge` (`From`, `To`, `SegmentIndex`, `Length`, `CumulativeBefore`) — геометрическая
+  проекция позиции на ломаную из `Pose` каждого `CompiledStep`.
+- `_farthestCumulativeDistance` — монотонный максимум пройденной дистанции; определяет, какое
+  ребро (и значит какой `SegmentIndex`) сейчас «физически активно». Это остаётся единственным
+  источником истины для «какая точка сейчас активна» — то, ради чего Ревизия 1 вообще перешла на
+  реальную позицию вместо ack, и что решает исходную проблему (ack ≠ физическое движение).
+- `int? CurrentSegmentIndex` — вычисляется из `_farthestCumulativeDistance` (`FindEdgeIndexAt`),
+  без изменений. Zero-length dwell-рёбра (Ревизия 1, §1) по-прежнему не участвуют в проекции по
+  расстоянию, но благодаря `SegmentIndex`-группировке `CurrentSegmentIndex` естественным образом
+  остаётся на точке N весь физический dwell (позиция не движется → `_farthestCumulativeDistance`
+  не растёт → `FindEdgeIndexAt` продолжает возвращать ребро с `SegmentIndex == N`), пока реальное
+  движение к следующей точке не сдвинет `_farthestCumulativeDistance` дальше. Отдельная фаза
+  «IsDwelling» (Ревизия 1, §5) для этого больше не нужна — граница «точка N закончилась» и так уже
+  строго физическая, что делает Ревизию 2 проще Ревизии 1, а не сложнее.
 
-**Конструктор/`Reset`**: принимает упорядоченный список `CompiledStep` текущего прохода (тот же,
-что уходит в `PlayAsync`), список `KeyPoint` этого прохода (`KeyPoints` или `ReversedProgram`),
-флаг `backward`, и стартовую позу `MachinePose startingPose` — реальная `WPos` станка,
-захваченная в момент старта прохода (**не** `KeyPoints[0]`: сегмент 0 в `JibProgram.Segments()`
-имеет `From == To == KeyPoints[0]`, нулевую дистанцию по построению модели, реальный станок едет
-туда с текущего физического места).
+**Что удаляется** (мёртвый код после перехода на временную метрику — эти члены Ревизии 1
+использовались только для дистанционной `ApproachFraction`/`DwellFraction`, которых в Ревизии 2
+больше нет):
 
-**Ломаная (polyline)**: `startingPose` — вершина 0, дальше по порядку — `Pose` каждого
-`CompiledStep`. Рёбра нулевой длины (dwell-шаги, см. §1) не участвуют в проекции по расстоянию,
-но сохраняют позицию в списке — при проекции на такую вершину трекер знает, какому
-`CompiledStep`/`SegmentIndex` она соответствует, это нужно для dwell-фазы (§5).
+- `_segmentSpans` (`Dictionary<int, (double Start, double Length)>`) и публичное свойство
+  `ApproachFraction` — заменены на `_segmentEstimatedSeconds`/`CurrentStepFraction` ниже (та же
+  роль — доля внутри текущей точки — но по времени, не по дистанции).
+- Поле `DwellSeconds` на `Edge`, приватные `_isDwelling`/`_dwellElapsedSeconds`/
+  `_dwellTotalSeconds`, публичные `IsDwelling`/`DwellFraction`, метод
+  `FindDwellEdgeForSegment` — вся отдельная dwell-фаза (см. предыдущий пункт: граница точки теперь
+  и так строго физическая через `CurrentSegmentIndex`, отдельно её ловить не нужно).
+- `OnTimerElapsed(TimeSpan interval)` — заменяется на `OnClockTick(DateTime now)` (см. §4):
+  абсолютное время вместо накопления дельт, нужно единому 200мс таймеру наравне с
+  `OnPositionUpdated`.
 
-**На каждое обновление позиции** (`MachinePose current`, вызывается извне — см. §6):
+**Что добавляется** (при конструировании, наряду с рёбрами, в одном проходе по `steps`):
 
-1. Спроецировать `current` на каждое ребро ломаной (ближайшая точка на отрезке), взять кандидат
-   с минимальным расстоянием до `current`.
-2. Кумулятивная дистанция кандидата = сумма длин всех рёбер до него + расстояние от начала его
-   ребра до точки проекции.
-3. `_farthestCumulativeDistance = Math.Max(_farthestCumulativeDistance, candidateDistance)` —
-   монотонный максимум, реальная позиция никогда не двигает прогресс назад, даже если геометрия
-   даёт локально более близкую проекцию на предыдущее ребро (сглаживание углов контроллером,
-   шум отчёта).
-4. Из `_farthestCumulativeDistance` определить текущий `SegmentIndex` (по накопленным длинам
-   рёбер, сгруппированным по `SegmentIndex` — см. §1: несколько eased-подшагов одного сегмента
-   складываются в одну группу) и `ApproachFraction` — пройденная дистанция внутри группы
-   текущего `SegmentIndex` / суммарная длина группы. Если группа нулевой длины (сегмент 0 —
-   `From == To`, либо соседние точки физически совпадают) — `ApproachFraction` сразу `1.0`,
-   без деления на ноль: точка считается «достигнутой» в момент, когда позиция впервые попадает
-   в эту группу.
+- `Dictionary<int, double> _segmentEstimatedSeconds` — для каждого `SegmentIndex` сумма
+  `EstimatedDurationSeconds` всех его шагов (все eased-подшаги перехода + dwell-шаг, если есть) —
+  это «расчётное время перехода в точку плюс время стоянки», как просил пользователь.
+- `double _totalEstimatedSeconds` — сумма `EstimatedDurationSeconds` вообще всех шагов прохода.
+- `DateTime _passStartedAt` — передаётся в конструктор (реальное время старта прохода, засекается
+  вызывающей стороной в момент `Reset`).
+- `DateTime _currentSegmentEnteredAt` — изначально `_passStartedAt`; переустанавливается на
+  переданное `now`, когда пересчёт видит, что `CurrentSegmentIndex` изменился с предыдущего
+  пересчёта.
 
-**Публичные свойства** (обновляются после каждого пересчёта, `INotifyPropertyChanged` — тип
-подключается как обычный `ObservableObject`, чтобы `ProgramViewModel` мог напрямую
-прокидывать/биндить):
+**Пересчёт** — единый приватный `Recompute(DateTime now)`, вызывается из обоих публичных методов
+обновления (см. §4):
 
-- `double OverallFraction` — `_farthestCumulativeDistance / totalPathLength`, `0..1`.
-- `double ApproachFraction` — см. п.4 выше, `0..1`.
-- `Guid? PhysicallyExecutingKeyPointId` — `JibProgram.TargetKeyPoint(...)` (§2) от текущего
-  физического `SegmentIndex`, не от ack-индекса.
-- `bool IsDwelling` / `double DwellFraction` — см. §5.
+1. Если `CurrentSegmentIndex` изменился относительно сохранённого с прошлого пересчёта значения —
+   `_currentSegmentEnteredAt = now` (точка только что физически стала активной, время внутри неё
+   стартует с нуля).
+2. `elapsedInSegment = (now - _currentSegmentEnteredAt).TotalSeconds`.
+3. `estimatedForSegment = _segmentEstimatedSeconds.GetValueOrDefault(CurrentSegmentIndex ?? -1, 0)`.
+4. Обновить кэшированные `CurrentStepFraction`, `CurrentPointHasWarning` (формулы — см. свойства
+   ниже), поднять `Changed`.
 
-Если `totalPathLength == 0` (все точки прохода совпадают) — `OverallFraction`/`ApproachFraction`
-мгновенно `1.0` на первом обновлении позиции (защитный случай, аналогично нулевой подаче в
-старом дизайне).
+**Публичные свойства** (кэшированные результаты последнего `Recompute`, `event Action? Changed`
+как в Ревизии 1):
 
-### 4. Жизненный цикл — привязка к проходам, не к всей программе
+- `double OverallFraction` — `_totalEstimatedSeconds <= 0 ? 1.0 : Math.Clamp((now -
+  _passStartedAt).TotalSeconds / _totalEstimatedSeconds, 0, 1)`. Чистое астрономическое время с
+  начала прохода — специально **не** суммируется из фактических длительностей по сегментам
+  (что потребовало бы отдельного учёта для каждого завершённого сегмента): прошедшее время с
+  начала прохода уже по определению равно сумме фактического времени всех сегментов, пройденных к
+  этому моменту, плюс времени в текущем. Если сумма расчётного времени всех точек превышена
+  (несколько точек подряд не уложились в расчёт) — бар доходит до 100% и остаётся там до
+  `Completed`, не переполняясь; это допустимый побочный эффект чисто временной метрики, а
+  warning-индикатор (см. ниже) — основной сигнал именно о такой рассинхронизации, не сам бар.
+- `double CurrentStepFraction` — `estimatedForSegment <= 0 ? 1.0 : elapsedInSegment /
+  estimatedForSegment`. **Не клэмпится** к `1.0` внутри трекера (в отличие от `OverallFraction`) —
+  значение выше `1.0` — это и есть перебор времени, нужен как есть для warning-проверки и для теста
+  на него; клэмп для отображения (не уходить в отрицательные значения на круге) делает вызывающая
+  сторона (§6).
+- `bool CurrentPointHasWarning` — `estimatedForSegment > 0 && elapsedInSegment > estimatedForSegment
+  * 1.15`. Живой, не защёлкивающийся флаг: как только `CurrentSegmentIndex` меняется,
+  `_currentSegmentEnteredAt` сбрасывается и `elapsedInSegment` обнуляется, так что warning для
+  предыдущей точки не переносится на следующую (см. Требование 3).
+- `int? CurrentSegmentIndex` — см. выше, без изменений относительно Ревизии 1.
 
-Новый `PhysicalProgressTracker` создаётся заново (`Reset(...)`) в начале каждого прохода —
-там же, где уже сбрасываются `CurrentSegmentIndex = null`/`SegmentProgress = 0` при старте
-прохода в `PlayAsync` (включая начало каждого повтора Loop/PingPong — общий бар обязан обнуляться
-на каждом новом проходе, как согласовано с пользователем). Захват `startingPose` — из
-`Connection.Session?.DeviceStatus?.WPos` в этот же момент (если `null` — событие обновления
-позиции произойдёт раньше первого содержательного апдейта трекера, это не блокирует старт).
+Если `_totalEstimatedSeconds == 0` (все `EstimatedDurationSeconds` нулевые — вырожденный случай,
+не встречается при непустом списке точек с положительным `TransitionSeconds`) — `OverallFraction`
+сразу `1.0`, аналогично защитному случаю Ревизии 1.
 
-### 5. Dwell-фаза круга
+### 4. Публичные методы обновления и единый таймер
 
-Круг на точке отражает `ApproachFraction` (полный → пустой по мере физического приближения).
-Когда `ApproachFraction` достигает `1.0` **и** у целевой точки `DwellSeconds > 0` — трекер
-переключается в dwell-фазу: `IsDwelling = true`, `DwellFraction` заново `1.0 → 0.0` за реальное
-время `DwellSeconds`.
+Два публичных входа, оба вызывают внутренний `Recompute(now)`:
 
-Позиция во время dwell не меняется (станок стоит), поэтому анимировать `DwellFraction` нечем,
-кроме таймера. `PhysicalProgressTracker` получает `IPeriodicTimer` (тот же интерфейс/DI-паттерн,
-что `StatusPoller`/`JogScheduler`, `ServiceCollectionExtensions.cs`), с интервалом 100мс.
-Таймер стартует в момент входа в dwell-фазу (`ApproachFraction` дошёл до 1.0 у точки с
-`DwellSeconds > 0`), считает `elapsed`, `DwellFraction = Clamp(1 - elapsed / DwellSeconds, 0,
-1)`.
+- `void OnPositionUpdated(MachinePose position, DateTime now)` — проекция позиции на ломаную (как
+  в Ревизии 1, без изменений в этой части), обновление `_farthestCumulativeDistance`, затем
+  `Recompute(now)`. Вызывается из `OnSessionDeviceStatusChanged` (см. §6), даёт низкую задержку
+  реакции на «точка физически сменилась», не дожидаясь следующего тика таймера.
+- `void OnClockTick(DateTime now)` — просто `Recompute(now)` без апдейта позиции. Нужен, чтобы
+  `CurrentStepFraction`/`CurrentPointHasWarning`/`OverallFraction` продолжали расти по времени,
+  пока станок физически стоит на dwell (позиция не шлёт новых апдейтов, отличных от предыдущих) —
+  без этого метода круг застыл бы на dwell до следующего реального шага.
 
-Границы фазы — оба реальных события, не таймер:
-- **Начало** — реальное прибытие позиции (`ApproachFraction == 1.0`), не ack.
-- **Конец** — трекер выходит из dwell-фазы, когда обновление позиции показывает переход к
-  следующему ребру ломаной (следующий `SegmentIndex` начал накапливать дистанцию) — то есть
-  физическое начало следующего перемещения, а не истечение расчётных `DwellSeconds`. Таймер —
-  чисто визуальная анимация между этими двумя реальными границами, не участвует в определении
-  «выполнилось ли на самом деле» ничего; если реальная dwell заняла больше/меньше, чем
-  `DwellSeconds` (маловероятно — `G4 P<seconds>` в контроллере точен), круг просто договаривает
-  до 0 либо остаётся на 0 до реального начала следующего движения.
+Оба метода заменяют `OnPositionUpdated(MachinePose)` (без времени) и `OnTimerElapsed(TimeSpan
+interval)` (дельта, не абсолютное время) из Ревизии 1 — сигнатуры меняются, вызывающая сторона
+(`ProgramViewModel`) обновляется соответственно (§6).
 
-Таймер останавливается вне dwell-фазы и на `Pause`/`Stop`/`Faulted`/`Completed` — централизованно,
-там же, где сейчас `OnPlaybackStateChanged` управляет прочими ресурсами прохода.
+**Единый таймер 200мс** в `ProgramViewModel` заменяет специализированный 100мс dwell-таймер
+Ревизии 1 (`IPeriodicTimer`, тот же DI-паттерн, что `StatusPoller`/`JogScheduler`,
+`ServiceCollectionExtensions.cs`). На каждый тик: `_progressTracker?.OnClockTick(DateTime.UtcNow)`
+(поднимет `Changed` → `OnProgressTrackerChanged` → `OnPropertyChanged` для всех проброшенных
+свойств, см. §6). Таймер стартует при входе `PlaybackState` в `Running`, останавливается на
+`Pause`/`Stop`/`Faulted`/`Completed` — централизованно, там же, где Ревизия 1 уже управляет
+прочими ресурсами прохода в `OnPlaybackStateChanged`.
 
-### 6. Подключение к позиции — переиспользование существующей подписки
+### 5. Жизненный цикл — привязка к проходам, без изменений в точке входа
 
-`ProgramViewModel` уже подписан на `IDeviceSession.DeviceStatusChanged` напрямую (не через
-дедуплицирующий `ConnectionViewModel.DeviceStatus`) в `OnSessionDeviceStatusChanged`
-(`ProgramViewModel.cs:991`) — именно из-за той же причины, что описана в его комментарии
-(программа нулевой дистанции не меняет `WPos`, дедуплицирующее свойство не увидело бы апдейт).
-Новый трекер получает позицию через ту же точку: `OnSessionDeviceStatusChanged` дополнительно
-вызывает `_progressTracker?.OnPositionUpdated(status.WPos)` — второй независимой подписки на
-`DeviceStatusChanged` не заводится.
+`TimeProgressTracker` создаётся заново (`Reset`/новый экземпляр) в начале каждого прохода — та же
+точка, где Ревизия 1 уже это делает в `PlayAsync` (включая каждый повтор Loop/PingPong).
+Дополнительно к `startingPose` (реальная `WPos` в момент старта, как в Ревизии 1) конструктор
+получает `passStartedAt: DateTime.UtcNow`, зафиксированный в тот же момент.
 
-`ProgramViewModel` получает три новых `[ObservableProperty]`-обёртки (или прямой проброс
-`PropertyChanged` от трекера), которые открывает наружу для биндингов: `OverallFraction`,
-`ApproachFraction`+`IsDwelling`+`DwellFraction` (или единое `PointProgress` — решается на этапе
-реализации), `PhysicallyExecutingKeyPointId`.
+### 6. Подключение к позиции и таймеру — переиспользование существующей подписки
 
-### 7. UI — круг на тайле
+`OnSessionDeviceStatusChanged` (`ProgramViewModel.cs:991`, уже существует по причине, описанной в
+его комментарии — программа нулевой дистанции не меняет `WPos`, дедуплицирующее
+`ConnectionViewModel.DeviceStatus` не увидело бы апдейт) вызывает
+`_progressTracker?.OnPositionUpdated(status.WPos, DateTime.UtcNow)` — та же точка входа, что и в
+Ревизии 1, сигнатура получает второй параметр.
 
-Новый радиальный индикатор — маленький бейдж (кастомная `Path`/`ArcSegment`-геометрия, в
-Avalonia нет готового radial/pie контрола) в углу тайла 120×60 (`MainView.axaml:212-271`).
-Видим только когда `PhysicallyExecutingKeyPointId` этой точки совпадает с её `Id` **и**
-`PlaybackState` — `Running`/`Paused` (симметрично существующему `KeyPointIsExecutingConverter`,
-новый параллельный `IMultiValueConverter`, возвращающий геометрию дуги по значению
-`ApproachFraction`/`DwellFraction`, а не просто `bool`).
+`ProgramViewModel` пробрасывает свойства трекера наружу под теми же именами, что уже привязаны в
+`MainView.axaml` (минимизирует изменения XAML) — семантика имён меняется (дистанция → время), сами
+имена и биндинги нет:
 
-Цвет — из палитры HUD (`Themes/Colors.axaml`), не хардкод — как у остальных иконок
-(см. правило иконок в `CLAUDE.md`).
+- `PhysicalOverallProgress => _progressTracker?.OverallFraction ?? 0`
+- `PhysicalPointRemainingFraction => _progressTracker is null ? 1.0 : 1.0 -
+  Math.Clamp(_progressTracker.CurrentStepFraction, 0, 1)` — клэмп здесь (не в трекере, см. §3):
+  `CurrentStepFraction` выше `1.0` (перебор времени) не должен уводить визуальный остаток в
+  отрицательные значения — круг просто держится пустым, а видимость перебора обеспечивает
+  warning-индикатор, не геометрия круга.
+- `PhysicallyExecutingKeyPointId => _progressTracker is null ? null :
+  JibProgram.TargetKeyPoint(KeyPoints, _progressTracker.CurrentSegmentIndex, _currentPassBackward)`
+  — без изменений относительно Ревизии 1.
+- Новое: `PhysicalPointHasTimeWarning => _progressTracker?.CurrentPointHasWarning ?? false`.
+
+`OnProgressTrackerChanged` (уже существующий обработчик `_progressTracker.Changed`) дополнительно
+поднимает `OnPropertyChanged(nameof(PhysicalPointHasTimeWarning))`.
+
+### 7. UI — круг на тайле и warning-индикатор
+
+Круг — без изменений относительно Ревизии 1 (уже реализованная геометрия дуги,
+`FractionToPieSliceConverter`, биндинг на `PhysicalPointRemainingFraction` и
+`PhysicallyExecutingKeyPointId`, видимость по `PlaybackState is Running or Paused`) — меняется
+только то, *откуда* берётся значение `PhysicalPointRemainingFraction` (время вместо дистанции,
+§6), сама разметка/конвертер не трогается.
+
+**Новое: warning-индикатор**. Небольшая иконка (`MaterialIconKind`, см. правило иконок в
+`CLAUDE.md` — регистрация уже выполнена в `App.axaml`, `Icon rollout` завершён ранее) в углу того
+же тайла 120×60, `IsVisible` через `MultiBinding`/конвертер на `PhysicallyExecutingKeyPointId ==
+<Id этой точки> && PhysicalPointHasTimeWarning`. Цвет — предупреждающий акцент из палитры HUD
+(`Themes/Colors.axaml`), не хардкод.
 
 ### 8. UI — общий прогресс-бар
 
-`ProgressBar` возвращается в `MainView.axaml` над `KeyPointsList` (там же, где был до
-`f3b9d3e`), `Value` привязан к `ProgramViewModel.OverallFraction` (0..1), `IsVisible` — как и
-раньше, `IsProgramLocked` (`PlaybackState is Running or Paused`). `DoubleTransition`
-(`CubicEaseOut`, 0.3с) на `ProgressBar.Value` можно оставить — она сглаживает *реальные* скачки
-позиции (кванты в 100мс), а не постулированную оценку, так что не создаёт риска рассинхронизации
-как в старом дизайне.
+Без изменений относительно Ревизии 1: `ProgressBar` в `MainView.axaml` над `KeyPointsList`,
+`Value` привязан к `PhysicalOverallProgress` (0..1), `IsVisible` по `IsProgramLocked`,
+`DoubleTransition` (`CubicEaseOut`, 0.3с) остаётся — 200мс шаг тика уже даёт плавные приращения,
+transition дополнительно сглаживает без риска рассинхронизации (тот же аргумент, что в Ревизии 1).
 
 ### 9. Android-уведомление
 
-`BackgroundSessionState` (`ArctZ/Services/App/BackgroundSessionState.cs`) — новое поле
-`int? ProgressPercent`. `BackgroundSessionProjector.Project(...)` получает дополнительный
-параметр `double? overallFraction` и вычисляет `ProgressPercent = overallFraction is { } f ?
-(int)(Math.Round(f * 100 / 5.0) * 5) : null` — округление до кратного 5, `null` вне
-Running/Paused (там и `overallFraction` не имеет смысла). `BackgroundSessionCoordinator.Refresh()`
-передаёт `_program.OverallFraction` в `Project`; отдельной подписки не нужно — `Refresh()` уже
-вызывается на каждом статус-репорте во время Running (см. комментарий в
-`BackgroundSessionCoordinator.cs:76-78`), а `_lastSent == state` (равенство `record`) уже
-дедуплицирует вызов `_host.Update` — обновление уйдёт в Android только когда `ProgressPercent`
-(или что-то другое) реально изменился, то есть ровно на пересечении границы 5%.
-`MachineSessionService.BuildNotification` (`ArctZ.Android/MachineSessionService.cs:147-178`)
-добавляет `if (state.ProgressPercent is { } pct) { builder.SetProgress(100, pct, false); }`.
+Без изменений относительно Ревизии 1: `BackgroundSessionState.ProgressPercent`,
+`BackgroundSessionProjector.Project(..., double? overallFraction)`, округление до кратного 5,
+`BackgroundSessionCoordinator.Refresh()` передаёт `_program.PhysicalOverallProgress`,
+`MachineSessionService.BuildNotification` вызывает `builder.SetProgress(100, pct, false)`. Этот
+слой уже целиком реализован (Ревизия 1, Tasks 7-9) и не завязан на то, как именно вычисляется
+`PhysicalOverallProgress` внутри — семантика поменялась (время вместо дистанции), контракт
+(`double` в диапазоне `0..1`) нет.
 
 ## Вне рамок
 
-- `EstimatedDurationSeconds`/времянная оценка (`TrajectoryCompiler`) не используется новым
-  трекером и не удаляется — остаётся как есть, покрыта существующими тестами компилятора.
-- `OverallProgress`, `CurrentSegmentIndex`, `SegmentProgress`, `CurrentlyExecutingKeyPointId`,
-  `FaultedMessage` — не меняются.
+- `OverallProgress`, `CurrentSegmentIndex` (ack-версия), `SegmentProgress`,
+  `CurrentlyExecutingKeyPointId`, `FaultedMessage` — не меняются (существующий ack-based слой
+  остаётся как есть).
 - iOS/Browser/Desktop — общий бар и круг работают на всех головах одинаково (чистая
-  ViewModel-логика); прогресс в системном уведомлении — только Android (единственная голова с
-  foreground-уведомлением, `project_android_foreground_session_complete`).
-- Калибровка/предсказание — никакой оценки будущего времени, только факт уже пройденной
-  дистанции.
+  ViewModel-логика); прогресс в системном уведомлении — только Android
+  (`project_android_foreground_session_complete`).
+- Настраиваемый threshold для warning-индикатора — зафиксирован на ±15%, не выносится в
+  пользовательские настройки в этой итерации.
+- Персистентный список/история warning-точек — индикатор живой (только для текущей физически
+  активной точки), накопительный отчёт по всем точкам прохода не входит в объём.
+- Автоматическая корректировка `TransitionSeconds` — индикатор только сигнализирует, изменение
+  значения остаётся ручным действием пользователя в редакторе точки.
 
 ## Тестирование
 
-- `TrajectoryCompilerTests` — новые кейсы на `CompiledStep.Pose` (обычный сегмент, eased-подшаги,
-  dwell-шаг).
-- Новые юнит-тесты `PhysicalProgressTrackerTests` — синтетическая последовательность
-  `MachinePose`, проверка: монотонность `OverallFraction`/`ApproachFraction` (не идёт назад при
-  геометрически «шумной» позиции), корректный `PhysicallyExecutingKeyPointId` на forward и
-  backward проходе, нулевая дистанция (все точки совпадают) не делит на ноль, dwell-фаза входит и
-  выходит по реальным границам (не по истечении таймера, если позиция физически ещё не тронулась).
-- Dwell-таймер — через `ManualPeriodicTimer` (`ArctZ.Tests/Services/Device/ManualPeriodicTimer.cs`),
-  по образцу существующих тестов `StatusPoller`/`JogScheduler`.
-- `BackgroundSessionProjectorTests` — округление до кратного 5, `null` вне Running/Paused.
+- Переименование/адаптация существующих `PhysicalProgressTrackerTests` →
+  `TimeProgressTrackerTests` (класс и файл переименовываются вместе с трекером). Новые кейсы
+  поверх унаследованных (геометрия/маппинг сегментов — без изменений, тесты на неё переносятся
+  как есть):
+  - `OverallFraction` растёт по переданному `now`, не по позиции — синтетический сценарий, где
+    позиция не меняется между двумя вызовами `OnClockTick` с разными `now`, `OverallFraction`
+    всё равно увеличивается.
+  - `CurrentStepFraction` сбрасывается к малому значению, когда `CurrentSegmentIndex` меняется
+    (новая точка — новый отсчёт elapsed, не наследует время предыдущей).
+  - `CurrentPointHasWarning`: сценарий, где `elapsedInSegment` на 20% больше
+    `_segmentEstimatedSeconds` → `true`; сценарий с разницей 10% → `false` (граница ±15%).
+  - `CurrentPointHasWarning` гаснет сразу при переходе `CurrentSegmentIndex` на следующий, даже
+    если предыдущая точка была помечена варнингом непосредственно перед переходом.
+  - `estimatedForSegment == 0` (вырожденный случай) → `CurrentStepFraction == 1.0`,
+    `CurrentPointHasWarning == false` (защита от деления на ноль/ложного варнинга).
+  - `OnClockTick` во время dwell (позиция не меняется) продолжает растить `CurrentStepFraction`
+    без вызовов `OnPositionUpdated` — закрывает случай, ради которого убрана отдельная
+    dwell-фаза/таймер Ревизии 1.
+  - Монотонность `CurrentSegmentIndex`/принадлежности сегменту — без изменений относительно
+    Ревизии 1 (не идёт назад при геометрически «шумной» позиции).
+- `ManualPeriodicTimer` (`ArctZ.Tests/Services/Device/ManualPeriodicTimer.cs`) — по образцу
+  существующих тестов `StatusPoller`/`JogScheduler`, для 200мс таймера в `ProgramViewModel`.
+- `BackgroundSessionProjectorTests` — без изменений (округление до кратного 5, `null` вне
+  Running/Paused) — не завязаны на природу `overallFraction`.
 - `ProgramViewModelPlaybackTests` — трекер сбрасывается на каждый новый проход (в т.ч. повтор
-  Loop/PingPong), `PhysicallyExecutingKeyPointId` не совпадает с ack-индексом, когда буфер ушёл
-  вперёд (синтетический `MockDeviceTransport`-сценарий: несколько ack подряд без промежуточных
-  апдейтов позиции).
+  Loop/PingPong, без изменений относительно Ревизии 1); новый кейс —
+  `PhysicalPointHasTimeWarning` пробрасывается в `PropertyChanged` при изменении внутри трекера;
+  200мс таймер стартует на `Running`, останавливается на `Pause`/`Stop`/`Faulted`/`Completed`
+  (замена dwell-таймера Ревизии 1 на единый таймер — тест на старт/стоп адаптируется).
 - Обязательный живой UI-тест по правилам проекта (`CLAUDE.md`, раздел «Тестирование UI»): собрать
-  и запустить `ArctZ.Desktop`, прогнать программу с несколькими точками (включая dwell и
-  `EaseInOut`, включая Loop/PingPong повтор), подтвердить через `AskUserQuestion` по каждому из
-  трёх слоёв отдельно — круг на точке, общий бар, (для Android — отдельный шаг с реальной
-  сборкой/установкой пользователем, как описано в `CLAUDE.md`).
+  и запустить `ArctZ.Desktop`, прогнать программу с несколькими точками (включая dwell,
+  `EaseInOut`, Loop/PingPong повтор, и намеренно заниженное `TransitionSeconds` на одной точке —
+  например, физически недостижимое малое время — для проверки warning-индикатора), подтвердить
+  через `AskUserQuestion` по каждому слою отдельно: круг на точке (растёт по времени, а не
+  скачками по позиции), общий бар, warning-индикатор (появляется и гаснет в нужный момент), (для
+  Android — отдельный шаг с реальной сборкой/установкой пользователем, как описано в `CLAUDE.md`).
