@@ -38,4 +38,22 @@ public sealed class JibProgram
             yield return new ProgramSegment(i, KeyPoints[i - 1], KeyPoints[i]);
         }
     }
+
+    /// <summary>Maps a segment index (as produced by <see cref="Segments"/>, or by compiling a
+    /// reversed program for a backward/PingPong pass) to the key point it targets in
+    /// <paramref name="forwardKeyPoints"/> — the pass's own original (forward) order. A backward
+    /// pass compiles a reversed program, whose own segment index 0 targets the *last* forward
+    /// point, hence <c>Count - 1 - segmentIndex</c>.</summary>
+    public static Guid? TargetKeyPoint(IReadOnlyList<KeyPoint> forwardKeyPoints, int? segmentIndex, bool backward)
+    {
+        if (segmentIndex is not { } index)
+        {
+            return null;
+        }
+
+        var targetIndex = backward ? forwardKeyPoints.Count - 1 - index : index;
+        return targetIndex >= 0 && targetIndex < forwardKeyPoints.Count
+            ? forwardKeyPoints[targetIndex].Id
+            : null;
+    }
 }

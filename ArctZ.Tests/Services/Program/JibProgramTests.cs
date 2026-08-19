@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using ArctZ.Services.Device;
 using ArctZ.Services.Program;
+using Xunit;
 
 namespace ArctZ.Tests.Services.Program;
 
@@ -56,5 +58,37 @@ public class JibProgramTests
         Assert.Equal(ProgramCompletionMode.Stop, program.CompletionMode);
         Assert.False(program.ReturnToStartOnFinish);
         Assert.Null(program.RepeatCount);
+    }
+
+    private static KeyPoint SimplePoint(int number) =>
+        new(Guid.NewGuid(), number, $"P{number}", MachinePose.Zero, DwellSeconds: 0, TransitionSeconds: 1, EaseMode.None, ContinuousBlend: true);
+
+    [Fact]
+    public void TargetKeyPoint_Forward_SegmentIndexIndexesDirectlyIntoTheList()
+    {
+        var points = new List<KeyPoint> { SimplePoint(1), SimplePoint(2), SimplePoint(3) };
+
+        Assert.Equal(points[0].Id, JibProgram.TargetKeyPoint(points, segmentIndex: 0, backward: false));
+        Assert.Equal(points[2].Id, JibProgram.TargetKeyPoint(points, segmentIndex: 2, backward: false));
+    }
+
+    [Fact]
+    public void TargetKeyPoint_Backward_SegmentIndexCountsFromTheEndOfTheList()
+    {
+        var points = new List<KeyPoint> { SimplePoint(1), SimplePoint(2), SimplePoint(3) };
+
+        Assert.Equal(points[2].Id, JibProgram.TargetKeyPoint(points, segmentIndex: 0, backward: true));
+        Assert.Equal(points[0].Id, JibProgram.TargetKeyPoint(points, segmentIndex: 2, backward: true));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(-1)]
+    [InlineData(3)]
+    public void TargetKeyPoint_NullOrOutOfRangeIndex_ReturnsNull(int? segmentIndex)
+    {
+        var points = new List<KeyPoint> { SimplePoint(1), SimplePoint(2), SimplePoint(3) };
+
+        Assert.Null(JibProgram.TargetKeyPoint(points, segmentIndex, backward: false));
     }
 }

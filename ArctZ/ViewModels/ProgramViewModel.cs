@@ -923,29 +923,9 @@ public partial class ProgramViewModel : ViewModelBase
         ? Math.Clamp((index + SegmentProgress) / TotalSegments, 0, 1)
         : 0;
 
-    public Guid? CurrentlyExecutingKeyPointId
-    {
-        get
-        {
-            if (PlaybackState is not (PlaybackState.Running or PlaybackState.Paused))
-            {
-                return null;
-            }
-
-            // Segment index now equals the target key point's own index within the pass's
-            // own KeyPoints order (segment 0 targets that order's first point) — see
-            // JibProgram.Segments(). The backward pass runs over ReversedProgram's KeyPoints
-            // (source order reversed), so its segment index maps back into the forward
-            // KeyPoints list via Count - 1 - segmentIndex.
-            var segmentIndex = CurrentSegmentIndex ?? -1;
-            var targetIndex = _currentPassBackward
-                ? KeyPoints.Count - 1 - segmentIndex
-                : segmentIndex;
-            return targetIndex >= 0 && targetIndex < KeyPoints.Count
-                ? KeyPoints[targetIndex].Id
-                : null;
-        }
-    }
+    public Guid? CurrentlyExecutingKeyPointId => PlaybackState is PlaybackState.Running or PlaybackState.Paused
+        ? Services.Program.JibProgram.TargetKeyPoint(KeyPoints, CurrentSegmentIndex, _currentPassBackward)
+        : null;
 
     private IDeviceSession? _subscribedSession;
 
