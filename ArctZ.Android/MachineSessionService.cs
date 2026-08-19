@@ -159,6 +159,11 @@ public class MachineSessionService : Service
             .SetOngoing(true)
             .SetContentIntent(OpenAppIntent());
 
+        if (state.ProgressPercent is { } percent)
+        {
+            builder.SetProgress(100, percent, false);
+        }
+
         if (state.CanPause)
         {
             builder.AddAction(BuildAction(global::Android.Resource.Drawable.IcMediaPause, "Пауза", ActionPause));
