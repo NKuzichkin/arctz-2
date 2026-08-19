@@ -8,7 +8,7 @@ public class BackgroundSessionProjectorTests
     [Fact]
     public void Project_WhileRunning_OffersPauseAndStop()
     {
-        var state = BackgroundSessionProjector.Project(PlaybackState.Running, "Выполнение", "Панорама цеха");
+        var state = BackgroundSessionProjector.Project(PlaybackState.Running, "Выполнение", "Панорама цеха", overallFraction: null);
 
         Assert.Equal("Панорама цеха", state.Title);
         Assert.Equal("Выполнение", state.Status);
@@ -20,7 +20,7 @@ public class BackgroundSessionProjectorTests
     [Fact]
     public void Project_WhilePaused_OffersResumeAndStop()
     {
-        var state = BackgroundSessionProjector.Project(PlaybackState.Paused, "Пауза", "Панорама цеха");
+        var state = BackgroundSessionProjector.Project(PlaybackState.Paused, "Пауза", "Панорама цеха", overallFraction: null);
 
         Assert.False(state.CanPause);
         Assert.True(state.CanResume);
@@ -34,7 +34,7 @@ public class BackgroundSessionProjectorTests
     [InlineData(PlaybackState.Faulted)]
     public void Project_WhenNoProgramIsInFlight_OffersNoButtons(PlaybackState playback)
     {
-        var state = BackgroundSessionProjector.Project(playback, "Ожидание", "Панорама цеха");
+        var state = BackgroundSessionProjector.Project(playback, "Ожидание", "Панорама цеха", overallFraction: null);
 
         Assert.False(state.CanPause);
         Assert.False(state.CanResume);
@@ -49,8 +49,28 @@ public class BackgroundSessionProjectorTests
     [InlineData("   ")]
     public void Project_WithoutAProgramName_FallsBackToTheAppName(string? programName)
     {
-        var state = BackgroundSessionProjector.Project(PlaybackState.Idle, "Ожидание", programName);
+        var state = BackgroundSessionProjector.Project(PlaybackState.Idle, "Ожидание", programName, overallFraction: null);
 
         Assert.Equal("ArctZ", state.Title);
+    }
+
+    [Theory]
+    [InlineData(0.0, 0)]
+    [InlineData(0.02, 0)]
+    [InlineData(0.03, 5)]
+    [InlineData(0.475, 50)]
+    [InlineData(0.99, 100)]
+    [InlineData(1.0, 100)]
+    public void Project_WhileRunning_RoundsOverallFractionToTheNearestFivePercent(double fraction, int expectedPercent)
+    {
+        var state = BackgroundSessionProjector.Project(PlaybackState.Running, "Выполнение", "Панорама цеха", fraction);
+        Assert.Equal(expectedPercent, state.ProgressPercent);
+    }
+
+    [Fact]
+    public void Project_WithoutAnOverallFraction_HasNoProgressPercent()
+    {
+        var state = BackgroundSessionProjector.Project(PlaybackState.Idle, "Ожидание", "Панорама цеха", overallFraction: null);
+        Assert.Null(state.ProgressPercent);
     }
 }

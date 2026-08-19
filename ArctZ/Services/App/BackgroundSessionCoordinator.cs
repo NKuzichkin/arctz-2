@@ -79,7 +79,8 @@ public sealed class BackgroundSessionCoordinator : IDisposable
         var state = BackgroundSessionProjector.Project(
             _program.PlaybackState,
             _program.StatusLabel,
-            _program.ProgramName);
+            _program.ProgramName,
+            overallFraction: null);
 
         if (_lastSent == state)
         {

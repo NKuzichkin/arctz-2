@@ -9,4 +9,5 @@ public readonly record struct BackgroundSessionState(
     string Status,
     bool CanPause,
     bool CanResume,
-    bool CanStop);
+    bool CanStop,
+    int? ProgressPercent);

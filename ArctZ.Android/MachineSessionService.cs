@@ -30,7 +30,7 @@ public class MachineSessionService : Service
     /// <summary>Последнее состояние, отданное ядром. Пишется из AndroidBackgroundSessionHost
     /// перед тем, как поднять сервис, и читается здесь при построении уведомления.</summary>
     public static BackgroundSessionState CurrentState { get; set; } =
-        new(BackgroundSessionProjector.AppName, "Ожидание", false, false, false);
+        new(BackgroundSessionProjector.AppName, "Ожидание", false, false, false, null);
 
     public override IBinder? OnBind(Intent? intent) => null;
 
