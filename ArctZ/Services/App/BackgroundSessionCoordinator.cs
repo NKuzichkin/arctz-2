@@ -80,7 +80,7 @@ public sealed class BackgroundSessionCoordinator : IDisposable
             _program.PlaybackState,
             _program.StatusLabel,
             _program.ProgramName,
-            overallFraction: null);
+            _program.PhysicalOverallProgress);
 
         if (_lastSent == state)
         {

@@ -1,3 +1,5 @@
+using System;
+using System.Threading.Tasks;
 using ArctZ.Services.App;
 using ArctZ.Services.Device;
 using ArctZ.Services.Program;
@@ -124,5 +126,48 @@ public class BackgroundSessionCoordinatorTests
         _program.PlaybackState = PlaybackState.Running;
 
         Assert.Equal(updatesBeforeDispose, _host.Updates.Count);
+    }
+
+    [Fact]
+    public async Task WhilePositionAdvancesDuringRun_HostIsUpdatedOnlyWhenTheRoundedPercentChanges()
+    {
+        var transport = new FakeDeviceTransport();
+        var connection = new ConnectionViewModel(transport, () => new FakeDeviceTransport(), new DeviceSessionFactory(MachineLimits.Default), new SingleRealDeviceEndpointProvider());
+        var program = new ProgramViewModel(connection, new FakeProgramStorage(), new TrajectoryCompiler(), new FakeAppExitService());
+        using var coordinator = new BackgroundSessionCoordinator(program, _host);
+
+        await program.Connection.ConnectCommand.Execute();
+        foreach (var pose in new[] { "0,0,0,0", "100,0,0,0" })
+        {
+            transport.SimulateReceivedLine($"<Idle|WPos:{pose}|FS:0,0>");
+            program.CaptureKeyPointCommand.Execute(null);
+        }
+        for (var i = 0; i < program.KeyPoints.Count; i++)
+        {
+            program.KeyPoints[i] = program.KeyPoints[i] with { TransitionSeconds = 5, DwellSeconds = 0, Ease = EaseMode.None, ContinuousBlend = true };
+        }
+        program.ProgramId = Guid.NewGuid();
+        program.IsDirty = false;
+
+        // Capturing left the simulated machine at the last captured pose (100,0,0,0) — reset it
+        // to the program's actual starting pose before Play, so the tracker's captured starting
+        // vertex matches the "N of 100 units" comments below (same pattern as
+        // ProgramViewModelPlaybackTests.PlayAsync_AsThePositionAdvancesTowardTheFirstPoint_PhysicalOverallProgressTracksIt).
+        transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
+
+        var playTask = program.PlayCommand.ExecuteAsync(null);
+        var updatesBeforeMotion = _host.Updates.Count;
+
+        transport.SimulateReceivedLine("<Run|WPos:1.000,0.000,0.000,0.000|FS:0,0>"); // 1 of 100 units: rounds to 0%
+        Assert.Equal(updatesBeforeMotion, _host.Updates.Count);
+
+        transport.SimulateReceivedLine("<Run|WPos:5.000,0.000,0.000,0.000|FS:0,0>"); // 5 of 100: rounds to 5%
+        Assert.True(_host.Updates.Count > updatesBeforeMotion);
+        Assert.Equal(5, _host.LastUpdate!.Value.ProgressPercent);
+
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await program.StopCommand.ExecuteAsync(null);
+        await playTask;
     }
 }
