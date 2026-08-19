@@ -945,6 +945,45 @@ public class ProgramViewModelPlaybackTests
     }
 
     [Fact]
+    public async Task PlayAsync_StartsTheProgressTimerAtTheConfiguredInterval()
+    {
+        var vm = CreateViewModel(out var transport, out var progressTimer);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+        transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+
+        Assert.True(progressTimer.IsRunning);
+        Assert.Equal(TimeSpan.FromMilliseconds(200), progressTimer.LastInterval);
+
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
+        await playTask;
+    }
+
+    [Fact]
+    public async Task StopAsync_StopsTheProgressTimer()
+    {
+        var vm = CreateViewModel(out var transport, out var progressTimer);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+        transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+        Assert.True(progressTimer.IsRunning);
+
+        await vm.StopCommand.ExecuteAsync(null);
+        transport.SimulateReceivedLine("ok"); // resolves the command already in flight so playTask completes
+        await playTask;
+
+        Assert.False(progressTimer.IsRunning);
+    }
+
+    [Fact]
     public async Task PlayAsync_AsTimeElapsesDuringThePass_PhysicalOverallProgressTracksIt()
     {
         var currentTime = new DateTimeOffset(2026, 8, 19, 12, 0, 0, TimeSpan.Zero);
@@ -977,7 +1016,7 @@ public class ProgramViewModelPlaybackTests
     [Fact]
     public async Task PlayAsync_PhysicallyExecutingKeyPointId_CanLagTheAckBasedHighlightWhenTheBufferRunsAhead()
     {
-        var vm = CreateViewModel(out var transport, out var progressTimer);
+        var vm = CreateViewModel(out var transport, out _);
         await vm.Connection.ConnectCommand.Execute();
         SeedTwoSegmentProgram(vm, transport);
         // SeedTwoSegmentProgram leaves the simulated machine at the last captured pose (20,0,0,0) —
@@ -1079,6 +1118,35 @@ public class ProgramViewModelPlaybackTests
 
         Assert.Equal(0, vm.PhysicalOverallProgress);
         Assert.Null(vm.PhysicallyExecutingKeyPointId);
+    }
+
+    [Fact]
+    public async Task PauseAsync_ThenResume_ExcludesThePauseDurationFromElapsedProgress()
+    {
+        var currentTime = new DateTimeOffset(2026, 8, 19, 12, 0, 0, TimeSpan.Zero);
+        var vm = CreateViewModel(out var transport, out var progressTimer, () => currentTime);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+        transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+        currentTime = currentTime.AddSeconds(3);
+        progressTimer.RaiseElapsed();
+        Assert.Equal(0.2, vm.PhysicalOverallProgress); // 3 of the 15s total estimate (3 points x 5s)
+
+        await vm.PauseCommand.ExecuteAsync(null);
+        currentTime = currentTime.AddSeconds(100); // a long pause / reconnect
+        await vm.PlayCommand.ExecuteAsync(null); // resume — same idiom as this file's other pause/resume tests
+        progressTimer.RaiseElapsed();
+
+        Assert.Equal(0.2, vm.PhysicalOverallProgress); // the 100s pause must not count as elapsed progress
+
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
+        await playTask;
     }
 
     [Fact]

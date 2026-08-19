@@ -174,4 +174,42 @@ public class BackgroundSessionCoordinatorTests
         await program.StopCommand.ExecuteAsync(null);
         await playTask;
     }
+
+    [Fact]
+    public async Task WhileStationaryDuringADwell_HostStillUpdatesAsTimeElapses()
+    {
+        var currentTime = new DateTimeOffset(2026, 8, 19, 12, 0, 0, TimeSpan.Zero);
+        var transport = new FakeDeviceTransport();
+        var connection = new ConnectionViewModel(transport, () => new FakeDeviceTransport(), new DeviceSessionFactory(MachineLimits.Default), new SingleRealDeviceEndpointProvider());
+        var program = new ProgramViewModel(connection, new FakeProgramStorage(), new TrajectoryCompiler(), new FakeAppExitService(), () => currentTime);
+        using var coordinator = new BackgroundSessionCoordinator(program, _host);
+
+        await program.Connection.ConnectCommand.Execute();
+        foreach (var pose in new[] { "0,0,0,0", "100,0,0,0" })
+        {
+            transport.SimulateReceivedLine($"<Idle|WPos:{pose}|FS:0,0>");
+            program.CaptureKeyPointCommand.Execute(null);
+        }
+        for (var i = 0; i < program.KeyPoints.Count; i++)
+        {
+            program.KeyPoints[i] = program.KeyPoints[i] with { TransitionSeconds = 5, DwellSeconds = 0, Ease = EaseMode.None, ContinuousBlend = true };
+        }
+        program.ProgramId = Guid.NewGuid();
+        program.IsDirty = false;
+        transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
+
+        var playTask = program.PlayCommand.ExecuteAsync(null);
+
+        // No position change at all between these two ticks (as if the machine were dwelling) —
+        // only elapsed time moves. 10s total estimate (2 points x 5s); 0.5s = 5%.
+        currentTime = currentTime.AddSeconds(0.5);
+        program.OnClockTickForTests();
+
+        Assert.Equal(5, _host.LastUpdate!.Value.ProgressPercent);
+
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await program.StopCommand.ExecuteAsync(null);
+        await playTask;
+    }
 }

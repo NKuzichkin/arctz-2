@@ -65,7 +65,7 @@ public class TimeProgressTrackerTests
         tracker.OnPositionUpdated(new MachinePose(15, 0, 0, 0), T0.AddSeconds(12));
         Assert.Equal(1, tracker.CurrentSegmentIndex);
 
-        tracker.OnPositionUpdated(new MachinePose(12, 0, 0, 0), T0.AddSeconds(13)); // controller cornering smoothing noise
+        tracker.OnPositionUpdated(new MachinePose(8, 0, 0, 0), T0.AddSeconds(13)); // noise projecting back into segment 0's own span — without the monotonic guard this would flip CurrentSegmentIndex back to 0
 
         Assert.Equal(1, tracker.CurrentSegmentIndex);
     }

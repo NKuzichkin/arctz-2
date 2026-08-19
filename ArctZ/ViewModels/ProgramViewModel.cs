@@ -28,6 +28,7 @@ public partial class ProgramViewModel : ViewModelBase
     private readonly IPeriodicTimer _progressTimer;
     private readonly TimeSpan _progressTimerInterval;
     private TimeProgressTracker? _progressTracker;
+    private DateTimeOffset? _pausedAt;
     private JoystickAxisInput _leftInput;
     private JoystickAxisInput _rightInput;
     private bool _leftActive;
@@ -149,6 +150,11 @@ public partial class ProgramViewModel : ViewModelBase
     {
         _progressTracker?.OnClockTick(_now());
     }
+
+    /// <summary>Test hook: lets tests drive a progress-tracker clock tick without a real/manual
+    /// periodic timer in play (this coordinator test constructs its own ProgramViewModel without
+    /// wiring a ManualPeriodicTimer).</summary>
+    internal void OnClockTickForTests() => OnProgressTimerElapsed();
 
     partial void OnProgramNameChanged(string value) => MarkDirtyIfTracking();
 
@@ -830,6 +836,20 @@ public partial class ProgramViewModel : ViewModelBase
         {
             _motionIdleSignal?.TrySetResult(false);
             ClearProgressTracker();
+        }
+
+        if (value == PlaybackState.Paused)
+        {
+            _pausedAt = _now();
+        }
+        else if (value == PlaybackState.Running && _pausedAt is { } pausedAt)
+        {
+            _progressTracker?.ShiftForPause(_now() - pausedAt);
+            _pausedAt = null;
+        }
+        else if (value is PlaybackState.Stopped or PlaybackState.Faulted)
+        {
+            _pausedAt = null;
         }
 
         if (value == PlaybackState.Running)

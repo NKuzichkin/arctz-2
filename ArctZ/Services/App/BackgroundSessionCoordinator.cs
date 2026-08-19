@@ -37,7 +37,8 @@ public sealed class BackgroundSessionCoordinator : IDisposable
     {
         if (e.PropertyName is nameof(ProgramViewModel.PlaybackState)
             or nameof(ProgramViewModel.StatusLabel)
-            or nameof(ProgramViewModel.ProgramName))
+            or nameof(ProgramViewModel.ProgramName)
+            or nameof(ProgramViewModel.PhysicalOverallProgress))
         {
             Refresh();
         }

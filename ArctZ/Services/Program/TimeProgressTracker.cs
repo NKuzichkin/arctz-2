@@ -40,7 +40,7 @@ public sealed class TimeProgressTracker
     private readonly Edge[] _edges;
     private readonly Dictionary<int, double> _segmentEstimatedSeconds = new();
     private readonly double _totalEstimatedSeconds;
-    private readonly DateTimeOffset _passStartedAt;
+    private DateTimeOffset _passStartedAt;
 
     private double _farthestCumulativeDistance;
     private int? _lastSegmentIndex;
@@ -125,6 +125,18 @@ public sealed class TimeProgressTracker
     }
 
     public void OnClockTick(DateTimeOffset now) => Recompute(now);
+
+    /// <summary>
+    /// Shifts the pass-start and current-segment-entry clocks forward by a paused interval, so
+    /// time spent paused — including an arbitrarily long link-loss reconnect (see
+    /// ProgramViewModel.ApplySessionConnectionState) — never counts as elapsed progress or
+    /// triggers a false time-overage warning.
+    /// </summary>
+    public void ShiftForPause(TimeSpan pauseDuration)
+    {
+        _passStartedAt += pauseDuration;
+        _currentSegmentEnteredAt += pauseDuration;
+    }
 
     private void Recompute(DateTimeOffset now)
     {
