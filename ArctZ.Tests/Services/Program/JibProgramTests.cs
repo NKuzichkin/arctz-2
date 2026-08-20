@@ -84,11 +84,26 @@ public class JibProgramTests
     [Theory]
     [InlineData(null)]
     [InlineData(-1)]
-    [InlineData(3)]
+    [InlineData(4)]
     public void TargetKeyPoint_NullOrOutOfRangeIndex_ReturnsNull(int? segmentIndex)
     {
         var points = new List<KeyPoint> { SimplePoint(1), SimplePoint(2), SimplePoint(3) };
 
         Assert.Null(JibProgram.TargetKeyPoint(points, segmentIndex, backward: false));
+    }
+
+    /// <summary>
+    /// Index == points.Count is the synthetic "return to start" step appended after the real
+    /// segments when ReturnToStartOnFinish is set (an N-point program becomes N+1 steps, e.g.
+    /// 1-2-3-1) — it always targets the first key point, regardless of pass direction.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void TargetKeyPoint_IndexEqualToCount_TargetsTheFirstKeyPointRegardlessOfDirection(bool backward)
+    {
+        var points = new List<KeyPoint> { SimplePoint(1), SimplePoint(2), SimplePoint(3) };
+
+        Assert.Equal(points[0].Id, JibProgram.TargetKeyPoint(points, segmentIndex: 3, backward));
     }
 }

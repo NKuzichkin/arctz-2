@@ -397,37 +397,61 @@ public partial class ProgramViewModel : ViewModelBase
     }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsAnyBlockingDialogVisible))]
     private ConfirmationRequest? _pendingConfirmation;
 
-    private Task<bool> ConfirmAsync(string message)
+    // A caller (e.g. PlayAsync's EnsureProgramSavedAsync) can be asked to show a dialog while
+    // another one raised by an unrelated command is still pending — most commonly via the
+    // Android foreground-notification "Продолжить" action, which invokes PlayCommand.Execute
+    // directly and bypasses both CanExecute and the header's IsEnabled gate. Waiting for the
+    // in-flight request instead of overwriting the field avoids orphaning its TaskCompletionSource
+    // (see CLAUDE.md's async-dialog note and problems_20_08_2026.md #2).
+    private async Task<bool> ConfirmAsync(string message)
     {
+        while (PendingConfirmation is { } existing)
+        {
+            await existing.Completion.Task;
+        }
+
         var completion = new TaskCompletionSource<bool>();
         PendingConfirmation = new ConfirmationRequest(message, completion);
-        return completion.Task;
+        return await completion.Task;
     }
 
+    // Clearing the field before TrySetResult (rather than after, as it read before this fix)
+    // matters once a second caller can be queued on ConfirmAsync's while-loop above: without a
+    // SynchronizationContext (e.g. in tests), TrySetResult runs its awaiters synchronously and
+    // inline, so a queued waiter would otherwise observe the stale non-null field and spin.
     [RelayCommand]
     private void ConfirmYes()
     {
-        PendingConfirmation?.Completion.TrySetResult(true);
+        var pending = PendingConfirmation;
         PendingConfirmation = null;
+        pending?.Completion.TrySetResult(true);
     }
 
     [RelayCommand]
     private void ConfirmNo()
     {
-        PendingConfirmation?.Completion.TrySetResult(false);
+        var pending = PendingConfirmation;
         PendingConfirmation = null;
+        pending?.Completion.TrySetResult(false);
     }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsAnyBlockingDialogVisible))]
     private RenameProgramRequest? _pendingRename;
 
-    private Task<string?> RequestNameAsync(string initialName)
+    private async Task<string?> RequestNameAsync(string initialName)
     {
+        while (PendingRename is { } existing)
+        {
+            await existing.Completion.Task;
+        }
+
         var completion = new TaskCompletionSource<string?>();
         PendingRename = new RenameProgramRequest(initialName, completion);
-        return completion.Task;
+        return await completion.Task;
     }
 
     [RelayCommand]
@@ -439,16 +463,25 @@ public partial class ProgramViewModel : ViewModelBase
             return;
         }
 
-        PendingRename?.Completion.TrySetResult(name);
+        var pending = PendingRename;
         PendingRename = null;
+        pending?.Completion.TrySetResult(name);
     }
 
     [RelayCommand]
     private void CancelRename()
     {
-        PendingRename?.Completion.TrySetResult(null);
+        var pending = PendingRename;
         PendingRename = null;
+        pending?.Completion.TrySetResult(null);
     }
+
+    // TCS-gated dialogs (ConfirmAsync/RequestNameAsync above) must block header actions
+    // (Пуск/Пауза/Стоп/Отключить) the same way Connection's own modals do — otherwise a
+    // header command can open a second TCS-gated dialog while one is already pending,
+    // orphaning the first TaskCompletionSource forever (see CLAUDE.md's async-dialog note).
+    public bool IsAnyBlockingDialogVisible =>
+        Connection.IsAnyModalVisible || PendingConfirmation is not null || PendingRename is not null;
 
     [RelayCommand]
     private async Task RenameProgramAsync()
@@ -1095,6 +1128,12 @@ public partial class ProgramViewModel : ViewModelBase
             return;
         }
 
+        if (e.PropertyName == nameof(ConnectionViewModel.IsAnyModalVisible))
+        {
+            OnPropertyChanged(nameof(IsAnyBlockingDialogVisible));
+            return;
+        }
+
         if (e.PropertyName != nameof(ConnectionViewModel.Session))
         {
             return;
@@ -1176,7 +1215,7 @@ public partial class ProgramViewModel : ViewModelBase
         Connection.Session is not null &&
         !_startingPlayback &&
         PlaybackState != PlaybackState.Running &&
-        (PlaybackState != PlaybackState.Paused || !_pausedForLinkLoss || Connection.Session.ConnectionState == ConnectionState.Connected);
+        Connection.Session.ConnectionState == ConnectionState.Connected;
 
     private bool CanPause() => PlaybackState == PlaybackState.Running && Connection.Session is not null;
 
@@ -1257,7 +1296,9 @@ public partial class ProgramViewModel : ViewModelBase
         CurrentSegmentIndex = null;
         SegmentProgress = 0;
         FaultedAtSegmentIndex = null;
-        TotalSegments = KeyPoints.Count;
+        // With ReturnToStartOnFinish, the program is treated as one extra step (1-2-3-1 for a
+        // 3-point program) throughout progress tracking, not just at dispatch time.
+        TotalSegments = KeyPoints.Count + (ReturnToStartOnFinish ? 1 : 0);
 
         var cycle = 0;
         while (true)
@@ -1298,6 +1339,19 @@ public partial class ProgramViewModel : ViewModelBase
             return;
         }
 
+        // Extending the tracker's estimate BEFORE this wait (rather than after, once the return
+        // move is actually dispatched) matters: without it, the still-15s-for-a-3-point-pass
+        // estimate saturates OverallFraction at 100% for however long this wait takes (real motion
+        // routinely overruns the naive per-point estimate — see JogTrace/hardware notes elsewhere),
+        // and the bar sits pinned at 100% before the return move even starts. Extending here gives
+        // it headroom so it only actually reaches 100% once the return move itself finishes.
+        var returnSteps = ReturnToStartOnFinish ? BuildReturnToStartSteps() : null;
+        if (returnSteps is not null)
+        {
+            _progressTracker?.Extend(returnSteps, _now());
+            OnProgressTrackerChanged();
+        }
+
         await WaitForMotionToFinishAsync();
 
         if (PlaybackState != PlaybackState.Running)
@@ -1305,9 +1359,9 @@ public partial class ProgramViewModel : ViewModelBase
             return;
         }
 
-        if (ReturnToStartOnFinish)
+        if (returnSteps is not null)
         {
-            if (!await RunReturnToStartMoveAsync())
+            if (!await RunReturnToStartStepAsync(returnSteps))
             {
                 return;
             }
@@ -1321,6 +1375,28 @@ public partial class ProgramViewModel : ViewModelBase
         }
 
         PlaybackState = PlaybackState.Completed;
+    }
+
+    /// <summary>
+    /// Compiles the ReturnToStartOnFinish move as the program's own synthetic (N+1)th step — a
+    /// real move from wherever the last pass ended to the first key point, using that point's own
+    /// ease/dwell/transition settings (so it truly replays key point 1, not a bare line) — and
+    /// remaps its segment index to KeyPoints.Count so it participates in TotalSegments/progress
+    /// tracking/highlighting exactly like any other step. JibProgram.Segments() always emits a
+    /// leading zero-distance self-move segment (index 0) before the real move (index 1); only the
+    /// real move is kept.
+    /// </summary>
+    private IReadOnlyList<CompiledStep> BuildReturnToStartSteps()
+    {
+        var from = _currentPassBackward ? KeyPoints[0] : KeyPoints[^1];
+        var miniProgram = new JibProgram();
+        miniProgram.KeyPoints.Add(from);
+        miniProgram.KeyPoints.Add(KeyPoints[0]);
+
+        return _compiler.Compile(miniProgram)
+            .Where(step => step.SegmentIndex == 1)
+            .Select(step => step with { SegmentIndex = KeyPoints.Count })
+            .ToList();
     }
 
     private static JibProgram ReversedProgram(JibProgram source)
@@ -1407,6 +1483,29 @@ public partial class ProgramViewModel : ViewModelBase
         _progressTracker.SegmentTimeOverage += OnSegmentTimeOverage;
         OnProgressTrackerChanged();
 
+        return await DispatchStepsAsync(steps);
+    }
+
+    /// <summary>
+    /// Dispatches the ReturnToStartOnFinish move as the current pass's own trailing (N+1)th step
+    /// rather than a new pass. The caller must have already extended _progressTracker with these
+    /// same <paramref name="steps"/> (see TimeProgressTracker.Extend) — done separately, and
+    /// earlier than this dispatch, so PhysicalOverallProgress has the bigger total estimate in
+    /// place for the wait that precedes this call too, not just for the move itself; see the
+    /// call site in PlayAsync for why that timing matters.
+    /// </summary>
+    private async Task<bool> RunReturnToStartStepAsync(IReadOnlyList<CompiledStep> steps)
+    {
+        if (!await ResolveRunningStateAsync())
+        {
+            return false;
+        }
+
+        return await DispatchStepsAsync(steps);
+    }
+
+    private async Task<bool> DispatchStepsAsync(IReadOnlyList<CompiledStep> steps)
+    {
         var dispatched = new (CompiledStep Step, Task<CommandResult> Completion)[steps.Count];
         for (var i = 0; i < steps.Count; i++)
         {

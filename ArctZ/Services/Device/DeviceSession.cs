@@ -267,10 +267,19 @@ public sealed class DeviceSession : IDeviceSession
     {
         if (result.Outcome is CommandOutcome.Rejected or CommandOutcome.Aborted)
         {
-            CommandRejected?.Invoke(new CommandRejectedEventArgs(command, result.ErrorCode));
+            _eventQueue.Enqueue(() => CommandRejected?.Invoke(new CommandRejectedEventArgs(command, result.ErrorCode)));
         }
     }
 
+    // _jogScheduler.TryHandleAck()/UpdateStatus() and _commandQueue.HandleOk()/HandleError()/
+    // UpdateBufferCapacity() are left as direct top-level calls below rather than folded into an
+    // _eventQueue.Enqueue(...) here: they already serialize themselves (JogScheduler through this
+    // same _eventQueue, BufferAwareCommandQueue through its own lock), and TryHandleAck()'s return
+    // value relies on its enqueued action running inline — nesting it inside another Enqueue call
+    // would defer it and make TryHandleAck() always report "not consumed". Only the state this
+    // class owns directly (DeviceStatus/_plannerCapacity, and the events it raises) needs to move
+    // into the queue, to serialize against the ConnectionState/_connectionGeneration mutations
+    // that ConnectAsync/DisconnectAsync/OnTransportDisconnected already enqueue.
     private void OnLineReceived(string rawLine)
     {
         switch (_statusParser.Parse(rawLine))
@@ -292,14 +301,17 @@ public sealed class DeviceSession : IDeviceSession
 
                 break;
             case AlarmLine alarm:
-                AlarmTriggered?.Invoke(alarm.Code);
+                _eventQueue.Enqueue(() => AlarmTriggered?.Invoke(alarm.Code));
                 break;
             case StatusReportLine report:
-                DeviceStatus = report.Status;
-                if (report.Status.PlannerBlocksAvailable is { } free)
+                _eventQueue.Enqueue(() =>
                 {
-                    _plannerCapacity = Math.Max(_plannerCapacity, free);
-                }
+                    DeviceStatus = report.Status;
+                    if (report.Status.PlannerBlocksAvailable is { } free)
+                    {
+                        _plannerCapacity = Math.Max(_plannerCapacity, free);
+                    }
+                });
 
                 if (report.Status.PlannerBlocksAvailable is { } planner && report.Status.RxBytesAvailable is { } rx)
                 {
@@ -307,7 +319,7 @@ public sealed class DeviceSession : IDeviceSession
                 }
 
                 _jogScheduler.UpdateStatus(report.Status);
-                DeviceStatusChanged?.Invoke();
+                _eventQueue.Enqueue(() => DeviceStatusChanged?.Invoke());
                 break;
             case UnrecognizedLine:
                 break;

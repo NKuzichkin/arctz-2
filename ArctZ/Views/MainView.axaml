@@ -98,7 +98,7 @@
     </UserControl.Styles>
 
     <Grid>
-        <DockPanel IsEnabled="{Binding !Connection.IsAnyModalVisible}">
+        <DockPanel IsEnabled="{Binding !IsAnyBlockingDialogVisible}">
             <Border x:Name="HeaderBorder" DockPanel.Dock="Top" Classes="reveal-1"
                     Background="{StaticResource HudPanelBrush}"
                     BorderBrush="{StaticResource HudBorderBrush}"
@@ -477,57 +477,6 @@
                     </Border>
                 </Border>
 
-                <Border IsVisible="{Binding PendingRename, Converter={x:Static ObjectConverters.IsNotNull}}" Background="{StaticResource HudScrimBrush}">
-                    <Border x:DataType="vm:RenameProgramRequest" DataContext="{Binding PendingRename}"
-                            Width="320" Background="{StaticResource HudPanelElevatedBrush}"
-                            BorderBrush="{StaticResource HudBorderStrongBrush}" BorderThickness="1"
-                            Padding="20" HorizontalAlignment="Center" VerticalAlignment="Center">
-                        <StackPanel Spacing="14">
-                            <TextBlock Classes="section-heading" Text="ИМЯ ПРОГРАММЫ" />
-                            <TextBox Text="{Binding Name}" PlaceholderText="Имя программы" />
-                            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
-                                <Button Command="{Binding ((vm:ProgramViewModel)DataContext).CancelRenameCommand, ElementName=RootPanel}">
-                                    <StackPanel Orientation="Horizontal" Spacing="6">
-                                        <materialIcons:MaterialIcon Kind="Close" Width="16" Height="16" VerticalAlignment="Center" />
-                                        <TextBlock Text="Отмена" VerticalAlignment="Center" />
-                                    </StackPanel>
-                                </Button>
-                                <Button Classes="primary" Command="{Binding ((vm:ProgramViewModel)DataContext).ConfirmRenameCommand, ElementName=RootPanel}">
-                                    <StackPanel Orientation="Horizontal" Spacing="6">
-                                        <materialIcons:MaterialIcon Kind="ContentSave" Width="16" Height="16" VerticalAlignment="Center" />
-                                        <TextBlock Text="Сохранить" VerticalAlignment="Center" />
-                                    </StackPanel>
-                                </Button>
-                            </StackPanel>
-                        </StackPanel>
-                    </Border>
-                </Border>
-
-                <Border IsVisible="{Binding PendingConfirmation, Converter={x:Static ObjectConverters.IsNotNull}}" Background="{StaticResource HudScrimBrush}">
-                    <Border x:DataType="vm:ConfirmationRequest" DataContext="{Binding PendingConfirmation}"
-                            Width="360" Background="{StaticResource HudPanelElevatedBrush}"
-                            BorderBrush="{StaticResource HudBorderStrongBrush}" BorderThickness="1"
-                            Padding="20" HorizontalAlignment="Center" VerticalAlignment="Center">
-                        <StackPanel Spacing="14">
-                            <TextBlock Text="{Binding Message}" TextWrapping="Wrap" />
-                            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
-                                <Button Command="{Binding ((vm:ProgramViewModel)DataContext).ConfirmNoCommand, ElementName=RootPanel}">
-                                    <StackPanel Orientation="Horizontal" Spacing="6">
-                                        <materialIcons:MaterialIcon Kind="Close" Width="16" Height="16" VerticalAlignment="Center" />
-                                        <TextBlock Text="Нет" VerticalAlignment="Center" />
-                                    </StackPanel>
-                                </Button>
-                                <Button Classes="primary" Command="{Binding ((vm:ProgramViewModel)DataContext).ConfirmYesCommand, ElementName=RootPanel}">
-                                    <StackPanel Orientation="Horizontal" Spacing="6">
-                                        <materialIcons:MaterialIcon Kind="Check" Width="16" Height="16" VerticalAlignment="Center" />
-                                        <TextBlock Text="Да" VerticalAlignment="Center" />
-                                    </StackPanel>
-                                </Button>
-                            </StackPanel>
-                        </StackPanel>
-                    </Border>
-                </Border>
-
                 <Border IsVisible="{Binding IsLibraryOpen}" Background="{StaticResource HudScrimBrush}">
                     <Border Width="420" MaxHeight="480" Background="{StaticResource HudPanelElevatedBrush}"
                             BorderBrush="{StaticResource HudBorderStrongBrush}" BorderThickness="1"
@@ -746,6 +695,59 @@
                 </Border>
             </Grid>
         </DockPanel>
+
+        <!-- Полноэкранные, а не вложенные в RootPanel: диалог должен перекрывать и хэдер,
+             чтобы Пуск/Пауза/Стоп/Отключить не остались кликабельными поверх открытого TCS-диалога. -->
+        <Border IsVisible="{Binding PendingRename, Converter={x:Static ObjectConverters.IsNotNull}}" Background="{StaticResource HudScrimBrush}">
+            <Border x:DataType="vm:RenameProgramRequest" DataContext="{Binding PendingRename}"
+                    Width="320" Background="{StaticResource HudPanelElevatedBrush}"
+                    BorderBrush="{StaticResource HudBorderStrongBrush}" BorderThickness="1"
+                    Padding="20" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel Spacing="14">
+                    <TextBlock Classes="section-heading" Text="ИМЯ ПРОГРАММЫ" />
+                    <TextBox Text="{Binding Name}" PlaceholderText="Имя программы" />
+                    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                        <Button Command="{Binding ((vm:ProgramViewModel)DataContext).CancelRenameCommand, ElementName=RootPanel}">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <materialIcons:MaterialIcon Kind="Close" Width="16" Height="16" VerticalAlignment="Center" />
+                                <TextBlock Text="Отмена" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                        <Button Classes="primary" Command="{Binding ((vm:ProgramViewModel)DataContext).ConfirmRenameCommand, ElementName=RootPanel}">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <materialIcons:MaterialIcon Kind="ContentSave" Width="16" Height="16" VerticalAlignment="Center" />
+                                <TextBlock Text="Сохранить" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <Border IsVisible="{Binding PendingConfirmation, Converter={x:Static ObjectConverters.IsNotNull}}" Background="{StaticResource HudScrimBrush}">
+            <Border x:DataType="vm:ConfirmationRequest" DataContext="{Binding PendingConfirmation}"
+                    Width="360" Background="{StaticResource HudPanelElevatedBrush}"
+                    BorderBrush="{StaticResource HudBorderStrongBrush}" BorderThickness="1"
+                    Padding="20" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel Spacing="14">
+                    <TextBlock Text="{Binding Message}" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                        <Button Command="{Binding ((vm:ProgramViewModel)DataContext).ConfirmNoCommand, ElementName=RootPanel}">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <materialIcons:MaterialIcon Kind="Close" Width="16" Height="16" VerticalAlignment="Center" />
+                                <TextBlock Text="Нет" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                        <Button Classes="primary" Command="{Binding ((vm:ProgramViewModel)DataContext).ConfirmYesCommand, ElementName=RootPanel}">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <materialIcons:MaterialIcon Kind="Check" Width="16" Height="16" VerticalAlignment="Center" />
+                                <TextBlock Text="Да" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
 
         <Border IsVisible="{Binding Connection.IsAutoConnectSplashVisible}" Background="{StaticResource HudScrimBrush}">
             <StackPanel x:DataType="vm:ConnectionViewModel" DataContext="{Binding Connection}"

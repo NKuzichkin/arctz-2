@@ -43,12 +43,22 @@ public sealed class JibProgram
     /// reversed program for a backward/PingPong pass) to the key point it targets in
     /// <paramref name="forwardKeyPoints"/> — the pass's own original (forward) order. A backward
     /// pass compiles a reversed program, whose own segment index 0 targets the *last* forward
-    /// point, hence <c>Count - 1 - segmentIndex</c>.</summary>
+    /// point, hence <c>Count - 1 - segmentIndex</c>.
+    ///
+    /// Index <c>forwardKeyPoints.Count</c> is the synthetic "return to start" step appended after
+    /// every real segment when ReturnToStartOnFinish is set (so an N-point program is treated as
+    /// N+1 steps, e.g. 1-2-3-1) — it always targets the first key point, regardless of which
+    /// direction the pass that reached it was running in.</summary>
     public static Guid? TargetKeyPoint(IReadOnlyList<KeyPoint> forwardKeyPoints, int? segmentIndex, bool backward)
     {
         if (segmentIndex is not { } index)
         {
             return null;
+        }
+
+        if (index == forwardKeyPoints.Count)
+        {
+            return forwardKeyPoints.Count > 0 ? forwardKeyPoints[0].Id : null;
         }
 
         var targetIndex = backward ? forwardKeyPoints.Count - 1 - index : index;

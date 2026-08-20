@@ -37,9 +37,9 @@ public sealed class TimeProgressTracker
         public required double CumulativeBefore { get; init; }
     }
 
-    private readonly Edge[] _edges;
+    private readonly List<Edge> _edges = new();
     private readonly Dictionary<int, double> _segmentEstimatedSeconds = new();
-    private readonly double _totalEstimatedSeconds;
+    private double _totalEstimatedSeconds;
     private DateTimeOffset _passStartedAt;
 
     private double _farthestCumulativeDistance;
@@ -61,29 +61,7 @@ public sealed class TimeProgressTracker
         _passStartedAt = passStartedAt;
         _currentSegmentEnteredAt = passStartedAt;
 
-        _edges = new Edge[steps.Count];
-        var previousPose = startingPose;
-        var cumulative = 0.0;
-
-        for (var i = 0; i < steps.Count; i++)
-        {
-            var length = Distance(previousPose, steps[i].Pose);
-            _edges[i] = new Edge
-            {
-                From = previousPose,
-                To = steps[i].Pose,
-                SegmentIndex = steps[i].SegmentIndex,
-                Length = length,
-                CumulativeBefore = cumulative,
-            };
-
-            _segmentEstimatedSeconds[steps[i].SegmentIndex] =
-                _segmentEstimatedSeconds.GetValueOrDefault(steps[i].SegmentIndex) + steps[i].EstimatedDurationSeconds;
-            _totalEstimatedSeconds += steps[i].EstimatedDurationSeconds;
-
-            cumulative += length;
-            previousPose = steps[i].Pose;
-        }
+        AppendEdges(steps, startingPose);
 
         // Captured here, not left to default(int?)/null, so the FIRST OnPositionUpdated/OnClockTick
         // call after construction doesn't mistake "no prior recorded segment" for "just entered
@@ -93,17 +71,57 @@ public sealed class TimeProgressTracker
         _lastSegmentIndex = CurrentSegmentIndex;
     }
 
+    /// <summary>
+    /// Appends more steps to the tail of the currently in-flight pass instead of starting a fresh
+    /// one — used for the ReturnToStartOnFinish move, which is the same pass's own extra (N+1)th
+    /// step, not a new pass: OverallFraction must keep growing against the bigger total estimate
+    /// instead of resetting to 0%. <paramref name="now"/> immediately recomputes the public
+    /// properties against the new total so callers observe the (lower, but non-zero) fraction
+    /// right away rather than waiting for the next clock tick.
+    /// </summary>
+    public void Extend(IReadOnlyList<CompiledStep> steps, DateTimeOffset now)
+    {
+        AppendEdges(steps, _edges.Count > 0 ? _edges[^1].To : MachinePose.Zero);
+        Recompute(now);
+    }
+
+    private void AppendEdges(IReadOnlyList<CompiledStep> steps, MachinePose startingPose)
+    {
+        var previousPose = startingPose;
+        var cumulative = _edges.Count > 0 ? _edges[^1].CumulativeBefore + _edges[^1].Length : 0.0;
+
+        foreach (var step in steps)
+        {
+            var length = Distance(previousPose, step.Pose);
+            _edges.Add(new Edge
+            {
+                From = previousPose,
+                To = step.Pose,
+                SegmentIndex = step.SegmentIndex,
+                Length = length,
+                CumulativeBefore = cumulative,
+            });
+
+            _segmentEstimatedSeconds[step.SegmentIndex] =
+                _segmentEstimatedSeconds.GetValueOrDefault(step.SegmentIndex) + step.EstimatedDurationSeconds;
+            _totalEstimatedSeconds += step.EstimatedDurationSeconds;
+
+            cumulative += length;
+            previousPose = step.Pose;
+        }
+    }
+
     public double OverallFraction { get; private set; }
 
     public double CurrentStepFraction { get; private set; }
 
     public bool CurrentPointHasWarning { get; private set; }
 
-    public int? CurrentSegmentIndex => _edges.Length == 0 ? null : _edges[FindEdgeIndexAt(_farthestCumulativeDistance)].SegmentIndex;
+    public int? CurrentSegmentIndex => _edges.Count == 0 ? null : _edges[FindEdgeIndexAt(_farthestCumulativeDistance)].SegmentIndex;
 
     public void OnPositionUpdated(MachinePose position, DateTimeOffset now)
     {
-        if (_edges.Length > 0)
+        if (_edges.Count > 0)
         {
             var bestCumulative = _farthestCumulativeDistance;
             var bestDistance = double.MaxValue;
@@ -196,7 +214,7 @@ public sealed class TimeProgressTracker
 
     private int FindEdgeIndexAt(double cumulative)
     {
-        for (var i = 0; i < _edges.Length - 1; i++)
+        for (var i = 0; i < _edges.Count - 1; i++)
         {
             if (cumulative <= _edges[i].CumulativeBefore + _edges[i].Length)
             {
@@ -204,7 +222,7 @@ public sealed class TimeProgressTracker
             }
         }
 
-        return _edges.Length - 1;
+        return _edges.Count - 1;
     }
 
     private static double Distance(MachinePose a, MachinePose b) => Math.Sqrt(

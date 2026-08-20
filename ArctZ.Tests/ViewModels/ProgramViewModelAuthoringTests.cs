@@ -430,6 +430,43 @@ public class ProgramViewModelAuthoringTests
     }
 
     [Fact]
+    public async Task RenameProgramAsync_CollidesWithConcurrentSaveProgramAsync_QueuesInsteadOfOrphaningFirstDialog()
+    {
+        // Reproduces problems_20_08_2026.md #2: a second RequestNameAsync call (here, from
+        // SaveProgramAsync's ProgramId==null branch) must not silently overwrite PendingRename
+        // while a first one (from RenameProgramAsync) is still awaiting user response — that
+        // would orphan the first TaskCompletionSource and hang its awaiter forever.
+        var vm = CreateViewModel(out _, out _);
+        vm.ProgramName = "Старое имя";
+
+        var renameTask = vm.RenameProgramCommand.ExecuteAsync(null);
+        var firstPending = vm.PendingRename;
+        Assert.NotNull(firstPending);
+
+        var saveTask = vm.SaveProgramCommand.ExecuteAsync(null);
+
+        // The still-pending first dialog must remain in place, not be replaced by the second caller.
+        Assert.Same(firstPending, vm.PendingRename);
+
+        vm.PendingRename!.Name = "Первое имя";
+        vm.ConfirmRenameCommand.Execute(null);
+        await renameTask;
+
+        Assert.Equal("Первое имя", vm.ProgramName);
+
+        // SaveProgramAsync's own request should now have taken over the field.
+        Assert.NotNull(vm.PendingRename);
+        Assert.NotSame(firstPending, vm.PendingRename);
+
+        vm.PendingRename!.Name = "Второе имя";
+        vm.ConfirmRenameCommand.Execute(null);
+        await saveTask;
+
+        Assert.Equal("Второе имя", vm.ProgramName);
+        Assert.NotNull(vm.ProgramId);
+    }
+
+    [Fact]
     public void EditCompletionSettings_OpensEditorPrefilledFromCurrentSettings()
     {
         var vm = CreateViewModel(out _, out _);

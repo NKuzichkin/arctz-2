@@ -290,6 +290,32 @@ public class ProgramViewModelPlaybackTests
         Assert.Equal(PlaybackState.Faulted, vm.PlaybackState);
     }
 
+    /// <summary>
+    /// Link loss while nothing has ever run leaves PlaybackState at Idle (ApplySessionConnectionState
+    /// only reacts to Reconnecting while Running). CanPlay() must still refuse Play in that state,
+    /// not only the Paused-resume branch, or a stale Play dispatches G-code into a dead transport
+    /// and hangs on an ack that never arrives.
+    /// </summary>
+    [Fact]
+    public async Task Play_IsRefused_WhenReconnectingBeforeAnyPlaybackHasStarted()
+    {
+        var vm = CreateViewModel(out var transport);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+        transport.ConnectFailuresRemaining = 10;
+
+        transport.SimulateDisconnect();
+
+        Assert.Equal(PlaybackState.Idle, vm.PlaybackState);
+        Assert.False(vm.PlayCommand.CanExecute(null));
+
+        var sentLinesBeforePlay = transport.SentLines.Count;
+        await vm.PlayCommand.ExecuteAsync(null);
+
+        Assert.Equal(PlaybackState.Idle, vm.PlaybackState);
+        Assert.Equal(sentLinesBeforePlay, transport.SentLines.Count);
+    }
+
     [Fact]
     public void CurrentlyExecutingKeyPointId_IsNull_WhileIdle()
     {
@@ -759,6 +785,47 @@ public class ProgramViewModelPlaybackTests
         Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
     }
 
+    /// <summary>
+    /// A 3-key-point program with ReturnToStartOnFinish must be treated as 4 steps (1-2-3-1):
+    /// TotalSegments counts the return move, and while it is in flight the UI must highlight the
+    /// first key point as currently executing again — not show the run as already 100% done.
+    /// </summary>
+    [Fact]
+    public async Task PlayAsync_ReturnToStartOnFinish_TreatsTheReturnMoveAsAFourthStepTargetingTheFirstKeyPoint()
+    {
+        var vm = CreateViewModel(out var transport);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+        vm.ReturnToStartOnFinish = true;
+        vm.IsDirty = false; // completion-settings change above must not re-trigger the save gate
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+
+        Assert.Equal(4, vm.TotalSegments); // 3 key points + the return-to-start step
+
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+        Assert.Equal(3.0 / 4, vm.OverallProgress); // 3 of 4 steps acked, before the return move is even dispatched
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
+
+        await WaitUntilAsync(
+            () => transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)) == 4,
+            TimeSpan.FromSeconds(1));
+
+        transport.SimulateReceivedLine("ok"); // acks the return-to-start move
+        await WaitUntilAsync(() => vm.CurrentSegmentIndex == 3, TimeSpan.FromSeconds(1));
+        Assert.Equal(vm.KeyPoints[0].Id, vm.CurrentlyExecutingKeyPointId);
+        Assert.Equal(1.0, vm.OverallProgress);
+
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
+        await playTask;
+
+        Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
+    }
+
     [Fact]
     public async Task Stop_WithReturnToStartOnFinishEnabled_DoesNotTriggerTheReturnMove()
     {
@@ -1096,6 +1163,63 @@ public class ProgramViewModelPlaybackTests
         await playTask;
 
         Assert.True(sawResetAfterPositive);
+    }
+
+    /// <summary>
+    /// Unlike the pass-to-pass boundary above (which resets to a fresh 0-100% run), the
+    /// ReturnToStartOnFinish move is the SAME pass's own extra (N+1)th step — its progress must
+    /// extend the current estimate rather than reset the bar to 0%.
+    /// </summary>
+    [Fact]
+    public async Task PlayAsync_ReturnToStartOnFinish_ExtendsPhysicalProgressInsteadOfResettingIt()
+    {
+        var currentTime = new DateTimeOffset(2026, 8, 19, 12, 0, 0, TimeSpan.Zero);
+        var vm = CreateViewModel(out var transport, out var progressTimer, () => currentTime);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+        transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
+        vm.ReturnToStartOnFinish = true;
+        vm.IsDirty = false; // completion-settings change above must not re-trigger the save gate
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+
+        // Forward pass: 3 key points x 5s transition = 15s total estimate; advancing exactly that
+        // far saturates OverallFraction to 1.0 (it is purely time-based, independent of acks).
+        currentTime = currentTime.AddSeconds(15);
+        progressTimer.RaiseElapsed();
+        Assert.Equal(1.0, vm.PhysicalOverallProgress);
+
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+
+        // The return-to-start step (KeyPoints[0]'s own 5s transition) must extend the SAME 15s
+        // estimate to 20s BEFORE this wait for physical idle, not only once the move is actually
+        // dispatched afterward — otherwise the bar sits pinned at 100% for however long real
+        // motion takes to catch up with the already-elapsed 15s estimate (the bug this guards:
+        // 15/20 = 0.75 here, never back toward 0, and never falsely pinned at 1.0 either).
+        Assert.Equal(0.75, vm.PhysicalOverallProgress);
+
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
+
+        await WaitUntilAsync(
+            () => transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)) == 4,
+            TimeSpan.FromSeconds(1));
+
+        // Dispatching the return move itself doesn't extend the estimate again.
+        Assert.Equal(0.75, vm.PhysicalOverallProgress);
+
+        currentTime = currentTime.AddSeconds(5);
+        progressTimer.RaiseElapsed();
+        Assert.Equal(1.0, vm.PhysicalOverallProgress);
+
+        transport.SimulateReceivedLine("ok"); // acks the return-to-start move
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
+        await playTask;
+
+        Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
     }
 
     [Fact]
