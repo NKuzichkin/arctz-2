@@ -668,6 +668,22 @@
                                 </StackPanel>
                             </Button>
 
+                            <Button DockPanel.Dock="Bottom" x:Name="CopyExecutionLogButton" Classes="primary"
+                                    HorizontalAlignment="Stretch" Margin="0,8,0,0"
+                                    IsVisible="{Binding About.HasExecutionLog}"
+                                    Click="OnCopyExecutionLogClick">
+                                <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+                                    <materialIcons:MaterialIcon Kind="ContentCopy" Width="16" Height="16" VerticalAlignment="Center"
+                                                               IsVisible="{Binding !About.IsExecutionLogCopied}" />
+                                    <materialIcons:MaterialIcon Kind="Check" Width="16" Height="16" VerticalAlignment="Center"
+                                                               IsVisible="{Binding About.IsExecutionLogCopied}" />
+                                    <TextBlock Text="Скопировать лог программы" VerticalAlignment="Center"
+                                               IsVisible="{Binding !About.IsExecutionLogCopied}" />
+                                    <TextBlock Text="Скопировано" VerticalAlignment="Center"
+                                               IsVisible="{Binding About.IsExecutionLogCopied}" />
+                                </StackPanel>
+                            </Button>
+
                             <!-- Horizontal scrolling stays off deliberately: it would hand the
                                  lines an unbounded width, which stops TextWrapping from ever
                                  applying and clips long values (OS version, firmware banner). -->

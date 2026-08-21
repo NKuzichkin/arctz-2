@@ -7,6 +7,7 @@ using ArctZ.Tests.Services.App;
 using ArctZ.Tests.Services.Device;
 using ArctZ.Tests.Services.Program;
 using ArctZ.ViewModels;
+using static ArctZ.Tests.TestSupport.AsyncAssert;
 
 namespace ArctZ.Tests.ViewModels;
 
@@ -150,5 +151,62 @@ public class ProgramViewModelAboutTests
         vm.About.MarkCopied();
 
         Assert.True(vm.About.IsCopied);
+    }
+
+    [Fact]
+    public void OpenAbout_BeforeAnyProgramHasRun_HasExecutionLogIsFalse()
+    {
+        var vm = CreateViewModel(out _);
+
+        vm.OpenAboutCommand.Execute(null);
+
+        Assert.False(vm.About!.HasExecutionLog);
+        Assert.Equal(string.Empty, vm.About.ExecutionLogText);
+    }
+
+    [Fact]
+    public async Task OpenAbout_AfterACompletedRun_ExposesTheExecutionLog()
+    {
+        var vm = CreateViewModel(out var transport);
+        await vm.Connection.ConnectCommand.Execute();
+
+        foreach (var pose in new[] { "0,0,0,0", "10,0,0,0" })
+        {
+            transport.SimulateReceivedLine($"<Idle|WPos:{pose}|FS:0,0>");
+            vm.CaptureKeyPointCommand.Execute(null);
+        }
+
+        for (var i = 0; i < vm.KeyPoints.Count; i++)
+        {
+            vm.KeyPoints[i] = vm.KeyPoints[i] with { TransitionSeconds = 5, ContinuousBlend = true };
+        }
+
+        vm.ProgramId = Guid.NewGuid();
+        vm.IsDirty = false;
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("<Idle|WPos:10.000,0.000,0.000,0.000|FS:0,0>");
+        await playTask;
+
+        vm.OpenAboutCommand.Execute(null);
+
+        Assert.True(vm.About!.HasExecutionLog);
+        Assert.Contains("Программа запущена", vm.About.ExecutionLogText);
+        Assert.Contains("Программа завершена: Завершено", vm.About.ExecutionLogText);
+    }
+
+    [Fact]
+    public void About_TracksThatTheExecutionLogWasCopied()
+    {
+        var vm = CreateViewModel(out _);
+        vm.OpenAboutCommand.Execute(null);
+
+        Assert.False(vm.About!.IsExecutionLogCopied);
+        vm.About.MarkExecutionLogCopied();
+
+        Assert.True(vm.About.IsExecutionLogCopied);
     }
 }

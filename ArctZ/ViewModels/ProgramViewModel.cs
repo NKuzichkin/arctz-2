@@ -240,7 +240,7 @@ public partial class ProgramViewModel : ViewModelBase
     [RelayCommand]
     private void OpenAbout()
     {
-        About = new AboutViewModel(DiagnosticsReportBuilder.Build(CaptureDiagnostics()));
+        About = new AboutViewModel(DiagnosticsReportBuilder.Build(CaptureDiagnostics()), ExecutionLogText);
         IsSideMenuOpen = false;
     }
 

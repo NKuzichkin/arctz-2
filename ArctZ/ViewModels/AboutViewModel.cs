@@ -13,10 +13,11 @@ public partial class AboutViewModel : ViewModelBase
 {
     private readonly DiagnosticsReport _report;
 
-    public AboutViewModel(DiagnosticsReport report)
+    public AboutViewModel(DiagnosticsReport report, string? executionLogText)
     {
         _report = report;
         ReportText = report.ToText();
+        ExecutionLogText = executionLogText ?? string.Empty;
     }
 
     public string AppName => BuildInfo.AppName;
@@ -32,4 +33,15 @@ public partial class AboutViewModel : ViewModelBase
     private bool _isCopied;
 
     public void MarkCopied() => IsCopied = true;
+
+    /// <summary>Text of the most recently started program run's execution log — empty if no
+    /// program has been played yet this session (see ProgramViewModel.ExecutionLogText).</summary>
+    public string ExecutionLogText { get; }
+
+    public bool HasExecutionLog => !string.IsNullOrEmpty(ExecutionLogText);
+
+    [ObservableProperty]
+    private bool _isExecutionLogCopied;
+
+    public void MarkExecutionLogCopied() => IsExecutionLogCopied = true;
 }

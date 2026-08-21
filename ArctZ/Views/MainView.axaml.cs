@@ -144,6 +144,24 @@ namespace ArctZ.Views
             about.MarkCopied();
         }
 
+        /// <summary>Mirrors OnCopyDiagnosticsClick — same clipboard access pattern, different
+        /// source text (the execution log instead of the diagnostics report).</summary>
+        private async void OnCopyExecutionLogClick(object? sender, RoutedEventArgs e)
+        {
+            if (ViewModel?.About is not { } about)
+            {
+                return;
+            }
+
+            if (TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard)
+            {
+                return;
+            }
+
+            await clipboard.SetTextAsync(about.ExecutionLogText);
+            about.MarkExecutionLogCopied();
+        }
+
         private async void OnLibrarySelectionChanged(object? sender, SelectionChangedEventArgs e)
         {
             if (ViewModel is { } vm && sender is ListBox { SelectedItem: ProgramLibraryItem summary })
