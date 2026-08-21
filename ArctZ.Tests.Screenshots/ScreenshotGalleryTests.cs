@@ -43,7 +43,14 @@ public class ScreenshotGalleryTests
             () => demoTransport,
             new DeviceSessionFactory(MachineLimits.Default),
             new SingleRealDeviceEndpointProvider());
-        var programViewModel = new ProgramViewModel(connection, storage, new TrajectoryCompiler(), new FakeAppExitService());
+        // Hand-driven clock and progress timer: the playback screens need several seconds of
+        // program time to have elapsed, and the About report shows uptime — both would otherwise
+        // depend on how long capture happened to take.
+        var clock = new MutableClock(new DateTimeOffset(2026, 8, 21, 12, 0, 0, TimeSpan.Zero));
+        var progressTimer = new ManualPeriodicTimer();
+        var programViewModel = new ProgramViewModel(
+            connection, storage, new TrajectoryCompiler(), new FakeAppExitService(),
+            now: () => clock.Now, progressTimer: progressTimer);
 
         var mainView = new MainView { DataContext = programViewModel };
         VisualTreeAnimationStripper.StripRevealAnimations(mainView);
@@ -59,7 +66,8 @@ public class ScreenshotGalleryTests
         Dispatcher.UIThread.RunJobs();
 
         var runStartedAt = DateTime.UtcNow;
-        var screens = ScreenCatalog.Build(demoTransport);
+        var context = new ScreenCatalogContext(demoTransport, progressTimer, clock);
+        var screens = ScreenCatalog.Build(context);
         WriteScreensMarkdown(screenshotsDir, screens);
 
         try
@@ -85,6 +93,23 @@ public class ScreenshotGalleryTests
             window.Close();
         }
 
+        // The playback screens leave one PlayCommand running across three entries; their last
+        // Teardown stops it and feeds the acks it was still waiting on. Draining it here rather
+        // than inside that Teardown keeps the driver loop's own awaits on already-completed
+        // tasks, and the timeout means a future change that leaves it genuinely stuck fails the
+        // test instead of hanging the whole `dotnet test` run.
+        if (context.PlaybackTask is { } playbackTask)
+        {
+            Dispatcher.UIThread.RunJobs();
+            var finished = await Task.WhenAny(playbackTask, Task.Delay(TimeSpan.FromSeconds(10)));
+            Assert.Same(playbackTask, finished);
+            await playbackTask;
+        }
+
+        // After the loop, not before it: a run that throws partway then leaves the previously
+        // committed gallery intact instead of deleting files it never got round to replacing.
+        DeleteScreenshotsNotInCatalog(screenshotsDir, screens);
+
         AssertRewrittenSince(Path.Combine(screenshotsDir, "SCREENS.md"), runStartedAt);
         for (var i = 0; i < screens.Count; i++)
         {
@@ -105,6 +130,29 @@ public class ScreenshotGalleryTests
         Assert.True(info.LastWriteTimeUtc >= runStartedAt - ClockSkewTolerance,
             $"File was not rewritten by this run: {path} (LastWriteTimeUtc={info.LastWriteTimeUtc:O}, runStartedAt={runStartedAt:O})");
         Assert.True(info.Length > 1024, $"File is suspiciously small ({info.Length} bytes): {path}");
+    }
+
+    /// <summary>
+    /// Screens are numbered by their position in the catalog, so inserting one renames every file
+    /// after it and leaves the old name behind — a stale PNG that no longer matches any screen but
+    /// still resolves in any document that linked to it. Only files this run is about to write are
+    /// kept.
+    /// </summary>
+    private static void DeleteScreenshotsNotInCatalog(string screenshotsDir, System.Collections.Generic.IReadOnlyList<ScreenDefinition> screens)
+    {
+        var expected = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < screens.Count; i++)
+        {
+            expected.Add($"{i + 1:D2}-{screens[i].Id}.png");
+        }
+
+        foreach (var file in Directory.EnumerateFiles(screenshotsDir, "*.png"))
+        {
+            if (!expected.Contains(Path.GetFileName(file)))
+            {
+                File.Delete(file);
+            }
+        }
     }
 
     private static void WriteScreensMarkdown(string screenshotsDir, System.Collections.Generic.IReadOnlyList<ScreenDefinition> screens)
