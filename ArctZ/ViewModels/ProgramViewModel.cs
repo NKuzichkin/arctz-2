@@ -1116,6 +1116,17 @@ public partial class ProgramViewModel : ViewModelBase
             return;
         }
 
+        // A transition straight to null only happens via ClearProgressTracker() (Stopped/Faulted),
+        // which nulls _progressTracker BEFORE this fires — PhysicalOverallProgress/step-progress
+        // would already read 0 here, not the run's actual progress at the moment it was stopped.
+        // Nothing to log: OnPlaybackStateChanged's "Программа завершена" bookend already captures
+        // and reports the correct progress for this same instant (captured before the clear).
+        if (current is null)
+        {
+            _lastLoggedPhysicalKeyPointId = null;
+            return;
+        }
+
         var now = _now();
         var overallProgress = PhysicalOverallProgress;
         var stepProgress = 1.0 - PhysicalPointRemainingFraction;
@@ -1126,7 +1137,7 @@ public partial class ProgramViewModel : ViewModelBase
             _executionLog?.LogMovementEnded(previousPoint.Label, overallProgress, stepProgress, now);
         }
 
-        if (current is { } currentId && KeyPoints.FirstOrDefault(k => k.Id == currentId) is { } currentPoint)
+        if (KeyPoints.FirstOrDefault(k => k.Id == current) is { } currentPoint)
         {
             _executionLog?.LogMovementStarted(currentPoint.Label, overallProgress, stepProgress, now);
         }

@@ -146,6 +146,34 @@ public class ProgramViewModelExecutionLogTests
     }
 
     [Fact]
+    public async Task StopAsync_DuringMotion_DoesNotLogASpuriousZeroProgressMovementEndedLine()
+    {
+        // ClearProgressTracker() (called on Stopped/Faulted) nulls _progressTracker BEFORE calling
+        // OnProgressTrackerChanged() — so if LogPhysicalMovementTransitionIfChanged() tried to log
+        // an "ended" line for this transition, it would read PhysicalOverallProgress/step-progress
+        // as 0%/0% instead of the run's actual progress at the moment of stopping. The correct
+        // progress for this instant is already reported by the "Программа завершена" bookend
+        // (captured before the clear) — a transition straight to null must not log anything.
+        var currentTime = new DateTimeOffset(2026, 8, 21, 12, 0, 0, TimeSpan.Zero);
+        var vm = CreateViewModel(out var transport, out var progressTimer, () => currentTime);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+        transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+        currentTime = currentTime.AddSeconds(5); // 5 of 15s total estimate (3 points x 5s) = 33%
+        progressTimer.RaiseElapsed();
+        Assert.True(vm.PhysicalOverallProgress > 0);
+
+        await vm.StopCommand.ExecuteAsync(null);
+        transport.SimulateReceivedLine("ok"); // resolves the command already in flight
+        await playTask;
+
+        Assert.DoesNotContain("Окончание движения к точке", vm.ExecutionLogText);
+        Assert.Contains("Программа завершена: Остановлено — общий 33%", vm.ExecutionLogText);
+    }
+
+    [Fact]
     public async Task Pause_ThenResume_LogsBothEventsWithProgressAtTheMomentOfEach()
     {
         var currentTime = new DateTimeOffset(2026, 8, 21, 12, 0, 0, TimeSpan.Zero);
