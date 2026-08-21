@@ -253,4 +253,56 @@ public class ProgramViewModelExecutionLogTests
         transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
         await playTask;
     }
+
+    [Fact]
+    public async Task PlayAsync_AckOutrunsPhysicalPositionByMoreThanOnePoint_LogsAckDesyncOnce()
+    {
+        var vm = CreateViewModel(out var transport, out _);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+        transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+
+        // All three acks land before any position update — ack jumps to segment 2 while the
+        // physical tracker (position never moved) stays on segment 0. Gap of 2 exceeds the
+        // >1-point desync threshold. Same scenario as
+        // PlayAsync_PhysicallyExecutingKeyPointId_CanLagTheAckBasedHighlightWhenTheBufferRunsAhead
+        // in ProgramViewModelPlaybackTests.
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.CurrentlyExecutingKeyPointId == vm.KeyPoints[2].Id, TimeSpan.FromSeconds(1));
+
+        // The desync check runs inside OnProgressTrackerChanged, which only fires off the PHYSICAL
+        // tracker (a position update or the periodic progress-clock tick) — never off CurrentSegmentIndex
+        // (ack) alone. In real operation the next ~200ms timer tick or status report picks this up
+        // almost immediately; here, with acks the only thing that changed so far, an explicit clock
+        // tick stands in for that next recompute (see BackgroundSessionCoordinatorTests for the same
+        // OnClockTickForTests idiom).
+        vm.OnClockTickForTests();
+
+        Assert.Equal(1, CountOccurrences(vm.ExecutionLogText!, "Рассинхронизация: буфер контроллера опережает факт"));
+
+        // A further recompute while the position still hasn't moved must not duplicate the line.
+        transport.SimulateReceivedLine("<Run|WPos:0.000,0.000,0.000,0.000|FS:500,0>");
+        Assert.Equal(1, CountOccurrences(vm.ExecutionLogText!, "Рассинхронизация: буфер контроллера опережает факт"));
+
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
+        await playTask;
+    }
+
+    private static int CountOccurrences(string text, string substring)
+    {
+        var count = 0;
+        var index = 0;
+        while ((index = text.IndexOf(substring, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += substring.Length;
+        }
+
+        return count;
+    }
 }

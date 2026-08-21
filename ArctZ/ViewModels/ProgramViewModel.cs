@@ -848,6 +848,7 @@ public partial class ProgramViewModel : ViewModelBase
     private bool _pausedForLinkLoss;
     private bool _currentPassBackward;
     private Guid? _lastLoggedPhysicalKeyPointId;
+    private bool _ackDesyncLogged;
 
     // Written on the PlayAsync continuation thread, read on the transport's reader thread
     // (OnSessionDeviceStatusChanged) — volatile so a read there can never observe a stale/torn
@@ -1102,6 +1103,7 @@ public partial class ProgramViewModel : ViewModelBase
         OnPropertyChanged(nameof(PhysicallyExecutingKeyPointId));
 
         LogPhysicalMovementTransitionIfChanged();
+        LogAckDesyncIfNewlyDetected();
     }
 
     /// <summary>Movement start/end events are driven by the physically active key point (not
@@ -1143,6 +1145,33 @@ public partial class ProgramViewModel : ViewModelBase
         }
 
         _lastLoggedPhysicalKeyPointId = current;
+    }
+
+    /// <summary>Edge-triggered: logs once when the ack-confirmed segment gets more than one point
+    /// ahead of the physically active one, then stays silent until the gap closes back to ≤1 and
+    /// widens past the threshold again. No "recovered" line is logged — see the design doc.</summary>
+    private void LogAckDesyncIfNewlyDetected()
+    {
+        if (_progressTracker is not { } tracker
+            || CurrentSegmentIndex is not { } ackIndex
+            || tracker.CurrentSegmentIndex is not { } physicalIndex)
+        {
+            return;
+        }
+
+        if (ackIndex - physicalIndex > 1)
+        {
+            if (!_ackDesyncLogged)
+            {
+                _executionLog?.LogAckDesync(
+                    ackIndex, physicalIndex, PhysicalOverallProgress, 1.0 - PhysicalPointRemainingFraction, _now());
+                _ackDesyncLogged = true;
+            }
+        }
+        else
+        {
+            _ackDesyncLogged = false;
+        }
     }
 
     private void ClearProgressTracker()
@@ -1543,6 +1572,7 @@ public partial class ProgramViewModel : ViewModelBase
         _progressTracker.Changed += OnProgressTrackerChanged;
         _progressTracker.SegmentTimeOverage += OnSegmentTimeOverage;
         _lastLoggedPhysicalKeyPointId = null; // a fresh pass starts its own movement-transition tracking, even if its first point is the same KeyPoint the previous pass ended on (PingPong)
+        _ackDesyncLogged = false;
         OnProgressTrackerChanged();
 
         return await DispatchStepsAsync(steps);
