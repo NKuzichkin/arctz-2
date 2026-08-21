@@ -706,6 +706,10 @@ public partial class ProgramViewModel : ViewModelBase
 
         AddKeyPointMessage(keyPointId, new KeyPointMessage(MessageLevel.Warning,
             $"Превышение фактического времени перемещения ({actualSeconds:F0} сек.) над установленным ({estimatedSeconds:F0} сек)"));
+
+        var pointLabel = KeyPoints.FirstOrDefault(k => k.Id == keyPointId)?.Label;
+        _executionLog?.LogTimeOverage(
+            pointLabel, actualSeconds, estimatedSeconds, PhysicalOverallProgress, 1.0 - PhysicalPointRemainingFraction, _now());
     }
 
     [RelayCommand]

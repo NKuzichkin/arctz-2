@@ -305,4 +305,31 @@ public class ProgramViewModelExecutionLogTests
 
         return count;
     }
+
+    [Fact]
+    public async Task PlayAsync_SegmentEndsOverTime_LogsATimeOverageDesyncLine()
+    {
+        var currentTime = new DateTimeOffset(2026, 8, 21, 12, 0, 0, TimeSpan.Zero);
+        var vm = CreateViewModel(out var transport, out var progressTimer, () => currentTime);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport); // each key point's TransitionSeconds is 5
+        transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+        currentTime = currentTime.AddSeconds(6); // 20% over the 5s estimate for segment 0
+        progressTimer.RaiseElapsed();
+
+        transport.SimulateReceivedLine("<Run|WPos:5.000,0.000,0.000,0.000|FS:0,0>"); // leaves segment 0 while over time
+
+        Assert.Contains(
+            $"Рассинхронизация: превышение расчётного времени точки «{vm.KeyPoints[0].Label}» (6.0с факт / 5.0с расчёт)",
+            vm.ExecutionLogText);
+
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
+        await playTask;
+    }
 }
