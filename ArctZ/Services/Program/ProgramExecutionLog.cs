@@ -15,11 +15,15 @@ public sealed class ProgramExecutionLog
 {
     private readonly DateTimeOffset _startedAt;
     private readonly List<string> _lines = new();
+    private readonly object _gate = new();
 
     public ProgramExecutionLog(string programName, int keyPointCount, DateTimeOffset startedAt)
     {
         _startedAt = startedAt;
-        _lines.Add(FormatLine(startedAt, $"Программа запущена: «{programName}», {keyPointCount} точек"));
+        lock (_gate)
+        {
+            _lines.Add(FormatLine(startedAt, $"Программа запущена: «{programName}», {keyPointCount} точек"));
+        }
     }
 
     public void LogMovementEnded(string? pointLabel, double overallProgress, double stepProgress, DateTimeOffset now) =>
@@ -47,10 +51,24 @@ public sealed class ProgramExecutionLog
     public void LogProgramEnded(string outcomeLabel, double overallProgress, double stepProgress, DateTimeOffset now) =>
         Append($"Программа завершена: {outcomeLabel}", overallProgress, stepProgress, now);
 
-    public string Text => string.Join(Environment.NewLine, _lines);
+    public string Text
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return string.Join(Environment.NewLine, _lines);
+            }
+        }
+    }
 
-    private void Append(string eventText, double overallProgress, double stepProgress, DateTimeOffset now) =>
-        _lines.Add(FormatLine(now, $"{eventText} — общий {FormatPercent(overallProgress)}, шаг {FormatPercent(stepProgress)}"));
+    private void Append(string eventText, double overallProgress, double stepProgress, DateTimeOffset now)
+    {
+        lock (_gate)
+        {
+            _lines.Add(FormatLine(now, $"{eventText} — общий {FormatPercent(overallProgress)}, шаг {FormatPercent(stepProgress)}"));
+        }
+    }
 
     private string FormatLine(DateTimeOffset now, string text) => $"[{FormatElapsed(now)}] {text}";
 

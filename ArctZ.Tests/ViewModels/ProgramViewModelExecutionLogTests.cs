@@ -332,4 +332,39 @@ public class ProgramViewModelExecutionLogTests
         transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
         await playTask;
     }
+
+    [Fact]
+    public async Task ShutdownAsync_AfterProgramCompleted_DoesNotAppendASpuriousStoppedBookendOrOverage()
+    {
+        var vm = CreateViewModel(out var transport, out _);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
+        await playTask;
+
+        Assert.Equal(PlaybackState.Completed, vm.PlaybackState);
+        var logAfterCompletion = vm.ExecutionLogText!;
+
+        var shutdownTask = vm.ShutdownAsync(confirmIfRunning: false);
+
+        // DeviceSession.StopAndDrainAsync's WaitForEmptyBufferAsync only counts a status report
+        // that arrives after it starts listening (the pre-existing one from the run's own
+        // completion above doesn't count) — this unblocks it right away instead of waiting out the
+        // full 2s DeviceStopTimeout.
+        await WaitUntilAsync(() => transport.SentRawBytes.Count > 0, TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
+        await shutdownTask;
+
+        // Without the IsProgramLocked guard, this would force PlaybackState back to Stopped,
+        // appending a second, contradictory "Программа завершена: Остановлено" line and — via
+        // ClearProgressTracker's FlushCurrentSegment — a fabricated time-overage line computed
+        // against however long real wall-clock time elapsed since the run actually finished.
+        Assert.Equal(logAfterCompletion, vm.ExecutionLogText);
+    }
 }

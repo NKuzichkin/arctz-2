@@ -304,10 +304,19 @@ public partial class ProgramViewModel : ViewModelBase
         }
 
         // Гасит цикл диспетчеризации в PlayAsync до того, как он успеет дослать в очередь
-        // очередной шаг поверх уже отправленной остановки.
-        PlaybackState = PlaybackState.Stopped;
-        CurrentSegmentIndex = null;
-        SegmentProgress = 0;
+        // очередной шаг поверх уже отправленной остановки. Guarded to IsProgramLocked: forcing
+        // this when no run is actually active would append a spurious "Программа завершена:
+        // Остановлено" bookend to an already-finished run's execution log and, via
+        // ClearProgressTracker's FlushCurrentSegment, a fabricated multi-hundred-second overage
+        // computed against however long the app has sat idle since — misleading in particular on
+        // Android, where the process (and this singleton ViewModel) survives a swipe-away and is
+        // reused on the next launch.
+        if (IsProgramLocked)
+        {
+            PlaybackState = PlaybackState.Stopped;
+            CurrentSegmentIndex = null;
+            SegmentProgress = 0;
+        }
 
         IsShuttingDown = true;
 
