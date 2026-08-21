@@ -847,6 +847,7 @@ public partial class ProgramViewModel : ViewModelBase
 
     private bool _pausedForLinkLoss;
     private bool _currentPassBackward;
+    private Guid? _lastLoggedPhysicalKeyPointId;
 
     // Written on the PlayAsync continuation thread, read on the transport's reader thread
     // (OnSessionDeviceStatusChanged) — volatile so a read there can never observe a stale/torn
@@ -1099,6 +1100,38 @@ public partial class ProgramViewModel : ViewModelBase
         OnPropertyChanged(nameof(PhysicalPointRemainingFraction));
         OnPropertyChanged(nameof(PhysicalPointHasTimeWarning));
         OnPropertyChanged(nameof(PhysicallyExecutingKeyPointId));
+
+        LogPhysicalMovementTransitionIfChanged();
+    }
+
+    /// <summary>Movement start/end events are driven by the physically active key point (not
+    /// ack) — see docs/superpowers/specs/2026-08-21-program-execution-log-design.md. A transition
+    /// produces an "ended" line for the point being left (if any) immediately followed by a
+    /// "started" line for the point being entered (if any), both stamped with the same instant.</summary>
+    private void LogPhysicalMovementTransitionIfChanged()
+    {
+        var current = PhysicallyExecutingKeyPointId;
+        if (current == _lastLoggedPhysicalKeyPointId)
+        {
+            return;
+        }
+
+        var now = _now();
+        var overallProgress = PhysicalOverallProgress;
+        var stepProgress = 1.0 - PhysicalPointRemainingFraction;
+
+        if (_lastLoggedPhysicalKeyPointId is { } previousId
+            && KeyPoints.FirstOrDefault(k => k.Id == previousId) is { } previousPoint)
+        {
+            _executionLog?.LogMovementEnded(previousPoint.Label, overallProgress, stepProgress, now);
+        }
+
+        if (current is { } currentId && KeyPoints.FirstOrDefault(k => k.Id == currentId) is { } currentPoint)
+        {
+            _executionLog?.LogMovementStarted(currentPoint.Label, overallProgress, stepProgress, now);
+        }
+
+        _lastLoggedPhysicalKeyPointId = current;
     }
 
     private void ClearProgressTracker()
@@ -1498,6 +1531,7 @@ public partial class ProgramViewModel : ViewModelBase
         _progressTracker = new TimeProgressTracker(steps, startingPose, _now());
         _progressTracker.Changed += OnProgressTrackerChanged;
         _progressTracker.SegmentTimeOverage += OnSegmentTimeOverage;
+        _lastLoggedPhysicalKeyPointId = null; // a fresh pass starts its own movement-transition tracking, even if its first point is the same KeyPoint the previous pass ended on (PingPong)
         OnProgressTrackerChanged();
 
         return await DispatchStepsAsync(steps);

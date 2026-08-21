@@ -172,4 +172,57 @@ public class ProgramViewModelExecutionLogTests
         transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
         await playTask;
     }
+
+    [Fact]
+    public async Task PlayAsync_FirstPhysicalSegment_LogsMovementStartedForTheFirstKeyPoint()
+    {
+        var vm = CreateViewModel(out var transport, out _);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+        transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+
+        await WaitUntilAsync(() => vm.PhysicallyExecutingKeyPointId == vm.KeyPoints[0].Id, TimeSpan.FromSeconds(1));
+        Assert.Contains($"Начало движения к точке «{vm.KeyPoints[0].Label}»", vm.ExecutionLogText);
+
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
+        await playTask;
+    }
+
+    [Fact]
+    public async Task PlayAsync_PhysicalMovementBetweenPoints_LogsEndThenStartPairInOrder()
+    {
+        var vm = CreateViewModel(out var transport, out _);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+        transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.PhysicallyExecutingKeyPointId == vm.KeyPoints[0].Id, TimeSpan.FromSeconds(1));
+
+        // Real motion well into the KeyPoints[0]->KeyPoints[1] leg (x=6 of 10) but short of
+        // KeyPoints[1] itself (x=10) — landing past it (e.g. x=15) would instead project onto the
+        // NEXT leg (KeyPoints[1]->KeyPoints[2], whose closer distance wins the tracker's nearest-edge
+        // projection) and skip straight to targeting KeyPoints[2], never passing through KeyPoints[1].
+        transport.SimulateReceivedLine("<Run|WPos:6.000,0.000,0.000,0.000|FS:500,0>");
+        await WaitUntilAsync(() => vm.PhysicallyExecutingKeyPointId == vm.KeyPoints[1].Id, TimeSpan.FromSeconds(1));
+
+        var lines = vm.ExecutionLogText!.Split(Environment.NewLine);
+        var endedIndex = Array.FindIndex(lines, l => l.Contains($"Окончание движения к точке «{vm.KeyPoints[0].Label}»"));
+        var startedIndex = Array.FindIndex(lines, l => l.Contains($"Начало движения к точке «{vm.KeyPoints[1].Label}»"));
+        Assert.True(endedIndex >= 0, "expected an 'ended' line for the first key point");
+        Assert.True(startedIndex > endedIndex, "expected the 'started' line for the second key point right after it");
+
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
+        await playTask;
+    }
 }
