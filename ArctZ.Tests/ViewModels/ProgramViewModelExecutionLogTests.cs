@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using ArctZ.Services.Device;
 using ArctZ.Services.Program;
@@ -291,6 +292,86 @@ public class ProgramViewModelExecutionLogTests
         await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
         transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
         await playTask;
+    }
+
+    [Fact]
+    public async Task PlayAsync_PhysicalPositionJumpsPastAnIntermediatePoint_StillLogsItsEndedAndStartedLines()
+    {
+        var vm = CreateViewModel(out var transport, out _);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+        transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.PhysicallyExecutingKeyPointId == vm.KeyPoints[0].Id, TimeSpan.FromSeconds(1));
+
+        // A single noisy status report lands past KeyPoints[1] (x=10) altogether, straight into
+        // KeyPoints[2]'s territory (x=15) — the tracker's nearest-edge projection jumps directly to
+        // segment 2, and without a fix KeyPoints[1] is never reported as physically active at all.
+        transport.SimulateReceivedLine("<Run|WPos:15.000,0.000,0.000,0.000|FS:500,0>");
+        await WaitUntilAsync(() => vm.PhysicallyExecutingKeyPointId == vm.KeyPoints[2].Id, TimeSpan.FromSeconds(1));
+
+        Assert.Contains($"Начало движения к точке «{vm.KeyPoints[1].Label}»", vm.ExecutionLogText);
+        Assert.Contains($"Окончание движения к точке «{vm.KeyPoints[1].Label}»", vm.ExecutionLogText);
+
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
+        await playTask;
+    }
+
+    [Fact]
+    public async Task PlayAsync_PingPongPassBoundary_LogsMovementEndedForThePivotPointBeforeTheNextPassStarts()
+    {
+        var vm = CreateViewModel(out var transport, out _);
+        await vm.Connection.ConnectCommand.Execute();
+        SeedTwoSegmentProgram(vm, transport);
+        vm.CompletionMode = ProgramCompletionMode.PingPong;
+        vm.RepeatCount = 1;
+        vm.IsDirty = false; // completion-settings changes above must not re-trigger the save gate
+        transport.SimulateReceivedLine("<Idle|WPos:0.000,0.000,0.000,0.000|FS:0,0>");
+
+        var playTask = vm.PlayCommand.ExecuteAsync(null);
+
+        // Forward pass (dwell at point0, move to point1, move to point2): ack all three, then drive
+        // the physical position all the way to the last point so it becomes the reversal pivot.
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("<Run|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
+        await WaitUntilAsync(() => vm.PhysicallyExecutingKeyPointId == vm.KeyPoints[2].Id, TimeSpan.FromSeconds(1));
+
+        // The backward leg's own self-move to the pivot is skipped (the machine is already there
+        // from the forward leg), so only its 2 real moves are dispatched — wait for those G93
+        // lines to actually land before acking them, or the "ok"s below would race the dispatch
+        // and get dropped (BufferAwareCommandQueue.Complete no-ops with nothing in-flight).
+        await WaitUntilAsync(
+            () => transport.SentLines.Count(l => l.StartsWith("G93", StringComparison.Ordinal)) == 5,
+            TimeSpan.FromSeconds(1));
+
+        // Backward pass: ack both dispatched lines but deliberately send no position reports — with
+        // the redundant dwell at the pivot skipped, the backward tracker's own segment 0 is already
+        // the real move to the middle point, so no position update is needed to advance it at all.
+        // Not sending one keeps this test isolated from a same-instant multi-segment skip (see the
+        // PlayAsync_PhysicalPositionJumpsPastAnIntermediatePoint test), which could otherwise
+        // produce an "Окончание Точка 3" line by a different mechanism and confound this assertion.
+        // Idle is reported at WPos 20 (the pivot's own pose) for the same reason.
+        transport.SimulateReceivedLine("ok");
+        transport.SimulateReceivedLine("ok");
+        await WaitUntilAsync(() => vm.IsAwaitingMotionIdle, TimeSpan.FromSeconds(1));
+        transport.SimulateReceivedLine("<Idle|WPos:20.000,0.000,0.000,0.000|FS:0,0>");
+        await playTask;
+
+        // Without the fix, the pass boundary silently drops this line: RunPassAsync resets
+        // _lastLoggedPhysicalKeyPointId to null before attaching the backward pass's tracker, so
+        // LogPhysicalMovementTransitionIfChanged has no "previous" point left to close out.
+        Assert.Contains($"Окончание движения к точке «{vm.KeyPoints[2].Label}»", vm.ExecutionLogText);
+
+        // The redundant self-move itself (skipped rather than re-sent) gets its own log line, so
+        // the point doesn't just silently disappear from the narrative.
+        Assert.Contains($"Точка «{vm.KeyPoints[2].Label}» уже достигнута — переход без повтора", vm.ExecutionLogText);
     }
 
     private static int CountOccurrences(string text, string substring)

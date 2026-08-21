@@ -48,6 +48,9 @@ public sealed class ProgramExecutionLog
             $"Рассинхронизация: превышение расчётного времени точки «{pointLabel}» ({actualSeconds.ToString("F1", CultureInfo.InvariantCulture)}с факт / {estimatedSeconds.ToString("F1", CultureInfo.InvariantCulture)}с расчёт)",
             overallProgress, stepProgress, now);
 
+    public void LogSkippedRepeatedPoint(string? pointLabel, double overallProgress, double stepProgress, DateTimeOffset now) =>
+        Append($"Точка «{pointLabel}» уже достигнута — переход без повтора", overallProgress, stepProgress, now);
+
     public void LogProgramEnded(string outcomeLabel, double overallProgress, double stepProgress, DateTimeOffset now) =>
         Append($"Программа завершена: {outcomeLabel}", overallProgress, stepProgress, now);
 

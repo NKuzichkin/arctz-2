@@ -56,10 +56,18 @@ public sealed class TimeProgressTracker
     /// </summary>
     public event Action<int, double, double>? SegmentTimeOverage;
 
-    public TimeProgressTracker(IReadOnlyList<CompiledStep> steps, MachinePose startingPose, DateTimeOffset passStartedAt)
+    /// <param name="skippedLeadingEstimatedSeconds">
+    /// Pre-loads the total estimate with time for a leading step that was skipped rather than
+    /// dispatched (see ProgramViewModel.SkipRedundantLeadingSelfMove) — <paramref name="steps"/>
+    /// itself has no edge for it. Without this padding, OverallFraction's denominator shrinks by
+    /// exactly the skipped step's share, so real elapsed time saturates it far earlier than an
+    /// equivalent un-skipped pass would have.
+    /// </param>
+    public TimeProgressTracker(IReadOnlyList<CompiledStep> steps, MachinePose startingPose, DateTimeOffset passStartedAt, double skippedLeadingEstimatedSeconds = 0)
     {
         _passStartedAt = passStartedAt;
         _currentSegmentEnteredAt = passStartedAt;
+        _totalEstimatedSeconds = skippedLeadingEstimatedSeconds;
 
         AppendEdges(steps, startingPose);
 
@@ -194,7 +202,7 @@ public sealed class TimeProgressTracker
         var estimatedForSegment = segmentIndex is { } index ? _segmentEstimatedSeconds.GetValueOrDefault(index) : 0;
         var elapsedInSegment = (now - _currentSegmentEnteredAt).TotalSeconds;
 
-        CurrentStepFraction = estimatedForSegment <= 0 ? 1.0 : elapsedInSegment / estimatedForSegment;
+        CurrentStepFraction = estimatedForSegment <= 0 ? 1.0 : Math.Clamp(elapsedInSegment / estimatedForSegment, 0, 1);
         CurrentPointHasWarning = estimatedForSegment > 0 && elapsedInSegment > estimatedForSegment * 1.15;
         OverallFraction = _totalEstimatedSeconds <= 0 ? 1.0 : Math.Clamp((now - _passStartedAt).TotalSeconds / _totalEstimatedSeconds, 0, 1);
 

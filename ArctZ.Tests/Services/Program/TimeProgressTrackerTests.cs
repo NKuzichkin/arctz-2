@@ -175,6 +175,25 @@ public class TimeProgressTrackerTests
     }
 
     [Fact]
+    public void Constructor_SkippedLeadingEstimatedSeconds_PadsTheTotalEstimateWithoutAddingAnEdge()
+    {
+        // A redundant leading self-move (segment 0) can be skipped rather than dispatched — see
+        // ProgramViewModel.SkipRedundantLeadingSelfMove — but its own estimated duration must still
+        // count toward the pass's total, or OverallFraction saturates far earlier than an equivalent
+        // un-skipped pass would have, relative to real elapsed time. `steps` here has no segment 0 at
+        // all (already filtered, as the real caller passes it), so CurrentSegmentIndex must resolve
+        // straight to the one real segment present, not a phantom segment 0.
+        var steps = new List<CompiledStep> { Move(1, x: 10, estimatedSeconds: 6) };
+        var tracker = new TimeProgressTracker(steps, startingPose: MachinePose.Zero, passStartedAt: T0, skippedLeadingEstimatedSeconds: 6);
+
+        Assert.Equal(1, tracker.CurrentSegmentIndex);
+
+        tracker.OnClockTick(T0.AddSeconds(6));
+
+        Assert.Equal(0.5, tracker.OverallFraction); // 6 of (6 skipped + 6 real) = 12s total
+    }
+
+    [Fact]
     public void OverallFraction_TimeBeyondTheWholePassEstimate_ClampsAtOne()
     {
         var steps = new List<CompiledStep> { Move(0, x: 10, estimatedSeconds: 10) };
@@ -183,6 +202,22 @@ public class TimeProgressTrackerTests
         tracker.OnClockTick(T0.AddSeconds(50));
 
         Assert.Equal(1.0, tracker.OverallFraction);
+    }
+
+    [Fact]
+    public void CurrentStepFraction_TimeBeyondTheSegmentEstimate_ClampsAtOne()
+    {
+        // Real hardware routinely overruns a segment's estimate several times over (see
+        // docs/firmware/fluidnc-slow-motion-limits.md) — CurrentStepFraction must clamp the same
+        // way OverallFraction already does above it, or PhysicalPointRemainingFraction (1 -
+        // CurrentStepFraction) goes negative and the execution log prints step percentages like
+        // "838%" instead of a sane 0-100% figure.
+        var steps = new List<CompiledStep> { Move(0, x: 10, estimatedSeconds: 10) };
+        var tracker = new TimeProgressTracker(steps, startingPose: MachinePose.Zero, passStartedAt: T0);
+
+        tracker.OnClockTick(T0.AddSeconds(50));
+
+        Assert.Equal(1.0, tracker.CurrentStepFraction);
     }
 
     [Fact]

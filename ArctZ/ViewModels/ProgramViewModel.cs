@@ -861,7 +861,13 @@ public partial class ProgramViewModel : ViewModelBase
     private bool _pausedForLinkLoss;
     private bool _currentPassBackward;
     private Guid? _lastLoggedPhysicalKeyPointId;
+    private int? _lastLoggedPhysicalSegmentIndex;
     private bool _ackDesyncLogged;
+
+    /// <summary>Target of the last actually-dispatched-and-acked command this run — used to skip
+    /// re-sending a redundant leading self-move when a new pass/return-to-start move would target
+    /// the exact point the machine is already at (see RunPassAsync/RunReturnToStartMoveAsync).</summary>
+    private Guid? _lastDispatchedKeyPointId;
 
     // Written on the PlayAsync continuation thread, read on the transport's reader thread
     // (OnSessionDeviceStatusChanged) — volatile so a read there can never observe a stale/torn
@@ -1139,17 +1145,20 @@ public partial class ProgramViewModel : ViewModelBase
         if (current is null)
         {
             _lastLoggedPhysicalKeyPointId = null;
+            _lastLoggedPhysicalSegmentIndex = null;
             return;
         }
 
         var now = _now();
         var overallProgress = PhysicalOverallProgress;
         var stepProgress = 1.0 - PhysicalPointRemainingFraction;
+        var currentSegmentIndex = _progressTracker?.CurrentSegmentIndex;
 
         if (_lastLoggedPhysicalKeyPointId is { } previousId
             && KeyPoints.FirstOrDefault(k => k.Id == previousId) is { } previousPoint)
         {
             _executionLog?.LogMovementEnded(previousPoint.Label, overallProgress, stepProgress, now);
+            LogSkippedIntermediatePoints(currentSegmentIndex, overallProgress, stepProgress, now);
         }
 
         if (KeyPoints.FirstOrDefault(k => k.Id == current) is { } currentPoint)
@@ -1158,6 +1167,60 @@ public partial class ProgramViewModel : ViewModelBase
         }
 
         _lastLoggedPhysicalKeyPointId = current;
+        _lastLoggedPhysicalSegmentIndex = currentSegmentIndex;
+    }
+
+    /// <summary>
+    /// A single position update can leap the physical tracker's segment index forward by more than
+    /// one (its nearest-edge projection lands on a farther edge, not necessarily the very next one —
+    /// see TimeProgressTracker.OnPositionUpdated) — without this, whatever key point sat at a
+    /// skipped-over segment index disappears from the log entirely, as if the machine had never
+    /// passed through it. Backfills an instantaneous Started/Ended pair for each one, stamped with
+    /// the same instant/progress as the real transition, since no per-point timestamp survives a
+    /// same-update leap.
+    /// </summary>
+    private void LogSkippedIntermediatePoints(int? currentSegmentIndex, double overallProgress, double stepProgress, DateTimeOffset now)
+    {
+        if (_lastLoggedPhysicalSegmentIndex is not { } previousSegmentIndex || currentSegmentIndex is not { } thisSegmentIndex)
+        {
+            return;
+        }
+
+        for (var skippedIndex = previousSegmentIndex + 1; skippedIndex < thisSegmentIndex; skippedIndex++)
+        {
+            if (Services.Program.JibProgram.TargetKeyPoint(KeyPoints, skippedIndex, _currentPassBackward) is not { } skippedId
+                || KeyPoints.FirstOrDefault(k => k.Id == skippedId) is not { } skippedPoint)
+            {
+                continue;
+            }
+
+            _executionLog?.LogMovementStarted(skippedPoint.Label, overallProgress, stepProgress, now);
+            _executionLog?.LogMovementEnded(skippedPoint.Label, overallProgress, stepProgress, now);
+        }
+    }
+
+    /// <summary>
+    /// Closes out the outgoing pass's last physically-active point before a new pass's tracker
+    /// takes over — called from <see cref="RunPassAsync"/> right after <see cref="DetachProgressTracker"/>,
+    /// while <c>_progressTracker</c> is still the OLD pass's (so <see cref="PhysicalOverallProgress"/>/
+    /// <see cref="PhysicalPointRemainingFraction"/> read the outgoing pass's own final values, not the
+    /// new pass's). Without this, RunPassAsync's own reset of <c>_lastLoggedPhysicalKeyPointId</c> to
+    /// null just below leaves <see cref="LogPhysicalMovementTransitionIfChanged"/> with no "previous"
+    /// point to close out — the "Окончание" line for wherever the outgoing pass physically ended
+    /// (always the reversal pivot in PingPong, since a pass's own last point is always its own next
+    /// pass's segment-0 dwell target) disappears from the log entirely, never just merged into the
+    /// new pass's own "Начало" line the way the null-transition-drops-nothing design intends for a
+    /// true Stop/Fault (see that method's own comment) — RunPassAsync is not that case.
+    /// </summary>
+    private void LogMovementEndedForOutgoingPass()
+    {
+        if (_lastLoggedPhysicalKeyPointId is not { } previousId
+            || KeyPoints.FirstOrDefault(k => k.Id == previousId) is not { } previousPoint)
+        {
+            return;
+        }
+
+        _executionLog?.LogMovementEnded(previousPoint.Label, PhysicalOverallProgress, 1.0 - PhysicalPointRemainingFraction, _now());
     }
 
     /// <summary>Edge-triggered: logs once when the ack-confirmed segment gets more than one point
@@ -1398,6 +1461,7 @@ public partial class ProgramViewModel : ViewModelBase
         CurrentSegmentIndex = null;
         SegmentProgress = 0;
         FaultedAtSegmentIndex = null;
+        _lastDispatchedKeyPointId = null; // a cold start has nothing dispatched yet to skip against
         // With ReturnToStartOnFinish, the program is treated as one extra step (1-2-3-1 for a
         // 3-point program) throughout progress tracking, not just at dispatch time.
         TotalSegments = KeyPoints.Count + (ReturnToStartOnFinish ? 1 : 0);
@@ -1548,6 +1612,13 @@ public partial class ProgramViewModel : ViewModelBase
         }
 
         var start = KeyPoints[0];
+
+        if (start.Id == _lastDispatchedKeyPointId)
+        {
+            _executionLog?.LogSkippedRepeatedPoint(start.Label, PhysicalOverallProgress, 1.0 - PhysicalPointRemainingFraction, _now());
+            return true;
+        }
+
         var line = InverseTimeMove.Line(start.Pose, start.TransitionSeconds);
         var result = await Connection.Session!.SendGCodeAsync(line);
 
@@ -1562,6 +1633,7 @@ public partial class ProgramViewModel : ViewModelBase
             return false;
         }
 
+        _lastDispatchedKeyPointId = start.Id;
         return await ResolveRunningStateAsync();
     }
 
@@ -1575,20 +1647,49 @@ public partial class ProgramViewModel : ViewModelBase
         // Must run before _currentPassBackward is overwritten below — see DetachProgressTracker's
         // doc comment for why (it flushes the OLD tracker using the OLD pass's direction).
         DetachProgressTracker();
+        LogMovementEndedForOutgoingPass();
+        var (dispatchSteps, skippedEstimatedSeconds) = SkipRedundantLeadingSelfMove(steps, backward);
+        steps = dispatchSteps;
 
         _currentPassBackward = backward;
         CurrentSegmentIndex = null;
         SegmentProgress = 0;
 
         var startingPose = Connection.Session?.DeviceStatus?.WPos ?? MachinePose.Zero;
-        _progressTracker = new TimeProgressTracker(steps, startingPose, _now());
+        _progressTracker = new TimeProgressTracker(steps, startingPose, _now(), skippedEstimatedSeconds);
         _progressTracker.Changed += OnProgressTrackerChanged;
         _progressTracker.SegmentTimeOverage += OnSegmentTimeOverage;
         _lastLoggedPhysicalKeyPointId = null; // a fresh pass starts its own movement-transition tracking, even if its first point is the same KeyPoint the previous pass ended on (PingPong)
+        _lastLoggedPhysicalSegmentIndex = null; // segment indices are local to each pass's own steps — don't compare across the boundary
         _ackDesyncLogged = false;
         OnProgressTrackerChanged();
 
         return await DispatchStepsAsync(steps);
+    }
+
+    /// <summary>
+    /// Drops the leading self-move (segment 0 — see JibProgram.Segments()) when it would send the
+    /// machine to a point it is already at: the previous pass, or the Loop-mode return-to-start
+    /// move, just dispatched-and-acked a command targeting this exact same point (the reversal
+    /// pivot in PingPong, or the first key point at the top of a Loop cycle). Drops the whole
+    /// segment — any dwell attached to it too, not just the zero-distance move — but returns its
+    /// total estimated seconds separately so the caller can still budget for it in the progress
+    /// tracker's total (see TimeProgressTracker's skippedLeadingEstimatedSeconds parameter): the
+    /// step's dispatch is skipped, not its place in how "общий" is expected to progress.
+    /// </summary>
+    private (IReadOnlyList<CompiledStep> Steps, double SkippedEstimatedSeconds) SkipRedundantLeadingSelfMove(IReadOnlyList<CompiledStep> steps, bool backward)
+    {
+        if (Services.Program.JibProgram.TargetKeyPoint(KeyPoints, 0, backward) is not { } leadingId
+            || leadingId != _lastDispatchedKeyPointId
+            || KeyPoints.FirstOrDefault(k => k.Id == leadingId) is not { } leadingPoint)
+        {
+            return (steps, 0);
+        }
+
+        _executionLog?.LogSkippedRepeatedPoint(leadingPoint.Label, PhysicalOverallProgress, 1.0 - PhysicalPointRemainingFraction, _now());
+        var skippedEstimatedSeconds = steps.Where(s => s.SegmentIndex == 0).Sum(s => s.EstimatedDurationSeconds);
+        var remainingSteps = steps.Where(s => s.SegmentIndex != 0).ToList();
+        return (remainingSteps, skippedEstimatedSeconds);
     }
 
     /// <summary>
@@ -1636,6 +1737,7 @@ public partial class ProgramViewModel : ViewModelBase
 
             CurrentSegmentIndex = step.SegmentIndex;
             SegmentProgress = step.SegmentProgress;
+            _lastDispatchedKeyPointId = Services.Program.JibProgram.TargetKeyPoint(KeyPoints, step.SegmentIndex, _currentPassBackward);
         }
 
         return await ResolveRunningStateAsync();
