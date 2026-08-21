@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 
 namespace ArctZ.Services.Program;
 
@@ -40,7 +41,7 @@ public sealed class ProgramExecutionLog
 
     public void LogTimeOverage(string? pointLabel, double actualSeconds, double estimatedSeconds, double overallProgress, double stepProgress, DateTimeOffset now) =>
         Append(
-            $"Рассинхронизация: превышение расчётного времени точки «{pointLabel}» ({actualSeconds:F1}с факт / {estimatedSeconds:F1}с расчёт)",
+            $"Рассинхронизация: превышение расчётного времени точки «{pointLabel}» ({actualSeconds.ToString("F1", CultureInfo.InvariantCulture)}с факт / {estimatedSeconds.ToString("F1", CultureInfo.InvariantCulture)}с расчёт)",
             overallProgress, stepProgress, now);
 
     public void LogProgramEnded(string outcomeLabel, double overallProgress, double stepProgress, DateTimeOffset now) =>
@@ -55,8 +56,11 @@ public sealed class ProgramExecutionLog
 
     private string FormatElapsed(DateTimeOffset now)
     {
-        var elapsed = now - _startedAt;
-        return $"{(int)elapsed.TotalMinutes:D2}:{elapsed.Seconds:D2}.{elapsed.Milliseconds:D3}";
+        var totalMilliseconds = (long)Math.Round((now - _startedAt).TotalMilliseconds, MidpointRounding.AwayFromZero);
+        var minutes = totalMilliseconds / 60000;
+        var seconds = (totalMilliseconds / 1000) % 60;
+        var milliseconds = totalMilliseconds % 1000;
+        return $"{minutes:D2}:{seconds:D2}.{milliseconds:D3}";
     }
 
     private static string FormatPercent(double fraction) => $"{fraction * 100:F0}%";
