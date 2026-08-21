@@ -28,6 +28,7 @@ public partial class ProgramViewModel : ViewModelBase
     private readonly IPeriodicTimer _progressTimer;
     private readonly TimeSpan _progressTimerInterval;
     private TimeProgressTracker? _progressTracker;
+    private ProgramExecutionLog? _executionLog;
     private DateTimeOffset? _pausedAt;
     private JoystickAxisInput _leftInput;
     private JoystickAxisInput _rightInput;
@@ -920,6 +921,13 @@ public partial class ProgramViewModel : ViewModelBase
 
     partial void OnPlaybackStateChanged(PlaybackState value)
     {
+        // Captured before ClearProgressTracker() (below) can null out _progressTracker — logging
+        // after that point would record 0% for a run stopped/faulted mid-motion instead of its
+        // actual progress at that instant. See
+        // docs/superpowers/specs/2026-08-21-program-execution-log-design.md.
+        var loggedOverallProgress = PhysicalOverallProgress;
+        var loggedStepProgress = 1.0 - PhysicalPointRemainingFraction;
+
         _pauseResumeSignal?.TrySetResult(true);
 
         // Stop/Faulted abandon the run outright, so nothing is left to wait for. Paused is
@@ -934,11 +942,13 @@ public partial class ProgramViewModel : ViewModelBase
         if (value == PlaybackState.Paused)
         {
             _pausedAt = _now();
+            _executionLog?.LogPauseStarted(loggedOverallProgress, loggedStepProgress, _now());
         }
         else if (value == PlaybackState.Running && _pausedAt is { } pausedAt)
         {
             _progressTracker?.ShiftForPause(_now() - pausedAt);
             _pausedAt = null;
+            _executionLog?.LogPauseEnded(loggedOverallProgress, loggedStepProgress, _now());
         }
         else if (value is PlaybackState.Stopped or PlaybackState.Faulted)
         {
@@ -974,6 +984,8 @@ public partial class ProgramViewModel : ViewModelBase
 
         if (value is PlaybackState.Completed or PlaybackState.Stopped or PlaybackState.Faulted)
         {
+            _executionLog?.LogProgramEnded(StatusLabel, loggedOverallProgress, loggedStepProgress, _now());
+
             var cts = new CancellationTokenSource();
             _terminalStatusResetCts = cts;
             _ = ResetToIdleAfterDelayAsync(value, cts.Token);
@@ -1064,6 +1076,10 @@ public partial class ProgramViewModel : ViewModelBase
         : null;
 
     public double PhysicalOverallProgress => _progressTracker?.OverallFraction ?? 0;
+
+    /// <summary>Text of the most recently STARTED run's log — survives that run's own completion,
+    /// replaced only by the next cold Play start. Null until the first Play of the session.</summary>
+    public string? ExecutionLogText => _executionLog?.Text;
 
     public double PhysicalPointRemainingFraction => _progressTracker switch
     {
@@ -1299,6 +1315,7 @@ public partial class ProgramViewModel : ViewModelBase
         // With ReturnToStartOnFinish, the program is treated as one extra step (1-2-3-1 for a
         // 3-point program) throughout progress tracking, not just at dispatch time.
         TotalSegments = KeyPoints.Count + (ReturnToStartOnFinish ? 1 : 0);
+        _executionLog = new ProgramExecutionLog(ProgramName, KeyPoints.Count, _now());
 
         var cycle = 0;
         while (true)
